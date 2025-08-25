@@ -1,0 +1,31 @@
+# Core dependencies
+sentence-transformers==2.5.1
+beautifulsoup4==4.12.3
+fastapi==0.115.6
+numpy==1.26.4
+openai==1.57.0
+python-dotenv==1.0.1
+requests==2.32.3
+uvicorn[standard]==0.32.1
+python-multipart==0.0.20
+aiofiles==24.1.0
+psutil==6.1.0
+rank-bm25==0.2.2
+nltk==3.8.1
+markitdown[all]==0.1.2
+pandas==2.2.3
+openpyxl==3.1.2
+scikit-learn==1.5.2
+httpx==0.27.0
+faiss-cpu==1.8.0
+h5py==3.10.0
+redis==5.0.1
+
+# Additional dependencies
+vietocr==0.3.13
+paddleocr==2.7.0.3
+paddlepaddle-gpu==2.6.2
+pdf2image==1.17.0
+PyPDF2==3.0.1
+opencv-python==4.6.0.66
+streamlit==1.37.1

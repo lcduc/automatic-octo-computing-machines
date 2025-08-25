@@ -1,0 +1,157 @@
+"""
+Embedding service for text vectorization using sentence transformers.
+Provides GPU/CPU fallback and multiple model support for robust embedding generation.
+"""
+
+# Third-party imports
+import torch
+from sentence_transformers import SentenceTransformer
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
+
+# Lazy loading to avoid network issues during import
+embedder = None
+_embedding_service_instance = None
+
+
+class EmbeddingService:
+    """
+    Optimized service for handling text embeddings generation with GPU/CPU fallback.
+    Supports multiple embedding models with automatic device selection, caching, and batch processing.
+    """
+
+    def __init__(self):
+        # Lazy initialization to avoid loading models until needed
+        self.embedder = None
+        self._embedding_cache = {}  # Simple in-memory cache
+        self._cache_enabled = True
+
+    def get_embedder(self):
+        """
+        Get the embedder instance with automatic GPU/CPU fallback.
+        Loads the best available model with device optimization.
+        """
+        if self.embedder is None:
+            # Check GPU availability for performance optimization
+            gpu_available = torch.cuda.is_available()
+            print(f"🔍 GPU availability for embeddings: {gpu_available}")
+
+            # List of models to try in order of preference (multilingual support first)
+            models_to_try = [
+                "paraphrase-multilingual-MiniLM-L12-v2",  # Best multilingual support
+                "all-MiniLM-L6-v2",  # Fast and efficient
+                "all-mpnet-base-v2",  # High quality fallback
+            ]
+
+            for model_name in models_to_try:
+                try:
+                    print(f"🚀 Attempting to load {model_name}...")
+
+                    # Try GPU first for better performance if available
+                    if gpu_available:
+                        try:
+                            self.embedder = SentenceTransformer(
+                                model_name, device="cuda"
+                            )
+                            print(f"✅ {model_name} loaded successfully on GPU")
+                            break
+                        except Exception as gpu_error:
+                            print(f"⚠️ GPU loading failed for {model_name}: {gpu_error}")
+                            print("🔄 Falling back to CPU...")
+
+                    # Fallback to CPU if GPU fails or unavailable
+                    self.embedder = SentenceTransformer(model_name, device="cpu")
+                    print(f"✅ {model_name} loaded successfully on CPU")
+                    break
+
+                except Exception as e:
+                    print(f"⚠️ Failed to load {model_name}: {e}")
+                    continue
+
+            if self.embedder is None:
+                raise RuntimeError("Failed to load any embedding model")
+
+        return self.embedder
+
+    def encode(self, texts, convert_to_numpy=True):
+        """
+        Encode texts into vector embeddings for similarity search.
+
+        Args:
+            texts: List of text strings to encode
+            convert_to_numpy: Whether to return numpy arrays (default: True)
+
+        Returns:
+            Vector embeddings ready for similarity calculations
+        """
+        embedder = self.get_embedder()
+        return embedder.encode(texts, convert_to_numpy=convert_to_numpy)
+
+    async def async_encode(self, texts, convert_to_numpy=True):
+        loop = asyncio.get_event_loop()
+        with ThreadPoolExecutor() as pool:
+            return await loop.run_in_executor(
+                pool, self.encode, texts, convert_to_numpy
+            )
+
+    def get_device_info(self):
+        """
+        Get information about the embedding model device and configuration.
+        Useful for debugging and performance monitoring.
+        """
+        if self.embedder is None:
+            return {"status": "Not loaded", "device": "Unknown", "gpu_available": torch.cuda.is_available()}
+
+        try:
+            device = str(self.embedder.device)
+            model_name = (
+                self.embedder._modules["0"].__class__.__name__
+                if hasattr(self.embedder, "_modules")
+                else "Unknown"
+            )
+            return {
+                "status": "Loaded",
+                "device": device,
+                "model": model_name,
+                "gpu_available": torch.cuda.is_available(),
+            }
+        except:
+            return {"status": "Loaded", "device": "Unknown", "model": "Unknown", "gpu_available": torch.cuda.is_available()}
+
+    def reset_embedder(self):
+        """
+        Reset the embedder to force reinitialization.
+        Useful when GPU becomes available after initial CPU fallback.
+        """
+        if self.embedder is not None:
+            # Clear the embedder to force reinitialization
+            self.embedder = None
+            print("🔄 Embedder reset - will reinitialize on next use")
+
+
+# Global functions for backward compatibility and convenience
+def get_embedding_service():
+    global _embedding_service_instance
+    if _embedding_service_instance is None:
+        _embedding_service_instance = EmbeddingService()
+    return _embedding_service_instance
+
+def reset_embedding_service():
+    """Reset the global embedding service to force reinitialization."""
+    global _embedding_service_instance
+    if _embedding_service_instance is not None:
+        _embedding_service_instance.reset_embedder()
+    else:
+        _embedding_service_instance = None
+
+
+def get_embedder():
+    """Get the global embedder instance for legacy code compatibility."""
+    service = get_embedding_service()
+    return service.get_embedder()
+
+
+def get_device_info():
+    """Get information about the embedding model device for monitoring."""
+    service = get_embedding_service()
+    return service.get_device_info()
