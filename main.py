@@ -22,7 +22,6 @@ from config.server.logging_config import LoggingConfig
 from config.llm.llm_config import LLMConfig
 from config.file.file_config import FileConfig
 from config.rag.rag_config import RAGConfig
-from utils.cleanup import cleanup_data_folders, cleanup_logs
 from setting import validate_config
 
 @asynccontextmanager
@@ -54,11 +53,8 @@ async def lifespan(app: FastAPI):
     print("   Press Ctrl+C to stop the server\n")
     logger.info("Chatbot started successfully\n")
     yield
-    # Shutdown - cleanup temporary files and logs
     print("\n🛑 Shutting down Chatbot...")
-    cleanup_data_folders()
-    cleanup_logs()
-    print("✅ Cleanup completed. Goodbye!")
+    print("✅ Shutdown completed. Goodbye!")
     logger.info("Chatbot shutdown complete")
 
 # Create FastAPI app with enhanced configuration
