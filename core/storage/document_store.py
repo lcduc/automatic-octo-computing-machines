@@ -37,12 +37,13 @@ class DocumentStore:
         print(f"📂 Loading chunks from {self.chunks_dir}")
 
         # Find all chunk directories for different sources
-        for chunk_subdir in self.chunks_dir.iterdir():
+        # Ensure deterministic ordering of sources
+        for chunk_subdir in sorted(self.chunks_dir.iterdir(), key=lambda p: p.name.lower()):
             if chunk_subdir.is_dir():
                 print(f"  📁 Processing {chunk_subdir.name}")
 
                 # Load all chunk files in this directory with sorted order
-                chunk_files = sorted(chunk_subdir.glob("chunk_*.txt"))
+                chunk_files = sorted(chunk_subdir.glob("chunk_*.txt"), key=lambda p: p.name)
                 for chunk_file in chunk_files:
                     try:
                         with open(chunk_file, "r", encoding="utf-8") as f:

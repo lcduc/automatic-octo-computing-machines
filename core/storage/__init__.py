@@ -5,13 +5,16 @@ Provides persistent storage for embeddings, documents, and metadata.
 
 # Import storage components for different data types
 from .vector_store import VectorStore, FaissVectorStore
+from .vector_store_optimized import OptimizedVectorStore
 from .document_store import DocumentStore
 from .metadata_store import MetadataStore
 import os
 
 # Create global singleton instances to avoid repeated initialization
-backend = os.getenv("VECTOR_STORE_BACKEND", "file").lower()
-if backend == "faiss":
+backend = os.getenv("VECTOR_STORE_BACKEND", "optimized").lower()
+if backend == "optimized":
+    vector_store = OptimizedVectorStore()
+elif backend == "faiss":
     vector_store = FaissVectorStore()
 else:
     vector_store = VectorStore()
@@ -21,6 +24,7 @@ metadata_store = MetadataStore()
 # Export all storage components and global instances
 __all__ = [
     "VectorStore",  # Vector embedding storage
+    "OptimizedVectorStore",  # HDF5+FAISS optimized store
     "DocumentStore",  # Document content storage
     "MetadataStore",  # Document metadata storage
     "vector_store",  # Global vector store instance

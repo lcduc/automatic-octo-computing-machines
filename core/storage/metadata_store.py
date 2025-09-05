@@ -20,7 +20,8 @@ class MetadataStore:
             # Fallback metadata if no chunks directory
             return [{"source": "unknown", "source_type": "unknown"} for _ in documents]
 
-        for chunk_subdir in self.chunks_dir.iterdir():
+        # Ensure deterministic ordering of sources to align with DocumentStore
+        for chunk_subdir in sorted(self.chunks_dir.iterdir(), key=lambda p: p.name.lower()):
             if chunk_subdir.is_dir():
                 source_name = chunk_subdir.name
                 # Determine source type based on directory name
@@ -29,8 +30,8 @@ class MetadataStore:
                 else:
                     source_type = "file"
 
-                # List chunk files for this source
-                chunk_files = list(chunk_subdir.glob("chunk_*.txt"))
+                # List chunk files for this source in sorted order to match documents order
+                chunk_files = sorted(chunk_subdir.glob("chunk_*.txt"), key=lambda p: p.name)
                 for chunk_file in chunk_files:
                     document_metadata.append(
                         {

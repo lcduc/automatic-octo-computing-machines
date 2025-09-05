@@ -23,6 +23,8 @@ from config.llm.llm_config import LLMConfig
 from config.file.file_config import FileConfig
 from config.rag.rag_config import RAGConfig
 from setting import validate_config
+from core.rag.embeddings import get_embedding_service
+from core.storage.vector_store_optimized import OptimizedVectorStore
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -51,6 +53,28 @@ async def lifespan(app: FastAPI):
         print("=" * 60)
     print("🎯 Ready to process files and answer questions!")
     print("   Press Ctrl+C to stop the server\n")
+    # Warm up critical services to avoid first-request latency
+    try:
+        logger.info("🔥 Warming up embedding model and vector store...")
+        embedding_service = get_embedding_service()
+        embedder = embedding_service.get_embedder()
+        # Tiny warmup encode to initialize model execution graph
+        try:
+            _ = embedder.encode(["warmup"], convert_to_numpy=True, show_progress_bar=False)
+        except Exception:
+            # Some models may not accept show_progress_bar; ignore warmup failure
+            _ = embedder.encode(["warmup"])  # best-effort
+
+        # Warm up vector store (load HDF5 and FAISS into memory if present)
+        try:
+            vs = OptimizedVectorStore()
+            _ = vs.load_vector_store()
+        except Exception as e:
+            logger.warning(f"Vector store warmup skipped: {e}")
+        logger.info("✅ Warmup complete")
+    except Exception as e:
+        logger.warning(f"⚠️ Warmup failed: {e}")
+
     logger.info("Chatbot started successfully\n")
     yield
     print("\n🛑 Shutting down Chatbot...")

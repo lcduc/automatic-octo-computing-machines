@@ -229,6 +229,34 @@ class ErrorResponse(BaseResponse):
         }
 
 
+class VectorRebuildResponse(BaseResponse):
+    """Vector rebuild response model for force rebuilding vectors with current chunks."""
+
+    documents_processed: int = Field(..., description="Number of documents processed")
+    vectors_created: int = Field(..., description="Number of vectors created")
+    processing_time: str = Field(..., description="Time taken to rebuild vectors")
+    vector_store_path: str = Field(..., description="Path to the vector store file")
+    details: Dict[str, Any] = Field(default_factory=dict, description="Additional rebuild details")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "status": "success",
+                "message": "Vector store rebuilt successfully",
+                "documents_processed": 150,
+                "vectors_created": 150,
+                "processing_time": "2.5s",
+                "vector_store_path": "data/vectors/vector_store.pkl",
+                "details": {
+                    "chunk_files_loaded": 25,
+                    "embedding_model": "text-embedding-3-small",
+                    "vector_dimensions": 1536
+                },
+                "timestamp": "2024-01-01T12:00:00Z",
+            }
+        }
+
+
 class ChatRequest(BaseModel):
     """Chat request model for context-aware responses. Only 'query' is exposed in the API docs."""
 

@@ -241,6 +241,26 @@ class TextUtils:
         return re.findall(url_pattern, text)
 
     @staticmethod
+    def strip_vietnamese_accents(text: str) -> str:
+        """
+        Remove Vietnamese diacritics from a string while preserving ASCII characters.
+        Ensures special Vietnamese letters 'đ'/'Đ' are mapped to 'd'/'D'.
+        """
+        if not text:
+            return ""
+
+        import unicodedata
+
+        # Normalize to NFD to separate base chars and combining marks
+        normalized = unicodedata.normalize("NFD", text)
+        # Drop all combining marks
+        without_marks = "".join(c for c in normalized if unicodedata.category(c) != "Mn")
+        # Map special Vietnamese letters
+        without_marks = without_marks.replace("đ", "d").replace("Đ", "D")
+        # Return as-is (do not recompose) to avoid reintroducing marks
+        return without_marks
+
+    @staticmethod
     def clean_chunk_text(text: str) -> str:
         """
         Remove empty lines and table border lines from a chunk.

@@ -11,7 +11,8 @@ from .embeddings import EmbeddingService, get_embedding_service
 from core.storage.vector_store_optimized import OptimizedVectorStore
 from .similarity import SimilarityCalculator
 from config.rag.rag_config import RAGConfig
-import unicodedata
+import re
+from utils.text_utils import TextUtils
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +30,7 @@ class ContextRetriever:
         else:
             self.embedding_service = embedding_service
         
-        self.vector_store = OptimizedVectorStore()  # Use optimized vector store
+        self.vector_store = OptimizedVectorStore()  # Use optimized vector store with FAISS/HDF5
         if similarity_calculator is None:
             self.similarity_calculator = SimilarityCalculator()
         else:
@@ -44,17 +45,14 @@ class ContextRetriever:
         return np.array(embedding)
 
     def _tokenize(self, text: str) -> List[str]:
-        """Simple tokenization for BM25 keyword search, accent-insensitive."""
+        """Tokenization for BM25: lowercase, strip punctuation, remove diacritics."""
+        if not text:
+            return []
 
-        def remove_accents(text):
-            return "".join(
-                c
-                for c in unicodedata.normalize("NFD", text)
-                if unicodedata.category(c) != "Mn"
-            )
-
-        # Lowercase and remove accents
-        text = remove_accents(text.lower())
+        # Lowercase, remove Vietnamese accents, strip punctuation/symbols
+        text = TextUtils.strip_vietnamese_accents(text.lower())
+        text = re.sub(r"[^\w\s]", " ", text)
+        text = re.sub(r"\s+", " ", text).strip()
         return text.split()
 
     def _expand_context_with_adjacent_chunks(
@@ -62,6 +60,7 @@ class ContextRetriever:
     ) -> List[int]:
         """
         Expand context by including adjacent chunks to the top results.
+        Only includes neighboring chunks if they're from the same document.
         This helps capture related information that might be split across chunks.
         """
         if not RAGConfig.CONTEXT_EXPANSION_ENABLED():
@@ -69,18 +68,36 @@ class ContextRetriever:
 
         expanded_indices = set(top_indices)
 
+        # Get document metadata to check if chunks are from the same source
+        document_metadata = self.vector_store.get_metadata()
+        if not document_metadata or len(document_metadata) != total_documents:
+            logger.warning("⚠️ Document metadata not available, skipping document-aware expansion")
+            return top_indices
+
         for idx in top_indices:
-            # Add chunks before the current chunk
+            current_source = document_metadata[idx].get("source_id", "unknown")
+            
+            # Add chunks before the current chunk (only if same document)
             for i in range(1, expansion_radius + 1):
                 prev_idx = idx - i
                 if prev_idx >= 0:
-                    expanded_indices.add(prev_idx)
+                    prev_source = document_metadata[prev_idx].get("source_id", "unknown")
+                    if prev_source == current_source:
+                        expanded_indices.add(prev_idx)
+                        logger.debug(f"✅ Added previous chunk {prev_idx} (same document: {current_source})")
+                    else:
+                        logger.debug(f"❌ Skipped previous chunk {prev_idx} (different document: {prev_source} vs {current_source})")
 
-            # Add chunks after the current chunk
+            # Add chunks after the current chunk (only if same document)
             for i in range(1, expansion_radius + 1):
                 next_idx = idx + i
                 if next_idx < total_documents:
-                    expanded_indices.add(next_idx)
+                    next_source = document_metadata[next_idx].get("source_id", "unknown")
+                    if next_source == current_source:
+                        expanded_indices.add(next_idx)
+                        logger.debug(f"✅ Added next chunk {next_idx} (same document: {current_source})")
+                    else:
+                        logger.debug(f"❌ Skipped next chunk {next_idx} (different document: {next_source} vs {current_source})")
 
         # Convert back to sorted list
         expanded_list = sorted(list(expanded_indices))
@@ -166,13 +183,21 @@ class ContextRetriever:
             return []
 
         try:
+            # Normalize query for accent-insensitive retrieval
+            normalized_query = TextUtils.strip_vietnamese_accents(query)
             query_embedding = self._ensure_numpy(
-                self.embedding_service.encode([query], convert_to_numpy=True)
+                self.embedding_service.encode([normalized_query], convert_to_numpy=True)
             )
 
-            if RAGConfig.USE_FAISS_INDEX() and self.vector_store.faiss_index:
+            if RAGConfig.USE_FAISS_INDEX() and getattr(self.vector_store, "faiss_index", None) is not None:
                 logger.info("Using FAISS for semantic search")
-                semantic_scores, indices = self.vector_store.fast_similarity_search(query_embedding, k)
+                top_similarities, top_indices = self.vector_store.fast_similarity_search(query_embedding, k)
+                # Expand to full-length semantic score vector aligned with documents
+                semantic_scores = np.zeros(len(documents), dtype=float)
+                # Ensure numeric type and safe assignment
+                for sim, idx in zip(top_similarities, top_indices):
+                    if 0 <= int(idx) < len(semantic_scores):
+                        semantic_scores[int(idx)] = float(sim)
             else:
                 semantic_scores = self.similarity_calculator.cosine_similarity(
                     query_embedding, embeddings
@@ -227,17 +252,22 @@ class ContextRetriever:
                 top_indices, len(documents), RAGConfig.CONTEXT_EXPANSION_RADIUS()
             )
 
-            # Rebuild results with expanded context, grouping each high-scoring chunk with its neighbors
+            # Rebuild results with expanded context, including only same-document neighbors
             expanded_results = []
 
-            # Get the highest scoring chunk and its neighbors
-            if top_k_results:
-                highest_chunk = top_k_results[0]  # First one has highest score
-                chunk_idx = highest_chunk["index"]
-
-                # Add previous chunk first (if it exists and is in expanded set)
+            # Get document metadata for same-document checking
+            document_metadata = self.vector_store.get_metadata()
+            
+            # Process each high-scoring chunk and its same-document neighbors
+            for result in top_k_results:
+                chunk_idx = result["index"]
+                current_source = document_metadata[chunk_idx].get("source_id", "unknown") if document_metadata else "unknown"
+                
+                # Add previous chunk (only if same document and in expanded set)
                 prev_idx = chunk_idx - 1
-                if prev_idx >= 0 and prev_idx in expanded_indices:
+                if (prev_idx >= 0 and prev_idx in expanded_indices and 
+                    document_metadata and 
+                    document_metadata[prev_idx].get("source_id", "unknown") == current_source):
                     expanded_results.append(
                         {
                             "document": documents[prev_idx],
@@ -247,13 +277,16 @@ class ContextRetriever:
                             "index": prev_idx,
                         }
                     )
+                    logger.debug(f"✅ Added previous chunk {prev_idx} from same document: {current_source}")
 
-                # Add the highest scoring chunk
-                expanded_results.append(highest_chunk)
+                # Add the current high-scoring chunk
+                expanded_results.append(result)
 
-                # Add next chunk (if it exists and is in expanded set)
+                # Add next chunk (only if same document and in expanded set)
                 next_idx = chunk_idx + 1
-                if next_idx < len(documents) and next_idx in expanded_indices:
+                if (next_idx < len(documents) and next_idx in expanded_indices and 
+                    document_metadata and 
+                    document_metadata[next_idx].get("source_id", "unknown") == current_source):
                     expanded_results.append(
                         {
                             "document": documents[next_idx],
@@ -263,12 +296,7 @@ class ContextRetriever:
                             "index": next_idx,
                         }
                     )
-
-            # Add remaining high-scoring chunks (without their neighbors)
-            for result in top_k_results[
-                1:
-            ]:  # Skip the first one (highest) as it's already added
-                expanded_results.append(result)
+                    logger.debug(f"✅ Added next chunk {next_idx} from same document: {current_source}")
 
             # Ensure minimum context chunks
             final_results = self._ensure_minimum_context(expanded_results, documents)
@@ -303,8 +331,9 @@ class ContextRetriever:
 
         try:
             # Get semantic scores
+            normalized_query = TextUtils.strip_vietnamese_accents(query)
             query_embedding = self._ensure_numpy(
-                self.embedding_service.encode([query], convert_to_numpy=True)
+                self.embedding_service.encode([normalized_query], convert_to_numpy=True)
             )
             semantic_scores = self.similarity_calculator.cosine_similarity(
                 query_embedding, embeddings

@@ -7,6 +7,8 @@ Provides service instances for API endpoints with proper dependency injection.
 from services import DocumentService, ChatService, UploadService, URLService
 from core.llm import ChatbotService
 from core.rag import ContextRetriever
+from core.storage import vector_store as global_vector_store
+from core.storage.vector_store import VectorStore
 
 
 def get_document_service() -> DocumentService:
@@ -31,3 +33,8 @@ def get_upload_service() -> UploadService:
 def get_url_service() -> URLService:
     """Get URL service instance for web content extraction and processing."""
     return URLService()
+
+
+def get_vector_store() -> VectorStore:
+    """Use the global vector store singleton (consistent with ChatService)."""
+    return global_vector_store  # type: ignore

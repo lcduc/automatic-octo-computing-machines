@@ -207,3 +207,10 @@ class OptimizedVectorStore:
         
         logger.info(f"✅ [OptimizedVectorStore] Rebuilt successfully: {len(all_documents)} documents")
         return None, embeddings, all_documents
+
+    def get_metadata(self) -> Optional[List[Dict[str, Any]]]:
+        """
+        Get current document metadata for source tracking.
+        Returns list of metadata dictionaries for each document.
+        """
+        return self.document_metadata
