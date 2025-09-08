@@ -12,13 +12,32 @@ try:
     import torch
     from PIL import Image
     from pdf2image import convert_from_bytes
-    from paddleocr import PaddleOCR
-    from vietocr.tool.predictor import Predictor
-    from vietocr.tool.config import Cfg
     import cv2
     import numpy as np
+    
+    # Use Windows-specific OCR import fix
+    from .windows_ocr_fix import get_ocr_availability, safe_import_paddleocr, safe_import_vietocr
+    
+    # Check OCR availability with Windows fixes
+    paddleocr_available, vietocr_available, OCR_DEPENDENCIES_AVAILABLE = get_ocr_availability()
+    
+    if OCR_DEPENDENCIES_AVAILABLE:
+        # Import OCR modules safely
+        if paddleocr_available:
+            PaddleOCR, _ = safe_import_paddleocr()
+        else:
+            PaddleOCR = None
+            
+        if vietocr_available:
+            Predictor, Cfg, _ = safe_import_vietocr()
+        else:
+            Predictor = None
+            Cfg = None
+    else:
+        PaddleOCR = None
+        Predictor = None
+        Cfg = None
 
-    OCR_DEPENDENCIES_AVAILABLE = True
 except ImportError as e:
     torch = None
     Image = None

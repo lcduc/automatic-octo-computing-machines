@@ -86,7 +86,7 @@ class ChatApp:
     """
 
     def __init__(self):
-        st.set_page_config(page_title="ChatBot 📚")
+        st.set_page_config(page_title="ChatBot 📚", initial_sidebar_state="collapsed")
         st.title("ChatBot 📚")
 
         # Initialize session state variables only if they are not already set
@@ -155,26 +155,30 @@ class ChatApp:
             st.rerun()
 
     def run(self):
+        # Initialize API base URL and optionally auto-start backend regardless of sidebar visibility
+        DEFAULT_API_BASE_URL = os.getenv("API_BASE_URL", "http://127.0.0.1:8500")
+        api_base_url = DEFAULT_API_BASE_URL
+        if os.getenv("AUTO_START_API", "true").lower() == "true" and not is_backend_healthy(api_base_url):
+            try:
+                host_port = api_base_url.replace("http://", "").split(":")
+                host = host_port[0]
+                port = int(host_port[1]) if len(host_port) > 1 else 8500
+                with st.spinner("Starting backend API..."):
+                    started = start_backend_subprocess(host, port)
+                    if started:
+                        st.toast("Backend started", icon="✅")
+                    else:
+                        st.toast("Could not auto-start backend. Start it manually.", icon="⚠️")
+            except Exception:
+                st.toast("Auto-start attempt failed. Start the API manually.", icon="⚠️")
+
+        # Sidebar hidden by default
+        show_sidebar = False
         # Sidebar controlled via env only (no visible toggles)
-        show_sidebar = os.getenv("SHOW_SIDEBAR", "true").lower() == "true"
+        # show_sidebar = os.getenv("SHOW_SIDEBAR", "true").lower() == "true"
         if show_sidebar:
             with st.sidebar:
-                DEFAULT_API_BASE_URL = os.getenv("API_BASE_URL", "http://127.0.0.1:8500")
-                api_base_url = DEFAULT_API_BASE_URL
-                # Auto-start backend if not reachable and AUTO_START_API=true (default)
-                if os.getenv("AUTO_START_API", "true").lower() == "true" and not is_backend_healthy(api_base_url):
-                    try:
-                        host_port = api_base_url.replace("http://", "").split(":")
-                        host = host_port[0]
-                        port = int(host_port[1]) if len(host_port) > 1 else 8500
-                        with st.spinner("Starting backend API..."):
-                            started = start_backend_subprocess(host, port)
-                            if started:
-                                st.toast("Backend started", icon="✅")
-                            else:
-                                st.toast("Could not auto-start backend. Start it manually.", icon="⚠️")
-                    except Exception:
-                        st.toast("Auto-start attempt failed. Start the API manually.", icon="⚠️")
+                # Startup handled above; sidebar UI only
 
                 st.subheader("Documents & URLs")
                 uploader_key = st.session_state.get("uploaded_docs_uploader_key", "uploaded_docs_uploader")

@@ -14,3 +14,12 @@ from .responses import (
     URLProcessResponse,
     ErrorResponse,
 )
+
+from .metadata import (
+    NormalizedMetadata,
+    MetadataBuilder,
+    ProcessingMethod,
+    SourceType,
+    ProcessingStatus,
+    normalize_legacy_metadata,
+)

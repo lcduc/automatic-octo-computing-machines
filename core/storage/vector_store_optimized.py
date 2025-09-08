@@ -18,11 +18,12 @@ import faiss
 # Local imports
 from config.file.file_config import FileConfig
 from core.rag.embeddings import get_embedder
+from .vector_store import VectorStore
 
 logger = logging.getLogger(__name__)
 
 
-class OptimizedVectorStore:
+class OptimizedVectorStore(VectorStore):
     """
     High-performance vector store using HDF5 and FAISS for speed optimization.
     Provides 5-10x faster loading and more efficient memory usage.
@@ -207,6 +208,7 @@ class OptimizedVectorStore:
         
         logger.info(f"✅ [OptimizedVectorStore] Rebuilt successfully: {len(all_documents)} documents")
         return None, embeddings, all_documents
+
 
     def get_metadata(self) -> Optional[List[Dict[str, Any]]]:
         """

@@ -165,8 +165,10 @@ class VectorStore:
             if rebuild_immediately:
                 self.rebuild_vector_store()
 
+            # Use consistent 'source_name' key for all sources
+            source_name = source_metadata.get('source_name', 'unknown_source')
             print(
-                f"✅ Added {len(documents)} documents from {source_metadata['source_name']}"
+                f"✅ Added {len(documents)} documents from {source_name}"
             )
             return True
 

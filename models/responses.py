@@ -122,7 +122,12 @@ class FileProcessResult(BaseModel):
     error_message: Optional[str] = Field(
         None, description="Error message if processing failed"
     )
-    metadata: Dict[str, Any] = Field(..., description="File metadata")
+    # Streamlined metadata - only essential info
+    file_type: str = Field(..., description="File extension")
+    processing_method: str = Field(..., description="Processing method used")
+    processing_time: Optional[str] = Field(None, description="Processing time")
+    # Optional detailed metadata for debugging
+    debug_info: Optional[Dict[str, Any]] = Field(None, description="Additional debug information")
 
 
 class MultipleFileUploadResponse(BaseResponse):
@@ -156,7 +161,14 @@ class MultipleFileUploadResponse(BaseResponse):
                         "document_count": 15,
                         "source_id": "uuid-123",
                         "status": "success",
-                        "metadata": {"file_type": "pdf"},
+                        "file_type": ".pdf",
+                        "processing_method": "markitdown",
+                        "processing_time": "2.5s",
+                        "debug_info": {
+                            "chunks_directory": "data/chunks/doc1",
+                            "ocr_enabled": True,
+                            "conversion_success": True
+                        }
                     },
                     {
                         "filename": "doc2.txt",
@@ -165,7 +177,10 @@ class MultipleFileUploadResponse(BaseResponse):
                         "source_id": "",
                         "status": "error",
                         "error_message": "File too small",
-                        "metadata": {},
+                        "file_type": ".txt",
+                        "processing_method": "unknown",
+                        "processing_time": None,
+                        "debug_info": None
                     },
                 ],
                 "timestamp": "2024-01-01T12:00:00Z",

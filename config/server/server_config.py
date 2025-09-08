@@ -30,3 +30,13 @@ class ServerConfig:
     @staticmethod
     def UVICORN_WORKERS():
         return int(os.getenv("UVICORN_WORKERS", "1"))
+    
+    @staticmethod
+    def AUTO_RELOAD_ENABLED():
+        """Enable automatic reloading of data when files change."""
+        return os.getenv("AUTO_RELOAD_ENABLED", "False").lower() == "true"
+    
+    @staticmethod
+    def AUTO_RELOAD_DEBOUNCE_DELAY():
+        """Debounce delay in seconds for auto-reload to prevent spam."""
+        return float(os.getenv("AUTO_RELOAD_DEBOUNCE_DELAY", "10.0"))

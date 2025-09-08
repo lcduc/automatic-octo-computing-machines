@@ -7,12 +7,16 @@ import io
 import logging
 import tempfile
 import re
+import time
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple
 import asyncio
 
 # Third-party imports
 from markitdown import MarkItDown
+
+# Local imports
+from models.metadata import MetadataBuilder, ProcessingMethod, SourceType, ProcessingStatus
 
 # Local imports
 from config.file.file_config import FileConfig
@@ -68,6 +72,7 @@ class MarkItDownProcessor:
         Returns:
             Dict containing processed documents, metadata, and processing info
         """
+        start_time = time.time()  # Track processing time
         try:
             # Create a temporary file for MarkItDown processing
             with tempfile.NamedTemporaryFile(delete=False, suffix=Path(filename).suffix) as temp_file:
@@ -87,21 +92,40 @@ class MarkItDownProcessor:
                         overlap
                     )
                     
+                    # Create normalized metadata
+                    metadata = (MetadataBuilder()
+                        .set_source_info(
+                            source_id=filename,
+                            source_name=filename,
+                            source_type=SourceType.FILE
+                        )
+                        .set_file_info(
+                            file_extension=Path(filename).suffix.lower(),
+                            file_size_bytes=len(content)
+                        )
+                        .set_processing_info(
+                            method=ProcessingMethod.MARKITDOWN,
+                            status=ProcessingStatus.SUCCESS,
+                            processing_time=time.time() - start_time
+                        )
+                        .set_content_stats(
+                            total_chunks=len(chunks),
+                            total_characters=len(result.text_content)
+                        )
+                        .set_ocr_info(ocr_enabled=False, ocr_used=False)
+                        .set_content_features(
+                            has_tables="|" in result.text_content,
+                            has_images="![" in result.text_content,
+                            has_links="[" in result.text_content and "]" in result.text_content
+                        )
+                        .set_quality_metrics(conversion_success=True)
+                        .add_custom_metadata("markdown_length", len(result.text_content))
+                        .build()
+                    )
+                    
                     return {
                         "documents": chunks,
-                        "metadata": {
-                            "filename": filename,
-                            "file_extension": Path(filename).suffix.lower(),
-                            "total_chunks": len(chunks),
-                            "original_size_bytes": len(content),
-                            "processing_method": "markitdown",
-                            "ocr_enabled": self.enable_ocr,
-                            "conversion_success": True,
-                            "markdown_length": len(result.text_content),
-                            "has_tables": "|" in result.text_content,
-                            "has_images": "![" in result.text_content,
-                            "has_links": "[" in result.text_content and "]" in result.text_content
-                        },
+                        "metadata": metadata.dict(),
                         "processing_info": {
                             "processor": "markitdown",
                             "ocr_used": False,
@@ -112,7 +136,7 @@ class MarkItDownProcessor:
                 else:
                     # MarkItDown failed - try existing processors
                     logger.info(f"MarkItDown returned poor content for {filename}, trying existing processors...")
-                    return await self._existing_processor_fallback(content, filename, chunk_size, overlap)
+                    return await self._existing_processor_fallback(content, filename, chunk_size, overlap, start_time)
                 
             finally:
                 # Clean up temporary file
@@ -121,7 +145,7 @@ class MarkItDownProcessor:
         except Exception as e:
             logger.error(f"MarkItDown processing failed for {filename}: {e}")
             # MarkItDown failed - try existing processors
-            return await self._existing_processor_fallback(content, filename, chunk_size, overlap)
+            return await self._existing_processor_fallback(content, filename, chunk_size, overlap, start_time)
 
     def _is_content_meaningful(self, text: str) -> bool:
         """
@@ -131,11 +155,13 @@ class MarkItDownProcessor:
         from utils.text_utils import TextUtils
         return not TextUtils.needs_ocr_fallback(text)
 
-    async def _existing_processor_fallback(self, content: bytes, filename: str, chunk_size: int, overlap: int) -> Dict[str, Any]:
+    async def _existing_processor_fallback(self, content: bytes, filename: str, chunk_size: int, overlap: int, start_time: float = None) -> Dict[str, Any]:
         """
         Fallback to existing document processing modules when MarkItDown fails.
         Existing processors handle their own OCR fallback logic.
         """
+        if start_time is None:
+            start_time = time.time()
         try:
             logger.info(f"Using existing processor fallback for {filename}")
             
@@ -180,18 +206,35 @@ class MarkItDownProcessor:
             
             if chunks and len(chunks) > 0:
                 # Existing processor succeeded (with or without OCR fallback)
+                # Create normalized metadata for fallback case
+                metadata = (MetadataBuilder()
+                    .set_source_info(
+                        source_id=filename,
+                        source_name=filename,
+                        source_type=SourceType.FILE
+                    )
+                    .set_file_info(
+                        file_extension=file_ext,
+                        file_size_bytes=len(content)
+                    )
+                    .set_processing_info(
+                        method=ProcessingMethod.EXISTING_PROCESSOR,
+                        status=ProcessingStatus.SUCCESS,
+                        processing_time=time.time() - start_time
+                    )
+                    .set_content_stats(total_chunks=len(chunks))
+                    .set_ocr_info(
+                        ocr_enabled=OCRConfig.OCR_ENABLED(),
+                        ocr_used=ocr_used,
+                        ocr_time=ocr_time
+                    )
+                    .set_quality_metrics(conversion_success=True)
+                    .build()
+                )
+                
                 return {
                     "documents": chunks,
-                    "metadata": {
-                        "filename": filename,
-                        "file_extension": file_ext,
-                        "total_chunks": len(chunks),
-                        "original_size_bytes": len(content),
-                        "processing_method": "existing_processor_fallback",
-                        "ocr_enabled": self.enable_ocr,
-                        "conversion_success": True,
-                        "ocr_time": ocr_time
-                    },
+                    "metadata": metadata.dict(),
                     "processing_info": {
                         "processor": "existing_processor_fallback",
                         "ocr_used": ocr_used,
@@ -201,14 +244,30 @@ class MarkItDownProcessor:
                 }
             else:
                 # Existing processor returned empty result
+                # Create normalized metadata for error case
+                metadata = (MetadataBuilder()
+                    .set_source_info(
+                        source_id=filename,
+                        source_name=filename,
+                        source_type=SourceType.FILE
+                    )
+                    .set_file_info(
+                        file_extension=file_ext,
+                        file_size_bytes=len(content)
+                    )
+                    .set_processing_info(
+                        method=ProcessingMethod.EXISTING_PROCESSOR,
+                        status=ProcessingStatus.FAILED
+                    )
+                    .set_content_stats(total_chunks=0)
+                    .set_quality_metrics(conversion_success=False, error_count=1)
+                    .add_custom_metadata("error", "Existing processor returned empty result")
+                    .build()
+                )
+                
                 return {
                     "documents": [],
-                    "metadata": {
-                        "filename": filename,
-                        "error": "Existing processor returned empty result",
-                        "processing_method": "existing_processor_fallback",
-                        "conversion_success": False
-                    },
+                    "metadata": metadata.dict(),
                     "processing_info": {
                         "processor": "existing_processor_fallback",
                         "ocr_used": False,
@@ -219,14 +278,30 @@ class MarkItDownProcessor:
                 
         except Exception as e:
             logger.error(f"Existing processor fallback failed for {filename}: {e}")
+            # Create normalized metadata for exception case
+            metadata = (MetadataBuilder()
+                .set_source_info(
+                    source_id=filename,
+                    source_name=filename,
+                    source_type=SourceType.FILE
+                )
+                .set_file_info(
+                    file_extension=file_ext,
+                    file_size_bytes=len(content)
+                )
+                .set_processing_info(
+                    method=ProcessingMethod.EXISTING_PROCESSOR,
+                    status=ProcessingStatus.FAILED
+                )
+                .set_content_stats(total_chunks=0)
+                .set_quality_metrics(conversion_success=False, error_count=1)
+                .add_custom_metadata("error", f"Existing processor fallback failed: {str(e)}")
+                .build()
+            )
+            
             return {
                 "documents": [],
-                "metadata": {
-                    "filename": filename,
-                    "error": f"Existing processor fallback failed: {str(e)}",
-                    "processing_method": "existing_processor_fallback",
-                    "conversion_success": False
-                },
+                "metadata": metadata.dict(),
                 "processing_info": {
                     "processor": "existing_processor_fallback",
                     "ocr_used": False,

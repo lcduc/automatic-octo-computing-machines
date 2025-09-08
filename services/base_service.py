@@ -21,6 +21,7 @@ from models.responses import (
     FileProcessResult,
     ErrorResponse,
 )
+from models.metadata import normalize_legacy_metadata, SourceType
 
 logger = logging.getLogger(__name__)
 
@@ -117,6 +118,25 @@ class BaseProcessingService(ABC):
                 # Get file size based on item type for accurate reporting
                 file_size = self._get_item_size(valid_items[i], item_type)
 
+                # Extract and normalize metadata
+                raw_metadata = item_result.get("metadata", {}) if item_result["success"] else {}
+                
+                # Normalize metadata to ensure consistent structure
+                if raw_metadata and item_result["success"]:
+                    try:
+                        normalized_metadata = normalize_legacy_metadata(
+                            raw_metadata,
+                            source_id=raw_metadata.get("source_id", item_result["filename"]),
+                            source_name=item_result["filename"],
+                            source_type=SourceType.FILE
+                        )
+                        metadata_dict = normalized_metadata.dict()
+                    except Exception as e:
+                        logger.warning(f"Failed to normalize metadata for {item_result['filename']}: {e}")
+                        metadata_dict = raw_metadata
+                else:
+                    metadata_dict = raw_metadata
+                
                 results.append(
                     {
                         "success": item_result["success"],
@@ -124,11 +144,7 @@ class BaseProcessingService(ABC):
                             filename=item_result["filename"],
                             file_size=file_size,
                             document_count=item_result["document_count"],
-                            source_id=(
-                                item_result["metadata"].get("source_id", "unknown")
-                                if item_result["success"]
-                                else ""
-                            ),
+                            source_id=metadata_dict.get("source_id", "unknown"),
                             status=(
                                 StatusEnum.SUCCESS
                                 if item_result["success"]
@@ -139,10 +155,21 @@ class BaseProcessingService(ABC):
                                 if not item_result["success"]
                                 else None
                             ),
-                            metadata=(
-                                item_result["metadata"]
-                                if item_result["success"]
-                                else {}
+                            # Use normalized metadata fields
+                            file_type=metadata_dict.get("file_extension", "unknown"),
+                            processing_method=metadata_dict.get("processing_method", "unknown"),
+                            processing_time=metadata_dict.get("processing_time_seconds"),
+                            # Optional debug info (only if needed)
+                            debug_info=(
+                                {
+                                    "chunks_directory": metadata_dict.get("chunks_directory"),
+                                    "ocr_enabled": metadata_dict.get("ocr_enabled"),
+                                    "conversion_success": metadata_dict.get("conversion_success"),
+                                    "processing_status": metadata_dict.get("processing_status"),
+                                    "total_chunks": metadata_dict.get("total_chunks"),
+                                }
+                                if item_result["success"] and metadata_dict
+                                else None
                             ),
                         ),
                     }
@@ -165,7 +192,10 @@ class BaseProcessingService(ABC):
                             source_id="",
                             status=StatusEnum.ERROR,
                             error_message=str(e),
-                            metadata={},
+                            file_type="unknown",
+                            processing_method="unknown",
+                            processing_time=None,
+                            debug_info=None,
                         ),
                     }
                 )

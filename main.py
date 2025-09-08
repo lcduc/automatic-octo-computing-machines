@@ -25,6 +25,7 @@ from config.rag.rag_config import RAGConfig
 from setting import validate_config
 from core.rag.embeddings import get_embedding_service
 from core.storage.vector_store_optimized import OptimizedVectorStore
+from core.monitoring import auto_reload_manager
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -69,6 +70,11 @@ async def lifespan(app: FastAPI):
         try:
             vs = OptimizedVectorStore()
             _ = vs.load_vector_store()
+            
+            # Setup auto-reload system
+            auto_reload_manager.setup_vector_store(vs)
+            auto_reload_manager.start_auto_reload()
+            logger.info("🔄 Auto-reload system started")
         except Exception as e:
             logger.warning(f"Vector store warmup skipped: {e}")
         logger.info("✅ Warmup complete")
@@ -78,6 +84,14 @@ async def lifespan(app: FastAPI):
     logger.info("Chatbot started successfully\n")
     yield
     print("\n🛑 Shutting down Chatbot...")
+    
+    # Stop auto-reload system
+    try:
+        auto_reload_manager.stop_auto_reload()
+        logger.info("🔄 Auto-reload system stopped")
+    except Exception as e:
+        logger.warning(f"⚠️ Error stopping auto-reload: {e}")
+    
     print("✅ Shutdown completed. Goodbye!")
     logger.info("Chatbot shutdown complete")
 
@@ -155,8 +169,11 @@ def main():
         host = args.host if args.host else ServerConfig.HOST()
         port = args.port if args.port else ServerConfig.PORT()
 
+        # Determine if we should enable auto-reload (development mode)
+        enable_reload = ServerConfig.DEBUG() or ServerConfig.RELOAD()
+        
         # Start the server with uvicorn using ServerConfig values
-        uvicorn.run("main:app", host=host, port=port, reload=False, workers=workers)
+        uvicorn.run("main:app", host=host, port=port, reload=enable_reload, workers=workers)
 
     except KeyboardInterrupt:
         print("\n🛑 Server stopped by user")
