@@ -59,13 +59,17 @@ class BaseProcessor(ABC):
 
     @staticmethod
     def chunk_text(
-        text: str, chunk_size: int = 1000, overlap: int = 200, language: str = "vi"
+        text: str, chunk_size: int = 1000, overlap: int = None, language: str = "vi"
     ) -> List[str]:
         """
         Hybrid chunking: group full sentences into chunks up to chunk_size, with overlap at sentence boundaries.
         Delegates to TextUtils.chunk_text for unified chunking logic.
         """
         from utils.text_utils import TextUtils
+        from config.file.file_config import FileConfig
+
+        if overlap is None:
+            overlap = FileConfig.CHUNK_OVERLAP()
 
         return TextUtils.chunk_text(
             text, chunk_size=chunk_size, overlap=overlap, language=language

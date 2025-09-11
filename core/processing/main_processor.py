@@ -99,7 +99,7 @@ class MainDocumentProcessor:
                 file_content, 
                 filename,
                 chunk_size=FileConfig.CHUNK_SIZE() if hasattr(FileConfig, 'CHUNK_SIZE') else 1000,
-                overlap=FileConfig.CHUNK_OVERLAP() if hasattr(FileConfig, 'CHUNK_OVERLAP') else 200
+                overlap=FileConfig.CHUNK_OVERLAP() if hasattr(FileConfig, 'CHUNK_OVERLAP') else 0
             )
 
             # Validate that content was successfully extracted
@@ -120,7 +120,7 @@ class MainDocumentProcessor:
                     "processing_timestamp": datetime.now().isoformat(),
                     "processor_version": result["processing_info"]["processor"],
                     "chunk_size": FileConfig.CHUNK_SIZE() if hasattr(FileConfig, 'CHUNK_SIZE') else 1000,
-                    "chunk_overlap": FileConfig.CHUNK_OVERLAP() if hasattr(FileConfig, 'CHUNK_OVERLAP') else 200,
+                    "chunk_overlap": FileConfig.CHUNK_OVERLAP() if hasattr(FileConfig, 'CHUNK_OVERLAP') else 0,
                 },
                 "processing_info": result["processing_info"]
             }

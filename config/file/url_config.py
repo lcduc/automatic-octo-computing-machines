@@ -8,7 +8,7 @@ class URLConfig:
 
     @staticmethod
     def URL_CHUNK_OVERLAP():
-        return int(os.getenv("URL_CHUNK_OVERLAP", "300"))
+        return int(os.getenv("URL_CHUNK_OVERLAP", "0"))
 
     @staticmethod
     def URL_MIN_CHUNK_SIZE():

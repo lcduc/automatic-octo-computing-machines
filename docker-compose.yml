@@ -70,7 +70,7 @@ services:
       - EMBEDDING_MODEL=paraphrase-multilingual-MiniLM-L12-v2
       - RETRIEVAL_TOP_K=3
       - CHUNK_SIZE=1000
-      - CHUNK_OVERLAP=100
+      - CHUNK_OVERLAP=0
       - SEMANTIC_WEIGHT=0.6
       - SIMILARITY_THRESHOLD=0.5
       - DIVERSITY_THRESHOLD=0.8
@@ -103,7 +103,7 @@ services:
 
       # URL Content Chunking Configuration
       - URL_CHUNK_SIZE=1500
-      - URL_CHUNK_OVERLAP=300
+      - URL_CHUNK_OVERLAP=0
       - URL_MIN_CHUNK_SIZE=100
 
       # Web Crawling Configuration

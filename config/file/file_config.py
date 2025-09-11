@@ -43,4 +43,4 @@ class FileConfig:
 
     @staticmethod
     def CHUNK_OVERLAP():
-        return int(os.getenv("CHUNK_OVERLAP", "100"))
+        return int(os.getenv("CHUNK_OVERLAP", "0"))

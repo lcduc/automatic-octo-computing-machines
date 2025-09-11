@@ -16,7 +16,7 @@ class RAGConfig:
 
     @staticmethod
     def CHUNK_OVERLAP():
-        return int(os.getenv("CHUNK_OVERLAP", "150"))  # Reduced overlap
+        return int(os.getenv("CHUNK_OVERLAP", "0"))
 
     @staticmethod
     def SEMANTIC_WEIGHT():
