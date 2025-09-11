@@ -15,6 +15,11 @@ from dotenv import load_dotenv
 # Load environment variables first, before importing any config classes
 load_dotenv()
 
+# Setup Windows-specific asyncio fixes before any other imports
+from utils.asyncio_utils import setup_windows_asyncio, setup_asyncio_logging
+setup_windows_asyncio()
+setup_asyncio_logging()
+
 # Local imports - Now import config classes after .env is loaded
 from api.routes import router
 from config.server.server_config import ServerConfig
@@ -25,7 +30,7 @@ from config.rag.rag_config import RAGConfig
 from setting import validate_config
 from core.rag.embeddings import get_embedding_service
 from core.storage.vector_store_optimized import OptimizedVectorStore
-from core.monitoring import auto_reload_manager
+# File watching functionality removed
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -70,11 +75,7 @@ async def lifespan(app: FastAPI):
         try:
             vs = OptimizedVectorStore()
             _ = vs.load_vector_store()
-            
-            # Setup auto-reload system
-            auto_reload_manager.setup_vector_store(vs)
-            auto_reload_manager.start_auto_reload()
-            logger.info("🔄 Auto-reload system started")
+            logger.info("✅ Vector store loaded successfully")
         except Exception as e:
             logger.warning(f"Vector store warmup skipped: {e}")
         logger.info("✅ Warmup complete")
@@ -84,13 +85,6 @@ async def lifespan(app: FastAPI):
     logger.info("Chatbot started successfully\n")
     yield
     print("\n🛑 Shutting down Chatbot...")
-    
-    # Stop auto-reload system
-    try:
-        auto_reload_manager.stop_auto_reload()
-        logger.info("🔄 Auto-reload system stopped")
-    except Exception as e:
-        logger.warning(f"⚠️ Error stopping auto-reload: {e}")
     
     print("✅ Shutdown completed. Goodbye!")
     logger.info("Chatbot shutdown complete")

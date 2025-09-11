@@ -4,7 +4,10 @@ Provides GPU/CPU fallback and multiple model support for robust embedding genera
 """
 
 # Third-party imports
-import torch
+try:
+    import torch
+except Exception:
+    torch = None
 from sentence_transformers import SentenceTransformer
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
@@ -33,7 +36,7 @@ class EmbeddingService:
         """
         if self.embedder is None:
             # Check GPU availability for performance optimization
-            gpu_available = torch.cuda.is_available()
+            gpu_available = bool(torch) and torch.cuda.is_available()
             print(f"🔍 GPU availability for embeddings: {gpu_available}")
 
             # List of models to try in order of preference (multilingual support first)
@@ -100,7 +103,7 @@ class EmbeddingService:
         Useful for debugging and performance monitoring.
         """
         if self.embedder is None:
-            return {"status": "Not loaded", "device": "Unknown", "gpu_available": torch.cuda.is_available()}
+            return {"status": "Not loaded", "device": "Unknown", "gpu_available": bool(torch) and torch.cuda.is_available()}
 
         try:
             device = str(self.embedder.device)
@@ -113,10 +116,10 @@ class EmbeddingService:
                 "status": "Loaded",
                 "device": device,
                 "model": model_name,
-                "gpu_available": torch.cuda.is_available(),
+                "gpu_available": bool(torch) and torch.cuda.is_available(),
             }
         except:
-            return {"status": "Loaded", "device": "Unknown", "model": "Unknown", "gpu_available": torch.cuda.is_available()}
+            return {"status": "Loaded", "device": "Unknown", "model": "Unknown", "gpu_available": bool(torch) and torch.cuda.is_available()}
 
     def reset_embedder(self):
         """
