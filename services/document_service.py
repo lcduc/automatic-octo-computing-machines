@@ -258,9 +258,18 @@ class DocumentService:
                 "error": result.get("error"),
             }
 
-        # 🚀 Process all URLs concurrently for optimal performance
+        # 🚀 Process all URLs concurrently for optimal performance (with concurrency limit)
         logger.info(f"🔄 Processing {len(urls)} URLs concurrently...")
-        processing_tasks = [_process_url_for_batch(url) for url in urls]
+        
+        # Limit concurrent URL processing to prevent connection overload
+        max_concurrent_urls = min(5, len(urls))  # Process max 5 URLs at once
+        semaphore = asyncio.Semaphore(max_concurrent_urls)
+        
+        async def process_url_with_semaphore(url):
+            async with semaphore:
+                return await _process_url_for_batch(url)
+        
+        processing_tasks = [process_url_with_semaphore(url) for url in urls]
         url_results = await asyncio.gather(*processing_tasks)
 
         # Collect results and prepare for batch vector store update

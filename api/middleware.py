@@ -4,6 +4,7 @@ Provides request logging, security headers, rate limiting, and error handling.
 """
 
 # Standard library imports
+import asyncio
 import time
 import logging
 from typing import Callable
@@ -68,15 +69,18 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 
 class RateLimitingMiddleware(BaseHTTPMiddleware):
     """
-    Simple rate limiting middleware to prevent API abuse.
-    Implements sliding window rate limiting per client IP address.
+    Enhanced rate limiting middleware to prevent API abuse and connection overload.
+    Implements sliding window rate limiting per client IP address and global concurrent request limiting.
     """
 
-    def __init__(self, app, max_requests: int = 100, window_seconds: int = 60):
+    def __init__(self, app, max_requests: int = 100, window_seconds: int = 60, max_concurrent: int = 10):
         super().__init__(app)
         self.max_requests = max_requests
         self.window_seconds = window_seconds
+        self.max_concurrent = max_concurrent
         self.requests = {}  # {client_ip: [(timestamp, count), ...]}
+        self.concurrent_requests = 0
+        self.semaphore = asyncio.Semaphore(max_concurrent)
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         client_ip = request.client.host if request.client else "unknown"
@@ -97,6 +101,15 @@ class RateLimitingMiddleware(BaseHTTPMiddleware):
         # Count current requests within the time window
         current_requests = sum(count for _, count in self.requests[client_ip])
 
+        # Check global concurrent request limit first
+        if self.concurrent_requests >= self.max_concurrent:
+            logger.warning(f"🚫 Global concurrent request limit exceeded ({self.concurrent_requests}/{self.max_concurrent})")
+            return Response(
+                content="Server busy, too many concurrent requests. Please try again later.",
+                status_code=503,
+                headers={"Retry-After": "5"},
+            )
+
         # Check rate limit and block if exceeded
         if current_requests >= self.max_requests:
             logger.warning(f"🚫 Rate limit exceeded for {client_ip}")
@@ -109,19 +122,27 @@ class RateLimitingMiddleware(BaseHTTPMiddleware):
         # Add current request to tracking
         self.requests[client_ip].append((current_time, 1))
 
-        # Process request normally
-        response = await call_next(request)
-
-        # Add rate limit headers for client information
-        response.headers["X-RateLimit-Limit"] = str(self.max_requests)
-        response.headers["X-RateLimit-Remaining"] = str(
-            self.max_requests - current_requests - 1
-        )
-        response.headers["X-RateLimit-Reset"] = str(
-            int(current_time + self.window_seconds)
-        )
-
-        return response
+        # Acquire semaphore for concurrent request limiting
+        async with self.semaphore:
+            self.concurrent_requests += 1
+            try:
+                # Process request normally
+                response = await call_next(request)
+                
+                # Add rate limit headers for client information
+                response.headers["X-RateLimit-Limit"] = str(self.max_requests)
+                response.headers["X-RateLimit-Remaining"] = str(
+                    self.max_requests - current_requests - 1
+                )
+                response.headers["X-RateLimit-Reset"] = str(
+                    int(current_time + self.window_seconds)
+                )
+                response.headers["X-Concurrent-Requests"] = str(self.concurrent_requests)
+                response.headers["X-Max-Concurrent-Requests"] = str(self.max_concurrent)
+                
+                return response
+            finally:
+                self.concurrent_requests -= 1
 
 
 class ErrorHandlingMiddleware(BaseHTTPMiddleware):
@@ -200,7 +221,7 @@ def setup_middleware(
     logger.info("✅ Cache control middleware enabled")
 
     if enable_rate_limiting:
-        app.add_middleware(RateLimitingMiddleware, max_requests=100, window_seconds=60)
+        app.add_middleware(RateLimitingMiddleware, max_requests=100, window_seconds=60, max_concurrent=10)
         logger.info("✅ Rate limiting middleware enabled")
 
     app.add_middleware(ErrorHandlingMiddleware)

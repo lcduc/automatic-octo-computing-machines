@@ -17,8 +17,10 @@ load_dotenv()
 
 # Setup Windows-specific asyncio fixes before any other imports
 from utils.asyncio_utils import setup_windows_asyncio, setup_asyncio_logging
+from utils.uvicorn_config import configure_uvicorn_for_windows, get_uvicorn_config
 setup_windows_asyncio()
 setup_asyncio_logging()
+configure_uvicorn_for_windows()
 
 # Local imports - Now import config classes after .env is loaded
 from api.routes import router
@@ -166,8 +168,18 @@ def main():
         # Determine if we should enable auto-reload (development mode)
         enable_reload = ServerConfig.DEBUG() or ServerConfig.RELOAD()
         
-        # Start the server with uvicorn using ServerConfig values
-        uvicorn.run("main:app", host=host, port=port, reload=enable_reload, workers=workers)
+        # Get uvicorn configuration optimized for Windows
+        uvicorn_config = get_uvicorn_config()
+        
+        # Start the server with uvicorn using ServerConfig values and Windows optimizations
+        uvicorn.run(
+            "main:app", 
+            host=host, 
+            port=port, 
+            reload=enable_reload, 
+            workers=workers,
+            **uvicorn_config
+        )
 
     except KeyboardInterrupt:
         print("\n🛑 Server stopped by user")
