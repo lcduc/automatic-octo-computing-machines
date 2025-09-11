@@ -21,7 +21,7 @@ from config.file.file_config import FileConfig
 from config.server.logging_config import LoggingConfig
 from api.dependencies import get_vector_store
 from core.storage.vector_store import VectorStore
-from core.monitoring.file_watcher import auto_reload_manager
+# File watching functionality removed
 from models.responses import VectorRebuildResponse, StatusEnum
 from config.rag.rag_config import RAGConfig
 
@@ -36,15 +36,7 @@ class CleanupResponse(BaseModel):
     details: Dict[str, Any] = Field(default_factory=dict, description="Additional cleanup details")
 
 
-class AutoReloadControlRequest(BaseModel):
-    action: str = Field(..., description="Action to perform: enable, disable, refresh")
-    debounce_delay: float = Field(None, description="Set debounce delay in seconds (optional)")
-
-
-class AutoReloadControlResponse(BaseModel):
-    success: bool = Field(...)
-    message: str = Field(...)
-    details: Dict[str, Any] = Field(default_factory=dict)
+# Auto-reload functionality removed
 
 
 @router.post("/", response_model=CleanupResponse)
@@ -88,52 +80,7 @@ async def cleanup_all_data():
         )
 
 
-@router.post("/auto-reload", response_model=AutoReloadControlResponse)
-async def control_auto_reload(request: AutoReloadControlRequest):
-    """
-    Control the auto-reload system.
-    
-    Actions:
-    - enable: Enable automatic reloading
-    - disable: Disable automatic reloading  
-    - refresh: Manually refresh caches
-    """
-    try:
-        action = request.action.lower()
-        
-        if action == "enable":
-            auto_reload_manager.enable_auto_reload()
-            message = "Auto-reload enabled"
-        elif action == "disable":
-            auto_reload_manager.disable_auto_reload()
-            message = "Auto-reload disabled"
-        elif action == "refresh":
-            auto_reload_manager.manual_refresh_cache()
-            message = "Manual cache refresh triggered"
-        else:
-            return AutoReloadControlResponse(
-                success=False,
-                message=f"Invalid action: {action}. Valid actions: enable, disable, refresh",
-                details={}
-            )
-        
-        # Set debounce delay if provided
-        if request.debounce_delay is not None:
-            auto_reload_manager.set_debounce_delay(request.debounce_delay)
-            message += f" (debounce delay set to {request.debounce_delay}s)"
-        
-        return AutoReloadControlResponse(
-            success=True,
-            message=message,
-            details=auto_reload_manager.get_status()
-        )
-        
-    except Exception as e:
-        return AutoReloadControlResponse(
-            success=False,
-            message=f"Error controlling auto-reload: {str(e)}",
-            details={}
-        )
+# Auto-reload endpoint removed
 
 
 @router.post("/vectors/rebuild", response_model=VectorRebuildResponse)

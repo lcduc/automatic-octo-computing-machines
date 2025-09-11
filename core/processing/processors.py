@@ -206,14 +206,34 @@ class URLProcessor(BaseProcessor):
         self.doc_processor = doc_processor
 
         # HTTP session and configuration
-        self.session = requests.Session()
-        self.session.headers.update(
-            {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
-            }
-        )
+        self.session = None
         self.timeout = URLConfig.CRAWL_TIMEOUT()
         self.max_content_length = URLConfig.CRAWL_MAX_CONTENT_LENGTH()
+    
+    def _get_session(self):
+        """Get or create a requests session with proper configuration."""
+        if self.session is None:
+            self.session = requests.Session()
+            self.session.headers.update(
+                {
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+                }
+            )
+        return self.session
+    
+    def close(self):
+        """Close the HTTP session to prevent socket leaks."""
+        if self.session is not None:
+            try:
+                self.session.close()
+            except Exception as e:
+                logger.warning(f"Warning: Error closing HTTP session: {e}")
+            finally:
+                self.session = None
+    
+    def __del__(self):
+        """Destructor to ensure session is closed."""
+        self.close()
 
     async def process(self, url: str, extract_links: bool = False) -> List[str]:
         """Process URL content and return text chunks."""
@@ -282,7 +302,8 @@ class URLProcessor(BaseProcessor):
     async def _extract_single_page(self, url: str) -> Dict[str, Any]:
         """Extract content from a single page or file."""
         try:
-            response = self.session.get(url, timeout=self.timeout)
+            session = self._get_session()
+            response = session.get(url, timeout=self.timeout)
             response.raise_for_status()
 
             if len(response.content) > self.max_content_length:

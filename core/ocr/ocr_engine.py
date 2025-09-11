@@ -38,7 +38,7 @@ try:
         Predictor = None
         Cfg = None
 
-except ImportError as e:
+except Exception as e:
     torch = None
     Image = None
     convert_from_bytes = None
@@ -527,7 +527,12 @@ class OCREngine:
         Async version of extract_text_with_ocr that runs OCR processing in a thread pool.
         This prevents blocking the event loop during CPU/GPU-intensive OCR operations.
         """
-        loop = asyncio.get_event_loop()
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            # No event loop running, run synchronously
+            return self.extract_text_with_ocr(pdf_content, preprocess_config)
+        
         with ThreadPoolExecutor() as pool:
             return await loop.run_in_executor(
                 pool, self.extract_text_with_ocr, pdf_content, preprocess_config

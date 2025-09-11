@@ -324,3 +324,12 @@ class DocumentService:
     def is_supported_file(self, filename: str) -> bool:
         """Check if file type is supported."""
         return self.processor.is_supported_file(filename)
+    
+    def close(self):
+        """Close all resources to prevent socket leaks."""
+        if hasattr(self, 'url_processor') and self.url_processor:
+            self.url_processor.close()
+    
+    def __del__(self):
+        """Destructor to ensure resources are cleaned up."""
+        self.close()
