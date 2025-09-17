@@ -6,7 +6,7 @@ A focused script to test the complete RAG pipeline and show the model's response
 Shows the query, retrieved context, and the final model response.
 
 Usage:
-    python test_model_response.py "your query here"
+    python -m test.test_model_response "your_query_here"
 """
 
 import os

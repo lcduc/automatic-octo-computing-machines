@@ -6,7 +6,7 @@ A focused script to test and visualize chunk ranking and scoring in the RAG syst
 Shows detailed scoring breakdown for semantic and keyword search components.
 
 Usage:
-    python test_chunk_ranking.py "your query here"
+    python -m test.test_chunk_ranking "your_query_here"
 """
 
 import os

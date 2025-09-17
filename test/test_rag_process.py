@@ -10,10 +10,7 @@ This script demonstrates the complete RAG (Retrieval-Augmented Generation) proce
 5. Detailed scoring and ranking information
 
 Usage:
-    python test_rag_process.py "your query here"
-    
-Or run interactively:
-    python test_rag_process.py
+    python -m test.test_rag_process "your_query_here"
 """
 
 import os
