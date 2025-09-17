@@ -183,10 +183,10 @@ class ContextRetriever:
             return []
 
         try:
-            # Normalize query for accent-insensitive retrieval
-            normalized_query = TextUtils.strip_vietnamese_accents(query)
+            # No source filtering — search across all documents
+            # Use ORIGINAL query (with diacritics) for semantic embedding
             query_embedding = self._ensure_numpy(
-                self.embedding_service.encode([normalized_query], convert_to_numpy=True)
+                self.embedding_service.encode([query], convert_to_numpy=True)
             )
 
             if RAGConfig.USE_FAISS_INDEX() and getattr(self.vector_store, "faiss_index", None) is not None:
@@ -331,9 +331,8 @@ class ContextRetriever:
 
         try:
             # Get semantic scores
-            normalized_query = TextUtils.strip_vietnamese_accents(query)
             query_embedding = self._ensure_numpy(
-                self.embedding_service.encode([normalized_query], convert_to_numpy=True)
+                self.embedding_service.encode([query], convert_to_numpy=True)
             )
             semantic_scores = self.similarity_calculator.cosine_similarity(
                 query_embedding, embeddings
