@@ -13,6 +13,7 @@ import os
 import sys
 import time
 import logging
+import numpy as np
 from pathlib import Path
 
 # Add project root to path
@@ -57,7 +58,10 @@ class ModelResponseTester:
             
             if documents is None or len(documents) == 0:
                 print("⚠️  No documents found in vector store!")
-                return None, None
+                print("💡 This is normal if no files have been uploaded yet.")
+                print("   The system will still work but responses may be less accurate.")
+                # Return empty arrays instead of None to allow the test to continue
+                return np.array([]), []
             
             print(f"✅ Loaded {len(documents)} documents")
             return embeddings, documents

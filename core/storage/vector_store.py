@@ -128,6 +128,12 @@ class VectorStore:
 
         if not all_documents:
             logger.warning("⚠️ No documents found to create vector store")
+            # Clear existing vector store files when rebuilding with empty data
+            self._clear_vector_store_files()
+            # Set instance variables to empty state
+            self.embeddings = None
+            self.documents = []
+            self.document_metadata = []
             return None, np.array([]), []
 
         # Create embeddings for all documents
@@ -148,6 +154,23 @@ class VectorStore:
             f"✅ [VectorStore] Rebuilt successfully: {len(all_documents)} documents"
         )
         return None, embeddings, all_documents
+
+    def _clear_vector_store_files(self):
+        """Clear vector store file when rebuilding with empty data."""
+        try:
+            # Clear instance variables
+            self.embeddings = None
+            self.documents = None
+            self.document_metadata = None
+            
+            # Delete existing file
+            if os.path.exists(self.vector_store_path):
+                os.remove(self.vector_store_path)
+                logger.info(f"🗑️ Deleted {self.vector_store_path}")
+            
+            logger.info("✅ Cleared vector store file")
+        except Exception as e:
+            logger.error(f"❌ Error clearing vector store file: {e}")
 
     def add_documents(
         self,

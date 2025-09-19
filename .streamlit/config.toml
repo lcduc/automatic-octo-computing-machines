@@ -2,5 +2,5 @@
 headless = true
 port     = 8503
 address  = "0.0.0.0"
-sslCertFile = "C:/OJS/SSL/fullchain.pem"
-sslKeyFile  = "C:/OJS/SSL/privkey_converted.pem"
+sslCertFile = "./SSL/fullchain.pem"
+sslKeyFile  = "./SSL/privkey_converted.pem"

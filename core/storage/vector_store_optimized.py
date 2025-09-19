@@ -190,6 +190,13 @@ class OptimizedVectorStore(VectorStore):
         
         if not all_documents:
             logger.warning("⚠️ No documents found to create vector store")
+            # Clear existing vector store files when rebuilding with empty data
+            self._clear_vector_store_files()
+            # Set instance variables to empty state
+            self.embeddings = None
+            self.documents = []
+            self.document_metadata = []
+            self.faiss_index = None
             return None, np.array([]), []
         
         # Create embeddings with batch processing
@@ -209,6 +216,25 @@ class OptimizedVectorStore(VectorStore):
         logger.info(f"✅ [OptimizedVectorStore] Rebuilt successfully: {len(all_documents)} documents")
         return None, embeddings, all_documents
 
+    def _clear_vector_store_files(self):
+        """Clear all vector store files when rebuilding with empty data."""
+        try:
+            # Clear instance variables
+            self.embeddings = None
+            self.documents = None
+            self.document_metadata = None
+            self.faiss_index = None
+            
+            # Delete existing files
+            files_to_delete = [self.h5_path, self.metadata_path, self.faiss_index_path]
+            for file_path in files_to_delete:
+                if os.path.exists(file_path):
+                    os.remove(file_path)
+                    logger.info(f"🗑️ Deleted {file_path}")
+            
+            logger.info("✅ Cleared all vector store files")
+        except Exception as e:
+            logger.error(f"❌ Error clearing vector store files: {e}")
 
     def get_metadata(self) -> Optional[List[Dict[str, Any]]]:
         """
