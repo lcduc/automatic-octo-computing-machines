@@ -108,8 +108,7 @@ class ChatService:
                 history = custom_history[-LLMConfig.LLM_HISTORY_LENGTH() :]
             else:
                 history = self.request_history[-LLMConfig.LLM_HISTORY_LENGTH() :]
-            # Add the new user message
-            history = history + [{"role": "user", "content": query}]
+            # Note: Don't add current query to history here - it will be added in get_response_with_history
 
             # Generate response using chatbot service with history
             try:
@@ -389,7 +388,7 @@ class ChatService:
                 history = custom_history[-LLMConfig.LLM_HISTORY_LENGTH() :]
             else:
                 history = self.request_history[-LLMConfig.LLM_HISTORY_LENGTH() :]
-            history = history + [{"role": "user", "content": query}]
+            # Note: Don't add current query to history here - it will be added in stream_response_with_history
             # Stream response from chatbot_service
             async for token in self.chatbot_service.stream_response_with_history(
                 query,

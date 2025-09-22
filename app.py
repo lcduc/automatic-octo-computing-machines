@@ -16,10 +16,13 @@ def is_backend_healthy(base_url: str) -> bool:
         return False
 
 
-def stream_chat(base_url: str, query: str):
+def stream_chat(base_url: str, query: str, history: list = None):
     url = f"{base_url}/chat/"
     headers = {"accept": "text/event-stream", "content-type": "application/json"}
-    with requests.post(url, json={"query": query}, headers=headers, stream=True, timeout=300) as r:
+    payload = {"query": query}
+    if history:
+        payload["history"] = history
+    with requests.post(url, json=payload, headers=headers, stream=True, timeout=300) as r:
         r.raise_for_status()
         for line in r.iter_lines(decode_unicode=True, chunk_size=1):
             if not line:
@@ -63,18 +66,42 @@ def start_backend_subprocess(host: str, port: int) -> bool:
 
 
 def format_markdown_response(text: str) -> str:
-    """Post-process LLM output to improve Markdown rendering.
-    - Ensure blank lines before/after headings
-    - Put list items on their own lines
+    """Preprocess raw markdown from LLM for optimal Streamlit display.
+    - Convert raw markdown escape sequences to actual newlines
+    - Ensure proper spacing and structure for Streamlit rendering
+    - Handle **Bước 1:** patterns with proper spacing
+    - Make URLs clickable if not already formatted
+    - Preserve markdown structure while improving readability
     """
     if not text:
         return text
-    # Ensure a blank line before headings like '### Title'
-    text = re.sub(r"\s*###", "\n\n###", text)
-    # Ensure a blank line after headings
-    text = re.sub(r"(?m)^(#{1,6} .+)$\n(?!\n)", r"\1\n\n", text)
-    # Ensure dashes that start list items are on their own line
-    text = re.sub(r"(?<!\n)-\s", "\n- ", text)
+    
+    # Convert raw markdown escape sequences to actual newlines
+    text = text.replace('\\n\\n', '\n\n')  # Double newlines for paragraph breaks
+    text = text.replace('\\n', '\n')       # Single newlines
+    
+    # Ensure proper spacing around **Bước X:** patterns for better readability
+    text = re.sub(r'(\*\*Bước \d+:\*\*)', r'\n\n\1\n', text)
+    
+    # Ensure proper spacing around other bold section headers
+    text = re.sub(r'(\*\*[^:]+:\*\*)', r'\n\n\1\n', text)
+    
+    # Ensure proper spacing around ## headers
+    text = re.sub(r'(## [^\n]+)', r'\n\n\1\n', text)
+    
+    # Ensure list items have proper spacing
+    text = re.sub(r'(?<!\n)(- [^\n]+)', r'\n\1', text)
+    text = re.sub(r'(?<!\n)(\d+\. [^\n]+)', r'\n\1', text)
+    
+    # Make URLs clickable (basic pattern) - only if not already formatted
+    text = re.sub(r"(?<!\[)(https?://[^\s\)]+)(?!\])", r"[\1](\1)", text)
+    
+    # Fix double URL formatting issue
+    text = re.sub(r"\[([^\]]+)\]\(\[([^\]]+)\]\([^)]+\)\)", r"[\1](\2)", text)
+    
+    # Clean up multiple consecutive newlines (max 2)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    
     # Trim extraneous surrounding whitespace
     return text.strip()
 
@@ -276,8 +303,8 @@ class ChatApp:
                 accumulated = ""
                 last_flush = time.time()
                 try:
-                    # Use api_base_url from sidebar
-                    for token in stream_chat(api_base_url, user_input):
+                    # Use api_base_url from sidebar and pass conversation history
+                    for token in stream_chat(api_base_url, user_input, st.session_state.chat_history):
                         accumulated += token
                         now = time.time()
                         # Flush on punctuation/newline or every ~50ms to reduce flicker & CPU
