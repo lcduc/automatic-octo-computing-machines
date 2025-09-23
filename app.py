@@ -423,8 +423,9 @@ class ChatApp:
                 accumulated = ""
                 last_flush = time.time()
                 try:
-                    # Use api_base_url from sidebar and pass conversation history
-                    for token in stream_chat(api_base_url, user_input, st.session_state.chat_history):
+                    # Use api_base_url from sidebar and pass only the most recent 10 messages
+                    recent_history = st.session_state.chat_history[-10:] if st.session_state.chat_history else []
+                    for token in stream_chat(api_base_url, user_input, recent_history):
                         accumulated += token
                         now = time.time()
                         # Flush on punctuation/newline or every ~50ms to reduce flicker & CPU
