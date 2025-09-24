@@ -11,7 +11,7 @@ Convert a Q&A source (Excel .xlsx or chat-style JSONL) into plain text chunk fil
     A: {answer}
 
 Usage:
-  python qa_to_text_chunks.py --input VNU_Q&A.xlsx
+  python qa_to_text_chunks.py --input "VNU_Q&A.xlsx"
   python qa_to_text_chunks.py --input train_chat.jsonl --out-root data/chunks
 
 Options:

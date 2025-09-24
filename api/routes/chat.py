@@ -31,7 +31,7 @@ async def chat(
     """
 
     async def token_generator():
-        async for token in chat_service.stream_chat_with_memory(request.query):
+        async for token in chat_service.stream_chat_with_memory(request.query, custom_history=request.history):
             yield token
 
     return StreamingResponse(token_generator(), media_type="text/event-stream")
