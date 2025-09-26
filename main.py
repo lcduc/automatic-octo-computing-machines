@@ -152,6 +152,9 @@ def main():
     parser.add_argument("--port", type=int, help="Port to run the server on")
     parser.add_argument("--host", type=str, help="Host to bind the server to")
     parser.add_argument("--workers", type=int, help="Number of Uvicorn workers")
+    parser.add_argument("--build-query-adapter", action="store_true", help="Compute and save a query adapter from eval files")
+    parser.add_argument("--evals-file", type=str, help="Path to a JSONL or CSV with 'query' and 'positive' columns")
+    parser.add_argument("--lambda-reg", type=float, default=1e-3, help="Regularization lambda for adapter")
     args = parser.parse_args()
 
     # Validate configuration on startup
@@ -159,6 +162,32 @@ def main():
 
     # Determine workers
     workers = args.workers if args.workers else DEFAULT_WORKERS
+
+    # Optional: build query adapter and exit
+    if args.build_query_adapter:
+        try:
+            from core.rag.query_adapter import build_from_evals, save_query_adapter
+            from core.rag.embeddings import get_embedding_service
+            from config.rag.rag_config import RAGConfig
+            import pandas as pd
+
+            if not args.evals_file:
+                raise ValueError("--evals-file is required when using --build-query-adapter")
+            df = pd.read_json(args.evals_file, lines=True) if args.evals_file.lower().endswith("jsonl") else pd.read_csv(args.evals_file)
+            if not {"query", "positive"}.issubset(df.columns):
+                raise ValueError("evals file must contain 'query' and 'positive' columns")
+            queries = df["query"].astype(str).tolist()
+            positives = df["positive"].astype(str).tolist()
+
+            embedder = get_embedding_service().get_embedder()
+            adapter = build_from_evals(queries, positives, embedder, args.lambda_reg)
+            path = RAGConfig.QUERY_ADAPTER_PATH()
+            save_query_adapter(adapter, path)
+            print(f"✅ Query adapter saved to {path} (dim={adapter.shape[0]})")
+            return
+        except Exception as e:
+            print(f"❌ Failed to build query adapter: {e}")
+            return
 
     try:
         # Use command line args if provided, otherwise use config

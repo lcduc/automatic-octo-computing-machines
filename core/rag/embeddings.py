@@ -90,6 +90,62 @@ class EmbeddingService:
         embedder = self.get_embedder()
         return embedder.encode(texts, convert_to_numpy=convert_to_numpy)
 
+    # Query adapter (closed-form) support
+    _query_adapter_matrix = None
+    _adapter_loaded_path = None
+    _adapter_loaded_mtime = None
+
+    def load_query_adapter(self, path: str) -> bool:
+        """
+        Load a query adapter matrix from disk (NumPy .npy), returning True if loaded.
+        """
+        try:
+            import numpy as np  # local import to avoid import-time overhead
+            from pathlib import Path
+            import os
+            p = Path(path)
+            if not p.exists():
+                return False
+            # Skip reload if unchanged
+            mtime = os.path.getmtime(str(p))
+            if (
+                EmbeddingService._adapter_loaded_path == str(p)
+                and EmbeddingService._adapter_loaded_mtime == mtime
+                and EmbeddingService._query_adapter_matrix is not None
+            ):
+                return True
+            EmbeddingService._query_adapter_matrix = np.load(str(p))
+            EmbeddingService._adapter_loaded_path = str(p)
+            EmbeddingService._adapter_loaded_mtime = mtime
+            print(f"✅ Loaded query adapter from {path}")
+            return True
+        except Exception as e:
+            print(f"⚠️ Failed to load query adapter: {e}")
+            return False
+
+    def apply_query_adapter(self, query_embedding):
+        """
+        Apply the query adapter matrix if available. Returns transformed embedding.
+        Accepts list/np.ndarray; returns np.ndarray.
+        """
+        try:
+            import numpy as np
+            if EmbeddingService._query_adapter_matrix is None:
+                return query_embedding if isinstance(query_embedding, np.ndarray) else np.array(query_embedding)
+            emb = query_embedding if isinstance(query_embedding, np.ndarray) else np.array(query_embedding)
+            # Handle 1D vs 2D shapes; we expect shape (1, d)
+            if emb.ndim == 1:
+                emb = emb.reshape(1, -1)
+            adapter = EmbeddingService._query_adapter_matrix
+            if adapter.ndim == 1:
+                # Interpret as diagonal scaling vector
+                adapter = np.diag(adapter)
+            transformed = emb @ adapter
+            return transformed
+        except Exception:
+            # Fail open: return original embedding
+            return query_embedding
+
     async def async_encode(self, texts, convert_to_numpy=True):
         loop = asyncio.get_event_loop()
         with ThreadPoolExecutor() as pool:

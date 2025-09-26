@@ -10,6 +10,7 @@ from rank_bm25 import BM25Okapi
 from .embeddings import EmbeddingService, get_embedding_service
 from core.storage.vector_store_optimized import OptimizedVectorStore
 from .similarity import SimilarityCalculator
+from .reranker import Reranker
 from config.rag.rag_config import RAGConfig
 import re
 from utils.text_utils import TextUtils
@@ -35,6 +36,19 @@ class ContextRetriever:
             self.similarity_calculator = SimilarityCalculator()
         else:
             self.similarity_calculator = similarity_calculator
+        self.reranker = Reranker()
+
+        # Best-effort: load query adapter once at initialization
+        try:
+            from config.rag.rag_config import RAGConfig
+            self.embedding_service.load_query_adapter(RAGConfig.QUERY_ADAPTER_PATH())
+        except Exception:
+            pass
+
+        # BM25 cache per loaded document corpus
+        self._bm25_cache_key = None
+        self._bm25_instance = None
+        self._tokenized_docs = None
 
     def _ensure_numpy(self, embedding) -> np.ndarray:
         """Convert various embedding formats to numpy arrays for consistent processing."""
@@ -188,6 +202,10 @@ class ContextRetriever:
             query_embedding = self._ensure_numpy(
                 self.embedding_service.encode([query], convert_to_numpy=True)
             )
+            try:
+                query_embedding = self.embedding_service.apply_query_adapter(query_embedding)
+            except Exception:
+                pass
 
             if RAGConfig.USE_FAISS_INDEX() and getattr(self.vector_store, "faiss_index", None) is not None:
                 logger.info("Using FAISS for semantic search")
@@ -203,10 +221,16 @@ class ContextRetriever:
                     query_embedding, embeddings
                 )
 
-            # Keyword search using BM25
-            tokenized_docs = [self._tokenize(doc) for doc in documents]
-            bm25 = BM25Okapi(tokenized_docs)
-            keyword_scores = bm25.get_scores(self._tokenize(query))
+            # Keyword search using BM25 with simple in-memory cache
+            try:
+                cache_key = (len(documents), hash(documents[0]) if documents else 0)
+            except Exception:
+                cache_key = len(documents)
+            if self._bm25_cache_key != cache_key:
+                self._tokenized_docs = [self._tokenize(doc) for doc in documents]
+                self._bm25_instance = BM25Okapi(self._tokenized_docs)
+                self._bm25_cache_key = cache_key
+            keyword_scores = self._bm25_instance.get_scores(self._tokenize(query)) if self._bm25_instance else np.zeros(len(documents))
 
             # Normalize scores to [0, 1] before combining
             norm_semantic_scores = self.similarity_calculator.normalize_similarities(
@@ -242,9 +266,17 @@ class ContextRetriever:
                     }
                 )
 
-            # Sort by combined score for ranking
+            # Sort by combined score for initial ranking
             results.sort(key=lambda x: x["combined_score"], reverse=True)
-            top_k_results = results[:k]
+            candidate_multiplier = 4 if RAGConfig.RERANKER_ENABLED() else 1
+            prelim_top_k = results[: max(k * candidate_multiplier, k)]
+
+            top_k_results = prelim_top_k[:k]
+            if RAGConfig.RERANKER_ENABLED():
+                try:
+                    top_k_results = self.reranker.rerank(query, prelim_top_k, k)
+                except Exception as e:
+                    logger.warning(f"⚠️ Reranking failed, using combined scores: {e}")
 
             # Apply context expansion to include adjacent chunks
             top_indices = [result["index"] for result in top_k_results]

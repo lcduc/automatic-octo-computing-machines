@@ -61,3 +61,16 @@ class RAGConfig:
     @staticmethod
     def MAX_CONTEXT_CHUNKS():
         return int(os.getenv("MAX_CONTEXT_CHUNKS", "5"))
+
+    @staticmethod
+    def RERANKER_MODEL():
+        # Stronger multilingual default for better Vietnamese support
+        return os.getenv("RERANKER_MODEL", "jinaai/jina-reranker-v2-base-multilingual")
+
+    @staticmethod
+    def QUERY_ADAPTER_PATH():
+        return os.getenv("RAG_QUERY_ADAPTER_PATH", os.path.join("data", "vectors", "query_adapter.npy"))
+
+    @staticmethod
+    def RERANKER_ENABLED():
+        return os.getenv("RERANKER_ENABLED", "True").lower() == "true"

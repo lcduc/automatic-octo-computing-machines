@@ -20,6 +20,7 @@ from config.rag.rag_config import RAGConfig
 from .prompts import PromptManager, SystemPrompts
 from .confidence import ConfidenceScorer
 from models.responses import ChatResponse, ErrorResponse, BaseResponse, StatusEnum
+from core.processing.markitdown_processor import MarkItDownProcessor
 
 logger = logging.getLogger(__name__)
 
@@ -127,7 +128,7 @@ class ChatbotService:
                         semantic_weight=RAGConfig.SEMANTIC_WEIGHT()
                     )
                     
-                    # Use all search results (including expanded adjacent chunks)
+                    # Assemble context from top-ranked chunks for precision
                     if search_results:
                         context_chunks = []
                         for result in search_results:
@@ -192,7 +193,7 @@ class ChatbotService:
                     },
                     search_metadata={
                         "results_count": len(search_results),
-                        "top_scores": [r.get("combined_score", 0) for r in search_results[:3]],
+                        "top_scores": [r.get("combined_score", 0) for r in search_results[:3] if r.get("combined_score", 0) > 0],
                         "cached_response": True
                     }
                 )
@@ -250,7 +251,7 @@ class ChatbotService:
                 },
                 search_metadata={
                     "results_count": len(search_results),
-                    "top_scores": [r.get("combined_score", 0) for r in search_results[:3]],
+                    "top_scores": [r.get("combined_score", 0) for r in search_results[:3] if r.get("combined_score", 0) > 0],
                     "cached_response": False
                 }
             )
@@ -532,7 +533,7 @@ class ChatbotService:
                         semantic_weight=RAGConfig.SEMANTIC_WEIGHT()
                     )
                     
-                    # Use all search results (including expanded adjacent chunks)
+                    # Assemble context from top-ranked chunks for precision
                     context_chunks = []
                     for result in search_results:
                         context_chunks.append(f"[Chunk {result['index']}]\n{result['document']}\n")
@@ -644,7 +645,7 @@ class ChatbotService:
                 },
                 "search_results": {
                     "count": len(search_results),
-                    "top_scores": [r.get("combined_score", 0) for r in search_results[:3]]
+                    "top_scores": [r.get("combined_score", 0) for r in search_results[:3] if r.get("combined_score", 0) > 0]
                 },
                 "success": True,
                 "cached": False
@@ -698,7 +699,7 @@ class ChatbotService:
                     semantic_weight=RAGConfig.SEMANTIC_WEIGHT()
                 )
                 
-                # Build context from hybrid search results
+                # Build context from top-ranked chunks
                 if search_results:
                     context_chunks = []
                     for result in search_results:

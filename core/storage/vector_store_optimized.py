@@ -64,6 +64,31 @@ class OptimizedVectorStore(VectorStore):
                     self.document_metadata = json.load(f)
             else:
                 self.document_metadata = [{'source': 'legacy'} for _ in self.documents]
+
+            # Ensure metadata is aligned, complete, and contains source_id
+            try:
+                needs_rebuild = False
+                if not isinstance(self.document_metadata, list) or len(self.document_metadata) != len(self.documents):
+                    needs_rebuild = True
+                else:
+                    # Check keys; fill missing source_id from existing fields if possible
+                    for m in self.document_metadata:
+                        if 'source_id' not in m:
+                            needs_rebuild = True
+                            break
+                if needs_rebuild:
+                    from .metadata_store import MetadataStore
+                    logger.warning("⚠️ Metadata missing or misaligned. Rebuilding metadata from chunks directory...")
+                    rebuilt = MetadataStore().create_metadata_from_chunks(self.documents)
+                    # If rebuild fails to match length, fall back to minimal source ids
+                    if len(rebuilt) != len(self.documents):
+                        rebuilt = [{'source_id': 'unknown', 'source_type': 'unknown'} for _ in self.documents]
+                    self.document_metadata = rebuilt
+                    # Persist the fixed metadata
+                    with open(self.metadata_path, 'w', encoding='utf-8') as f:
+                        json.dump(self.document_metadata, f, ensure_ascii=False, indent=2)
+            except Exception as e:
+                logger.warning(f"⚠️ Failed to validate/rebuild metadata: {e}")
             
             # Load FAISS index for ultra-fast similarity search
             if os.path.exists(self.faiss_index_path):

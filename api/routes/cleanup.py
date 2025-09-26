@@ -8,7 +8,7 @@ import logging
 from typing import Dict, Any
 
 # Third-party imports
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Body
 from pydantic import BaseModel, Field
 
 # Local imports
@@ -136,3 +136,38 @@ async def rebuild_vectors(
             status_code=500,
             detail=f"Failed to rebuild vector store: {str(e)}"
         )
+
+
+@router.post("/query-adapter/update")
+async def update_query_adapter(payload: Dict[str, Any] = Body(default={})):  # simple admin endpoint
+    """
+    Compute a query adapter from provided eval pairs and save to disk.
+    Request body:
+    {
+      "queries": ["..."],
+      "positives": ["..."],
+      "lambda": 0.001
+    }
+    """
+    try:
+        from core.rag.query_adapter import build_from_evals, save_query_adapter
+        from core.rag.embeddings import get_embedding_service
+        from config.rag.rag_config import RAGConfig
+
+        queries = payload.get("queries", [])
+        positives = payload.get("positives", [])
+        lambda_reg = float(payload.get("lambda", 1e-3))
+
+        if not queries or not positives or len(queries) != len(positives):
+            raise HTTPException(status_code=400, detail="queries and positives must be non-empty and same length")
+
+        embedder = get_embedding_service().get_embedder()
+        adapter = build_from_evals(queries, positives, embedder, lambda_reg)
+        path = RAGConfig.QUERY_ADAPTER_PATH()
+        save_query_adapter(adapter, path)
+        return {"success": True, "path": path, "dim": int(adapter.shape[0])}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Error updating query adapter: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

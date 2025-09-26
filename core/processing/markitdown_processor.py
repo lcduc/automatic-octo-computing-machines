@@ -21,6 +21,7 @@ from models.metadata import MetadataBuilder, ProcessingMethod, SourceType, Proce
 # Local imports
 from config.file.file_config import FileConfig
 from config.ocr.ocr_config import OCRConfig
+from config.rag.rag_config import RAGConfig
 
 logger = logging.getLogger(__name__)
 
@@ -364,6 +365,34 @@ class MarkItDownProcessor:
             chunk_size=chunk_size,
             overlap=overlap
         )
+
+    @staticmethod
+    def group_chunks_into_spans(chunks: List[str], expansion_radius: int = None, max_spans: int = None) -> List[str]:
+        """
+        Group chunks into larger spans by extending each selected chunk with neighbors.
+        This mirrors the neighbor extension used during retrieval to reduce fragmentation.
+        """
+        if not chunks:
+            return []
+        if expansion_radius is None:
+            expansion_radius = RAGConfig.CONTEXT_EXPANSION_RADIUS()
+        if max_spans is None:
+            max_spans = RAGConfig.MAX_CONTEXT_CHUNKS()
+
+        spans: List[str] = []
+        used = set()
+        for i in range(len(chunks)):
+            if i in used:
+                continue
+            start = max(0, i - expansion_radius)
+            end = min(len(chunks), i + expansion_radius + 1)
+            for j in range(start, end):
+                used.add(j)
+            span_text = "\n".join(chunks[start:end])
+            spans.append(span_text)
+            if len(spans) >= max_spans:
+                break
+        return spans
     
 
 
