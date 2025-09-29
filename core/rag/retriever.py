@@ -73,59 +73,79 @@ class ContextRetriever:
         self, top_indices: List[int], total_documents: int, expansion_radius: int = 1
     ) -> List[int]:
         """
-        Expand context by including adjacent chunks to the top results.
-        Only includes neighboring chunks if they're from the same document.
-        This helps capture related information that might be split across chunks.
+        Expand context by including adjacent chunks around the top results.
+        Prioritize expanding the highest-scoring chunk first to ensure its
+        neighbors are included within the maximum context cap, then expand
+        remaining seeds in descending score order.
+        Only include neighbors from the same source document.
         """
         if not RAGConfig.CONTEXT_EXPANSION_ENABLED():
             return top_indices
 
-        expanded_indices = set(top_indices)
-
         # Get document metadata to check if chunks are from the same source
         document_metadata = self.vector_store.get_metadata()
         if not document_metadata or len(document_metadata) != total_documents:
-            logger.warning("⚠️ Document metadata not available, skipping document-aware expansion")
+            # Fallback: expand purely by index adjacency if metadata is missing
+            logger.warning("⚠️ Document metadata not available, using index-adjacent expansion")
+            max_chunks = RAGConfig.MAX_CONTEXT_CHUNKS()
+            if max_chunks <= 0:
+                return top_indices
+
+            ordered: List[int] = []
+            seen = set()
+
+            def add_idx(i: int):
+                if 0 <= i < total_documents and i not in seen and len(ordered) < max_chunks:
+                    ordered.append(i)
+                    seen.add(i)
+
+            for seed in top_indices:
+                if len(ordered) >= max_chunks:
+                    break
+                # Add window [seed - r, ..., seed + r] in ascending order
+                start = max(0, seed - expansion_radius)
+                end = min(total_documents - 1, seed + expansion_radius)
+                for i in range(start, end + 1):
+                    add_idx(i)
+                    if len(ordered) >= max_chunks:
+                        break
+
+            logger.info(
+                f"🔍 Context expansion (adjacency fallback): {len(top_indices)} -> {len(ordered)} chunks"
+            )
+            return ordered
+
+        max_chunks = RAGConfig.MAX_CONTEXT_CHUNKS()
+        if max_chunks <= 0:
             return top_indices
 
-        for idx in top_indices:
-            current_source = document_metadata[idx].get("source_id", "unknown")
-            
-            # Add chunks before the current chunk (only if same document)
-            for i in range(1, expansion_radius + 1):
-                prev_idx = idx - i
-                if prev_idx >= 0:
-                    prev_source = document_metadata[prev_idx].get("source_id", "unknown")
-                    if prev_source == current_source:
-                        expanded_indices.add(prev_idx)
-                        logger.debug(f"✅ Added previous chunk {prev_idx} (same document: {current_source})")
-                    else:
-                        logger.debug(f"❌ Skipped previous chunk {prev_idx} (different document: {prev_source} vs {current_source})")
+        # Maintain insertion order with a list, but guard uniqueness with a set
+        ordered: List[int] = []
+        seen = set()
 
-            # Add chunks after the current chunk (only if same document)
-            for i in range(1, expansion_radius + 1):
-                next_idx = idx + i
-                if next_idx < total_documents:
-                    next_source = document_metadata[next_idx].get("source_id", "unknown")
-                    if next_source == current_source:
-                        expanded_indices.add(next_idx)
-                        logger.debug(f"✅ Added next chunk {next_idx} (same document: {current_source})")
-                    else:
-                        logger.debug(f"❌ Skipped next chunk {next_idx} (different document: {next_source} vs {current_source})")
+        def add_idx(i: int):
+            if 0 <= i < total_documents and i not in seen and len(ordered) < max_chunks:
+                ordered.append(i)
+                seen.add(i)
 
-        # Convert back to sorted list
-        expanded_list = sorted(list(expanded_indices))
-
-        # Ensure we don't exceed maximum chunks
-        max_chunks = RAGConfig.MAX_CONTEXT_CHUNKS()
-        if len(expanded_list) > max_chunks:
-            # Keep the most relevant chunks (original top results) and fill with adjacent
-            expanded_list = expanded_list[:max_chunks]
+        # For each seed, add seed window [seed - r, ..., seed + r] in ascending order
+        for seed_pos, seed in enumerate(top_indices):
+            if len(ordered) >= max_chunks:
+                break
+            seed_source = document_metadata[seed].get("source_id", "unknown")
+            start = max(0, seed - expansion_radius)
+            end = min(total_documents - 1, seed + expansion_radius)
+            for i in range(start, end + 1):
+                src = document_metadata[i].get("source_id", "unknown")
+                if src == seed_source:
+                    add_idx(i)
+                if len(ordered) >= max_chunks:
+                    break
 
         logger.info(
-            f"🔍 Context expansion: {len(top_indices)} -> {len(expanded_list)} chunks"
+            f"🔍 Context expansion: {len(top_indices)} -> {len(ordered)} chunks"
         )
-        return expanded_list
+        return ordered
 
     def _ensure_minimum_context(
         self, results: List[Dict[str, Any]], documents: List[str]
@@ -284,51 +304,23 @@ class ContextRetriever:
                 top_indices, len(documents), RAGConfig.CONTEXT_EXPANSION_RADIUS()
             )
 
-            # Rebuild results with expanded context, including only same-document neighbors
+            # Rebuild final results directly from expanded indices order, preserving original scores when available
             expanded_results = []
-
-            # Get document metadata for same-document checking
-            document_metadata = self.vector_store.get_metadata()
-            
-            # Process each high-scoring chunk and its same-document neighbors
-            for result in top_k_results:
-                chunk_idx = result["index"]
-                current_source = document_metadata[chunk_idx].get("source_id", "unknown") if document_metadata else "unknown"
-                
-                # Add previous chunk (only if same document and in expanded set)
-                prev_idx = chunk_idx - 1
-                if (prev_idx >= 0 and prev_idx in expanded_indices and 
-                    document_metadata and 
-                    document_metadata[prev_idx].get("source_id", "unknown") == current_source):
+            index_to_result = {r["index"]: r for r in top_k_results}
+            for idx in expanded_indices:
+                base = index_to_result.get(idx)
+                if base:
+                    expanded_results.append(base)
+                else:
                     expanded_results.append(
                         {
-                            "document": documents[prev_idx],
+                            "document": documents[idx],
                             "semantic_score": 0.0,
                             "keyword_score": 0.0,
                             "combined_score": 0.0,
-                            "index": prev_idx,
+                            "index": idx,
                         }
                     )
-                    logger.debug(f"✅ Added previous chunk {prev_idx} from same document: {current_source}")
-
-                # Add the current high-scoring chunk
-                expanded_results.append(result)
-
-                # Add next chunk (only if same document and in expanded set)
-                next_idx = chunk_idx + 1
-                if (next_idx < len(documents) and next_idx in expanded_indices and 
-                    document_metadata and 
-                    document_metadata[next_idx].get("source_id", "unknown") == current_source):
-                    expanded_results.append(
-                        {
-                            "document": documents[next_idx],
-                            "semantic_score": 0.0,
-                            "keyword_score": 0.0,
-                            "combined_score": 0.0,
-                            "index": next_idx,
-                        }
-                    )
-                    logger.debug(f"✅ Added next chunk {next_idx} from same document: {current_source}")
 
             # Ensure minimum context chunks
             final_results = self._ensure_minimum_context(expanded_results, documents)

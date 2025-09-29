@@ -1,7 +1,7 @@
 """
 Main document processor for orchestrating specialized file processors.
 Provides unified interface for processing various file formats with metadata generation.
-Now uses MarkItDown for enhanced document conversion with OCR fallback for PDFs.
+Now uses Docling for enhanced document conversion with heading-aware chunking.
 """
 
 # Standard library imports
@@ -13,14 +13,14 @@ from typing import Dict, Any, List
 from setting import Config
 from config.file.file_config import FileConfig
 from config.ocr.ocr_config import OCRConfig
-from .markitdown_processor import MarkItDownProcessor, AsyncMarkItDownProcessor
+from .docling_processor import DoclingProcessor, AsyncDoclingProcessor
 from .file_manager import FileManager
 
 
 class MainDocumentProcessor:
     """
     Main document processor that orchestrates all specialized processors.
-    Now uses MarkItDown for enhanced document conversion with OCR fallback for PDFs.
+    Now uses Docling for enhanced document conversion with heading-aware chunking.
     Provides unified interface for processing various file formats with comprehensive metadata.
     """
 
@@ -35,12 +35,12 @@ class MainDocumentProcessor:
         llm_model: str = None,
     ):
         """
-        Initialize main processor with file manager and MarkItDown processor.
-        Sets up processor for different file extensions with OCR fallback capability.
+        Initialize main processor with file manager and Docling processor.
+        Sets up processor for different file extensions with heading-aware chunking.
         
         Args:
             file_manager: File manager for handling file operations
-            markitdown_processor: MarkItDown processor instance
+            markitdown_processor: (Deprecated) Retained for signature compatibility
             enable_ocr: Whether to enable OCR fallback (defaults to config setting)
             llm_client: OpenAI client for enhanced processing
             llm_model: LLM model to use for enhanced processing
@@ -51,29 +51,30 @@ class MainDocumentProcessor:
         if enable_ocr is None:
             enable_ocr = OCRConfig.OCR_ENABLED() and OCRConfig.OCR_MAX_WORKERS() > 0
         
-        # Initialize MarkItDown processor
+        # Initialize Docling processor
         if markitdown_processor is None:
-            self.markitdown_processor = MarkItDownProcessor(
+            self.docling_processor = DoclingProcessor(
                 enable_ocr=enable_ocr,
                 llm_client=llm_client,
                 llm_model=llm_model
             )
         else:
-            self.markitdown_processor = markitdown_processor
+            # For backward compatibility if a custom processor is injected
+            self.docling_processor = markitdown_processor  # type: ignore
         
         # Create async wrapper for compatibility
-        self.async_processor = AsyncMarkItDownProcessor(
+        self.async_processor = AsyncDoclingProcessor(
             enable_ocr=enable_ocr,
             llm_client=llm_client,
             llm_model=llm_model
         )
         
         logger = __import__('logging').getLogger(__name__)
-        logger.info(f"MainDocumentProcessor initialized with OCR fallback: {enable_ocr}")
+        logger.info(f"MainDocumentProcessor initialized with Docling (OCR flag: {enable_ocr})")
 
     async def process_file(self, file_content: bytes, filename: str) -> Dict[str, Any]:
         """
-        Process file content using MarkItDown with OCR fallback and extract text content with comprehensive metadata.
+        Process file content using Docling with heading-based chunking and extract text content with comprehensive metadata.
         Handles file validation, processing, and chunk storage.
 
         Args:
@@ -89,13 +90,13 @@ class MainDocumentProcessor:
         if file_ext not in self.SUPPORTED_EXTENSIONS:
             raise ValueError(f"Unsupported file type: {file_ext}")
 
-        # Check if MarkItDown supports this format
-        if not self.markitdown_processor.is_format_supported(filename):
-            raise ValueError(f"MarkItDown does not support {file_ext} files")
+        # Check if Docling supports this format
+        if not self.docling_processor.is_format_supported(filename):
+            raise ValueError(f"Docling does not support {file_ext} files")
 
         try:
-            # Process the file using MarkItDown with OCR fallback
-            result = await self.markitdown_processor.process_document(
+            # Process the file using Docling with heading-aware chunking
+            result = await self.docling_processor.process_document(
                 file_content, 
                 filename,
                 chunk_size=FileConfig.CHUNK_SIZE() if hasattr(FileConfig, 'CHUNK_SIZE') else 1000,
@@ -137,7 +138,7 @@ class MainDocumentProcessor:
     def is_format_supported(self, filename: str) -> bool:
         """Check if a file format is supported."""
         extension = Path(filename).suffix.lower()
-        return extension in self.SUPPORTED_EXTENSIONS and self.markitdown_processor.is_format_supported(filename)
+        return extension in self.SUPPORTED_EXTENSIONS and self.docling_processor.is_format_supported(filename)
 
     def is_supported_file(self, filename: str) -> bool:
         """Check if a file is supported (alias for is_format_supported for compatibility)."""
@@ -145,4 +146,4 @@ class MainDocumentProcessor:
 
     def get_ocr_status(self) -> bool:
         """Get current OCR fallback status."""
-        return self.markitdown_processor.enable_ocr
+        return getattr(self.docling_processor, 'enable_ocr', False)

@@ -45,3 +45,34 @@ class OCRConfig:
     @staticmethod
     def OCR_DENOISE():
         return os.getenv("OCR_DENOISE", "false").lower() == "true"
+
+    # Docling OCR Configuration
+    @staticmethod
+    def DOCLING_OCR_ENABLED():
+        return os.getenv("DOCLING_OCR_ENABLED", "true").lower() == "true"
+
+    @staticmethod
+    def DOCLING_OCR_LANGS():
+        """Get OCR languages as a list. Defaults to Vietnamese and English."""
+        langs_str = os.getenv("DOCLING_OCR_LANGS", "vi,en")
+        return [lang.strip() for lang in langs_str.split(",") if lang.strip()]
+
+    @staticmethod
+    def DOCLING_OCR_DPI():
+        """Get OCR DPI setting. Higher DPI for better quality but slower processing."""
+        return int(os.getenv("DOCLING_OCR_DPI", "300"))
+
+    @staticmethod
+    def DOCLING_OCR_GPU():
+        """Check if GPU should be used for OCR processing."""
+        return os.getenv("DOCLING_OCR_GPU", "true").lower() == "true"
+
+    @staticmethod
+    def DOCLING_OCR_TIMEOUT_SEC():
+        """Get OCR processing timeout in seconds. 0 means no timeout."""
+        return int(os.getenv("DOCLING_OCR_TIMEOUT_SEC", "300"))
+
+    @staticmethod
+    def DOCLING_OCR_SUBPROCESS():
+        """Check if OCR should run in subprocess for better memory management."""
+        return os.getenv("DOCLING_OCR_SUBPROCESS", "true").lower() == "true"
