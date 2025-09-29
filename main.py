@@ -17,7 +17,7 @@ load_dotenv()
 
 # Setup Windows-specific asyncio fixes before any other imports
 from utils.asyncio_utils import setup_windows_asyncio, setup_asyncio_logging
-from utils.uvicorn_config import configure_uvicorn_for_windows, get_uvicorn_config
+from utils.uvicorn_config import configure_uvicorn_for_windows, get_uvicorn_config, get_uvicorn_ssl_config
 setup_windows_asyncio()
 setup_asyncio_logging()
 configure_uvicorn_for_windows()
@@ -41,12 +41,17 @@ async def lifespan(app: FastAPI):
     display_host = (
         "localhost" if ServerConfig.HOST() == "0.0.0.0" else ServerConfig.HOST()
     )
+    
+    # Check if SSL is enabled
+    ssl_config = get_uvicorn_ssl_config()
+    protocol = "https" if ssl_config else "http"
+    
     print("\n" + "=" * 60)
     print("🚀 Chatbot")
     print("=" * 60)
-    print(f"📡 Server: http://{display_host}:{ServerConfig.PORT()}")
-    print(f"🔍 Health Check: http://{display_host}:{ServerConfig.PORT()}/")
-    print(f"📚 API Docs: http://{display_host}:{ServerConfig.PORT()}/docs")
+    print(f"📡 Server: {protocol}://{display_host}:{ServerConfig.PORT()}")
+    print(f"🔍 Health Check: {protocol}://{display_host}:{ServerConfig.PORT()}/")
+    print(f"📚 API Docs: {protocol}://{display_host}:{ServerConfig.PORT()}/docs")
     print(f"🤖 OpenAI Model: {LLMConfig.OPENAI_MODEL()}")
     print(f"🧠 Embedding Model: {RAGConfig.EMBEDDING_MODEL()}")
     print(f"📁 Data Directory: {FileConfig.CHUNKS_DIR()}")
@@ -199,6 +204,12 @@ def main():
         
         # Get uvicorn configuration optimized for Windows
         uvicorn_config = get_uvicorn_config()
+        
+        # Get SSL configuration for HTTPS support
+        ssl_config = get_uvicorn_ssl_config()
+        
+        # Merge configurations
+        uvicorn_config.update(ssl_config)
         
         # Start the server with uvicorn using ServerConfig values and Windows optimizations
         uvicorn.run(

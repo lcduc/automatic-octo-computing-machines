@@ -40,3 +40,26 @@ def get_uvicorn_config():
         logger.info("✅ Uvicorn config optimized for Windows")
     
     return config
+
+def get_uvicorn_ssl_config():
+    """
+    Get uvicorn SSL configuration for HTTPS support.
+    """
+    import os
+    
+    ssl_config = {}
+    
+    # Check if SSL certificates exist
+    ssl_cert_file = "./SSL/fullchain.pem"
+    ssl_key_file = "./SSL/privkey_converted.pem"
+    
+    if os.path.exists(ssl_cert_file) and os.path.exists(ssl_key_file):
+        ssl_config = {
+            "ssl_certfile": ssl_cert_file,
+            "ssl_keyfile": ssl_key_file,
+        }
+        logger.info("✅ SSL certificates found, HTTPS enabled")
+    else:
+        logger.warning("⚠️ SSL certificates not found, running in HTTP mode")
+    
+    return ssl_config

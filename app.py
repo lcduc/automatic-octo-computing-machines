@@ -5,12 +5,17 @@ import time
 import subprocess
 import requests
 import re
+import urllib3
 from utils.cleanup import cleanup_data_folders
+
+# Disable SSL warnings for self-signed certificates
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 
 def is_backend_healthy(base_url: str) -> bool:
     try:
-        r = requests.get(f"{base_url}/", timeout=3)
+        # Disable SSL verification for self-signed certificates
+        r = requests.get(f"{base_url}/", timeout=3, verify=False)
         return r.ok
     except Exception:
         return False
@@ -22,7 +27,7 @@ def stream_chat(base_url: str, query: str, history: list = None):
     payload = {"query": query}
     if history:
         payload["history"] = history
-    with requests.post(url, json=payload, headers=headers, stream=True, timeout=300) as r:
+    with requests.post(url, json=payload, headers=headers, stream=True, timeout=300, verify=False) as r:
         r.raise_for_status()
         for line in r.iter_lines(decode_unicode=True, chunk_size=1):
             if not line:
@@ -303,11 +308,19 @@ class ChatApp:
 
     def run(self):
         # Initialize API base URL and optionally auto-start backend regardless of sidebar visibility
-        DEFAULT_API_BASE_URL = os.getenv("API_BASE_URL", "http://127.0.0.1:8500")
+        # Check if SSL certificates exist to determine protocol
+        ssl_cert_file = "./SSL/fullchain.pem"
+        ssl_key_file = "./SSL/privkey_converted.pem"
+        protocol = "https" if os.path.exists(ssl_cert_file) and os.path.exists(ssl_key_file) else "http"
+        DEFAULT_API_BASE_URL = os.getenv("API_BASE_URL", f"{protocol}://127.0.0.1:8500")
         api_base_url = DEFAULT_API_BASE_URL
         if os.getenv("AUTO_START_API", "true").lower() == "true" and not is_backend_healthy(api_base_url):
             try:
-                host_port = api_base_url.replace("http://", "").split(":")
+                # Parse URL to extract host and port
+                if api_base_url.startswith("https://"):
+                    host_port = api_base_url.replace("https://", "").split(":")
+                else:
+                    host_port = api_base_url.replace("http://", "").split(":")
                 host = host_port[0]
                 port = int(host_port[1]) if len(host_port) > 1 else 8500
                 with st.spinner("Starting backend API..."):
@@ -358,7 +371,7 @@ class ChatApp:
                         if uploaded_docs:
                             files_payload = [("files", (f.name, f.getvalue(), f.type or "application/octet-stream")) for f in uploaded_docs]
                             try:
-                                resp = requests.post(f"{api_base_url}/files/upload", files=files_payload, timeout=600)
+                                resp = requests.post(f"{api_base_url}/files/upload", files=files_payload, timeout=600, verify=False)
                                 if resp.ok:
                                     st.session_state.uploaded_docs.extend([f.name for f in uploaded_docs])
                                     st.toast("Files uploaded", icon="✅")
@@ -371,7 +384,7 @@ class ChatApp:
                             urls = [u.strip() for u in st.session_state.url_inputs if u.strip()]
                             if urls:
                                 try:
-                                    resp2 = requests.post(f"{api_base_url}/files/url", json={"urls": urls}, timeout=600)
+                                    resp2 = requests.post(f"{api_base_url}/files/url", json={"urls": urls}, timeout=600, verify=False)
                                     if resp2.ok:
                                         st.session_state.uploaded_urls.extend(urls)
                                         st.toast("URLs processed", icon="✅")
