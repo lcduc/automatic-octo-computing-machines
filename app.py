@@ -74,13 +74,19 @@ def format_markdown_response(text: str) -> str:
     """Universal text formatter that intelligently structures any text response.
     
     This is a general solution that:
-    - Works with any text format (raw markdown, plain text, mixed)
+    - Works with any text format (raw markdown, plain text, mixed, HTML)
     - Automatically detects and formats common patterns
     - Improves readability without changing content
     - Handles edge cases and dense text
+    - Detects HTML responses and returns them as-is for Streamlit rendering
     """
     if not text:
         return text
+    
+    # Check if the response is HTML (starts with < and contains HTML tags)
+    if text.strip().startswith('<') and ('<' in text and '>' in text):
+        # This is an HTML response, return as-is for Streamlit to render
+        return text.strip()
     
     # Step 1: Basic cleaning and escape sequence handling
     text = text.strip()
@@ -112,9 +118,15 @@ def format_markdown_response_streaming(text: str) -> str:
     - Makes bare URLs clickable without restructuring surrounding text
     - Collapses excessive newlines
     - Does NOT try to insert headers/lists or bold markers to avoid flicker
+    - Detects HTML responses and returns them as-is for Streamlit rendering
     """
     if not text:
         return text
+
+    # Check if the response is HTML (starts with < and contains HTML tags)
+    if text.strip().startswith('<') and ('<' in text and '>' in text):
+        # This is an HTML response, return as-is for Streamlit to render
+        return text.strip()
 
     # Convert escape sequences emitted by models
     text = text.replace('\\n\\n', '\n\n')
@@ -422,7 +434,7 @@ class ChatApp:
         # Render chat history
         for msg in st.session_state.chat_history:
             with st.chat_message(msg["role"]):
-                st.markdown(msg["content"])
+                st.markdown(msg["content"], unsafe_allow_html=True)
 
         # Chat input (streams from backend /chat)
         user_input = st.chat_input("Type your question…")
@@ -444,11 +456,11 @@ class ChatApp:
                         # Flush on punctuation/newline or every ~50ms to reduce flicker & CPU
                         if token.endswith((" ", "\n", ".", ",", ":", ";", "!", "?")) or (now - last_flush) > 0.05:
                             # Use streaming-safe formatter to avoid flicker during partial updates
-                            placeholder.markdown(format_markdown_response_streaming(accumulated), unsafe_allow_html=False)
+                            placeholder.markdown(format_markdown_response_streaming(accumulated), unsafe_allow_html=True)
                             last_flush = now
                     # After full completion, apply full formatter and update the UI immediately
                     final_text = format_markdown_response(accumulated)
-                    placeholder.markdown(final_text, unsafe_allow_html=False)
+                    placeholder.markdown(final_text, unsafe_allow_html=True)
                     st.session_state.chat_history.append({"role": "assistant", "content": final_text})
                 except Exception as e:
                     error_msg = f"Chat failed: {e}"
