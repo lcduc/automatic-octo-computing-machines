@@ -1,6 +1,6 @@
 """
 Normalized metadata models for consistent data structure across all processing methods.
-Ensures uniform metadata reporting regardless of processing method (MarkItDown, OCR, URL, etc.).
+Ensures uniform metadata reporting regardless of processing method (Docling, OCR, URL, etc.).
 """
 
 from datetime import datetime
@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 
 class ProcessingMethod(str, Enum):
     """Enumeration of supported processing methods."""
-    MARKITDOWN = "markitdown"
+    DOCLING = "docling"
     OCR_FALLBACK = "ocr_fallback"
     EXISTING_PROCESSOR = "existing_processor"
     URL_PROCESSOR = "url_processor"
@@ -97,7 +97,7 @@ class NormalizedMetadata(BaseModel):
                 "file_extension": ".pdf",
                 "file_size_bytes": 1024000,
                 "mime_type": "application/pdf",
-                "processing_method": "markitdown",
+                "processing_method": "docling",
                 "processing_status": "success",
                 "processing_timestamp": "2024-01-01T12:00:00Z",
                 "processing_time_seconds": 2.5,

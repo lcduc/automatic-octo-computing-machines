@@ -20,7 +20,6 @@ from config.rag.rag_config import RAGConfig
 from .prompts import PromptManager, SystemPrompts
 from .confidence import ConfidenceScorer
 from models.responses import ChatResponse, ErrorResponse, BaseResponse, StatusEnum
-from core.processing.markitdown_processor import MarkItDownProcessor
 
 logger = logging.getLogger(__name__)
 

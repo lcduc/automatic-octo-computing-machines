@@ -32,7 +32,6 @@ from core.processing.extractors import (
     URLTextExtractor,
     DOCLegacyTextExtractor,
 )
-from core.ocr.ocr_engine import OCREngine
 
 logger = logging.getLogger(__name__)
 
@@ -95,46 +94,53 @@ class TextProcessor(BaseProcessor):
 
 
 class PDFProcessor(BaseProcessor):
-    """Processor for PDF documents with optional OCR fallback."""
+    """Processor for PDF documents using Docling with embedded EasyOCR."""
 
     def __init__(self, extractor=None, enable_ocr: bool = True):
         super().__init__()
         self.extractor = extractor or PDFTextExtractor()
         self.enable_ocr = enable_ocr
+        # Initialize Docling processor for PDF processing
+        from .docling_processor import DoclingProcessor
+        self.docling_processor = DoclingProcessor(enable_ocr=enable_ocr)
 
     async def process(
         self, content: bytes, filename: Optional[str] = None
     ) -> Tuple[List[str], Optional[float]]:
         self.validate_file_size(content)
-        # Use the extractor for initial extraction
-        text = await self.extractor.extract(content, filename)
-
-        # Handle case where extractor returns a list instead of string
-        if isinstance(text, list):
-            chunks = text  # Already chunked
-        else:
-            chunks = self.chunk_text(text)
-
-        # Check if we need OCR fallback
-        from utils import TextUtils
         
-        all_text = " ".join(chunks)
-        if TextUtils.needs_ocr_fallback(all_text) and self.enable_ocr:
-            logger.info(
-                "\U0001f504 Regular PDF extraction failed/gibberish detected, trying OCR fallback..."
+        # Use Docling processor for PDF processing with embedded EasyOCR
+        try:
+            import time
+            start_time = time.time()
+            
+            # Process with Docling (which handles OCR automatically)
+            result = await self.docling_processor.process_document(
+                content, 
+                filename or "unknown.pdf",
+                chunk_size=1000,
+                overlap=0
             )
+            
+            processing_time = time.time() - start_time
+            chunks = result.get("documents", [])
+            
+            logger.info(f"\u2705 Docling processed PDF: {len(chunks)} chunks in {processing_time:.2f} seconds")
+            return chunks, processing_time
+            
+        except Exception as e:
+            logger.warning(f"\u26a0\ufe0f Docling PDF processing failed: {e}")
+            # Fallback to original extractor if Docling fails
             try:
-                import time
-                ocr_start_time = time.time()
-                ocr_engine_instance = OCREngine()
-                ocr_chunks = await ocr_engine_instance.async_extract_text_with_ocr(content)
-                ocr_time = time.time() - ocr_start_time
-                logger.info(f"\u2705 OCR extracted {len(ocr_chunks)} chunks in {ocr_time:.2f} seconds")
-                return ocr_chunks, ocr_time
-            except Exception as e:
-                logger.warning(f"\u26a0\ufe0f OCR fallback failed: {e}")
+                text = await self.extractor.extract(content, filename)
+                if isinstance(text, list):
+                    chunks = text
+                else:
+                    chunks = self.chunk_text(text)
                 return chunks, None
-        return chunks, None
+            except Exception as fallback_error:
+                logger.error(f"PDF processing completely failed: {fallback_error}")
+                return [], None
 
 
 class DocumentProcessor(BaseProcessor):

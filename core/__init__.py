@@ -5,7 +5,6 @@ Provides the main components for document processing, AI conversation, and knowl
 
 # Import main components for easy access and simplified imports
 from .llm import ChatbotService, PromptManager
-from .ocr import OCREngine
 from .processing import MainDocumentProcessor
 from .rag import EmbeddingService, ContextRetriever
 from .storage import VectorStore, DocumentStore
@@ -14,7 +13,6 @@ from .storage import VectorStore, DocumentStore
 __all__ = [
     "ChatbotService",  # RAG-powered conversation engine
     "PromptManager",  # System prompt management
-    "OCREngine",  # Optical character recognition
     "MainDocumentProcessor",  # Document processing pipeline
     "EmbeddingService",  # Text embedding generation
     "ContextRetriever",  # Document retrieval system

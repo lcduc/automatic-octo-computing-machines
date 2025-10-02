@@ -12,7 +12,7 @@ from typing import Dict, Any, List
 # Local imports
 from setting import Config
 from config.file.file_config import FileConfig
-from config.ocr.ocr_config import OCRConfig
+from config.docling_config import DoclingConfig
 from .docling_processor import DoclingProcessor, AsyncDoclingProcessor
 from .file_manager import FileManager
 
@@ -29,7 +29,6 @@ class MainDocumentProcessor:
     def __init__(
         self,
         file_manager=None,
-        markitdown_processor=None,
         enable_ocr: bool = None,
         llm_client=None,
         llm_model: str = None,
@@ -37,11 +36,11 @@ class MainDocumentProcessor:
         """
         Initialize main processor with file manager and Docling processor.
         Sets up processor for different file extensions with heading-aware chunking.
+        Uses Docling with embedded EasyOCR for document processing.
         
         Args:
             file_manager: File manager for handling file operations
-            markitdown_processor: (Deprecated) Retained for signature compatibility
-            enable_ocr: Whether to enable OCR fallback (defaults to config setting)
+            enable_ocr: Whether to enable OCR processing (defaults to config setting)
             llm_client: OpenAI client for enhanced processing
             llm_model: LLM model to use for enhanced processing
         """
@@ -49,18 +48,14 @@ class MainDocumentProcessor:
         
         # Use provided OCR setting or default from config
         if enable_ocr is None:
-            enable_ocr = OCRConfig.OCR_ENABLED() and OCRConfig.OCR_MAX_WORKERS() > 0
+            enable_ocr = DoclingConfig.DOCLING_OCR_ENABLED()
         
-        # Initialize Docling processor
-        if markitdown_processor is None:
-            self.docling_processor = DoclingProcessor(
-                enable_ocr=enable_ocr,
-                llm_client=llm_client,
-                llm_model=llm_model
-            )
-        else:
-            # For backward compatibility if a custom processor is injected
-            self.docling_processor = markitdown_processor  # type: ignore
+        # Initialize Docling processor with embedded EasyOCR
+        self.docling_processor = DoclingProcessor(
+            enable_ocr=enable_ocr,
+            llm_client=llm_client,
+            llm_model=llm_model
+        )
         
         # Create async wrapper for compatibility
         self.async_processor = AsyncDoclingProcessor(
@@ -70,7 +65,7 @@ class MainDocumentProcessor:
         )
         
         logger = __import__('logging').getLogger(__name__)
-        logger.info(f"MainDocumentProcessor initialized with Docling (OCR flag: {enable_ocr})")
+        logger.info(f"MainDocumentProcessor initialized with Docling and embedded EasyOCR (OCR flag: {enable_ocr})")
 
     async def process_file(self, file_content: bytes, filename: str) -> Dict[str, Any]:
         """

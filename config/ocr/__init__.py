@@ -1,1 +1,0 @@
-# ocr config package

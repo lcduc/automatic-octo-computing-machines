@@ -1,20 +1,19 @@
 # 🤖 RAG Chatbot
 
-A modular Retrieval-Augmented Generation (RAG) chatbot for intelligent Q&A over your documents and URLs. Upload files, process web content, and chat with your data using AI. **Now powered by Microsoft's MarkItDown for superior document conversion to Markdown format.**
+A modular Retrieval-Augmented Generation (RAG) chatbot for intelligent Q&A over your documents and URLs. Upload files, process web content, and chat with your data using AI. **Now powered by Docling with embedded EasyOCR for superior document conversion to Markdown format.**
 
 ---
 
 ## Features
 
 - **Multi-format Support:** PDF, DOCX, DOC, TXT, CSV, XLSX, XLS, PPTX, PPT, Images, Audio, EPUB, ZIP
-- **MarkItDown Integration:** Superior document conversion to LLM-friendly Markdown format
-- **Configurable OCR:** Toggle OCR on/off for PDF and image processing
+- **Docling Integration:** Superior document conversion to LLM-friendly Markdown format with embedded EasyOCR
+- **Embedded OCR:** Docling's built-in EasyOCR for seamless text extraction
 - **URL Content Extraction:** Process and extract web content
 - **RAG-Powered Chat:** Context-aware answers from your knowledge base
 - **Hybrid Search:** Combines semantic and keyword search
 - **Query Expansion:** Improves retrieval with automatic query variations
 - **Confidence Scoring:** Quality assessment for every response
-- **Smart OCR:** GPU-accelerated, with CPU fallback
 - **Batch Processing:** Efficient vector storage and updates
 - **Configurable:** 50+ environment variables
 
@@ -97,30 +96,30 @@ python main.py
 
 ```
 automatic-octo-computing-machine/
-├── api/                        # FastAPI routes and middleware
-│   └── routes/                 # API endpoints (chat, files, health)
-├── core/                       # Core functionality modules
-│   ├── llm/                    # Language model integration
-│   ├── ocr/                    # OCR processing with GPU support
-│   ├── processing/             # Document processors (now MarkItDown-based)
-│   │   └── markitdown_processor.py  # MarkItDown integration
-│   ├── rag/                    # Retrieval-Augmented Generation
-│   └── storage/                # Vector and document storage
-├── services/                   # Business logic layer
-├── utils/                      # Shared utilities
-├── models/                     # Data models and schemas
-├── data/                       # Runtime data storage
-│   ├── chunks/                 # Document chunks
-│   ├── vectors/                # Vector embeddings
-│   ├── logs/                   # Application logs
-│   └── temp/                   # Temporary files
-├── main.py                     # Application entry point
-├── config.py                   # Configuration management
-├── requirements.txt            # Python dependencies
-├── docker-compose.yml          # Docker orchestration
-├── Dockerfile                  # Container definition
-├── CONFIGURATION.md            # Configuration documentation
-└── README.md                   # This file
+├── api/                            # FastAPI routes and middleware
+│   └── routes/                     # API endpoints (chat, files, health)
+├── core/                           # Core functionality modules
+│   ├── llm/                        # Language model integration
+│   ├── ocr/                        # OCR processing with GPU support
+│   ├── processing/                 # Document processors (now Docling-based)
+│   │   └── docling_processor.py    # Docling integration with embedded EasyOCR
+│   ├── rag/                        # Retrieval-Augmented Generation
+│   └── storage/                    # Vector and document storage
+├── services/                       # Business logic layer
+├── utils/                          # Shared utilities
+├── models/                         # Data models and schemas
+├── data/                           # Runtime data storage
+│   ├── chunks/                     # Document chunks
+│   ├── vectors/                    # Vector embeddings
+│   ├── logs/                       # Application logs
+│   └── temp/                       # Temporary files
+├── main.py                         # Application entry point
+├── config.py                       # Configuration management
+├── requirements.txt                # Python dependencies
+├── docker-compose.yml              # Docker orchestration
+├── Dockerfile                      # Container definition
+├── CONFIGURATION.md                # Configuration documentation
+└── README.md                       # This file
 ```
 
 ---

@@ -162,7 +162,7 @@ class MultipleFileUploadResponse(BaseResponse):
                         "source_id": "uuid-123",
                         "status": "success",
                         "file_type": ".pdf",
-                        "processing_method": "markitdown",
+                        "processing_method": "docling",
                         "processing_time": "2.5s",
                         "debug_info": {
                             "chunks_directory": "data/chunks/doc1",
@@ -220,7 +220,7 @@ class URLProcessingResponse(BaseResponse):
                 "document_count": 5,
                 "source_id": "url_example_com_20240101_120000",
                 "metadata": {"content_type": "webpage", "language": "en"},
-                "processing_info": {"processing_time": "2.5s", "method": "markitdown"},
+                "processing_info": {"processing_time": "2.5s", "method": "docling"},
                 "timestamp": "2024-01-01T12:00:00Z",
             }
         }

@@ -1,7 +1,7 @@
 """
 Document processing service for orchestrating file and URL processing operations.
 Provides batch processing capabilities with efficient vector store management.
-Now uses MarkItDown for enhanced document processing with OCR fallback.
+Uses Docling with embedded EasyOCR for enhanced document processing.
 """
 
 # Standard library imports
@@ -22,13 +22,13 @@ class DocumentService:
     """
     Service for document processing orchestration with batch capabilities.
     Handles file processing, URL extraction, and vector store management.
-    Now uses MarkItDown for superior document conversion with OCR fallback.
+    Uses Docling with embedded EasyOCR for superior document conversion.
     """
 
     def __init__(self, processor=None, file_manager=None, enable_ocr: bool = None, llm_client=None, llm_model: str = None):
         """
         Initialize document service with processing components.
-        Sets up main processor with MarkItDown and file manager with dependency injection.
+        Sets up main processor with Docling and file manager with dependency injection.
         
         Args:
             processor: Main document processor instance
@@ -49,7 +49,7 @@ class DocumentService:
             )
         )
         
-        # Restore original URL processor since MarkItDown doesn't support URLs
+        # Restore original URL processor since Docling doesn't support URLs
         from core.processing.processors import PDFProcessor, DocumentProcessor
         self.url_processor = URLProcessor(
             file_manager=self.file_manager,
@@ -76,7 +76,7 @@ class DocumentService:
         Extracts content from URLs and returns structured results with error handling.
         """
         try:
-            # Use the original URL processor since MarkItDown doesn't support URLs
+            # Use the original URL processor since Docling doesn't support URLs
             result = await self.url_processor.extract_from_url(url, extract_links=False)
             documents = result["documents"]
             metadata = result["metadata"]

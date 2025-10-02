@@ -1,6 +1,6 @@
 """
 Cleanup utilities for managing temporary files and data directories.
-Provides comprehensive cleanup functions for OCR files, logs, and data folders.
+Provides comprehensive cleanup functions for logs and data folders.
 """
 
 # Standard library imports
@@ -15,21 +15,6 @@ from utils.file_utils import FileUtils
 logger = logging.getLogger(__name__)
 
 
-def cleanup_ocr_temp_files():
-    """
-    Clean up OCR temporary files from the temp directory.
-    Removes PNG files generated during OCR processing to free up disk space.
-    """
-    try:
-        temp_dir = Path(FileConfig.TEMP_DIR())
-        if temp_dir.exists():
-            for file_path in temp_dir.glob("*.png"):
-                try:
-                    FileUtils.safe_delete_file(str(file_path))
-                except Exception:
-                    pass  # Ignore errors, files will be cleaned up eventually
-    except Exception:
-        pass  # Ignore all errors
 
 
 def cleanup_data_folders():
@@ -39,11 +24,6 @@ def cleanup_data_folders():
     """
     logger.info("🧹 Cleaning up data folders...")
 
-    # Clean up OCR temp files first to free up space
-    try:
-        cleanup_ocr_temp_files()
-    except Exception:
-        pass  # Ignore errors
 
     # List of directories to clean up for comprehensive maintenance
     cleanup_dirs = [

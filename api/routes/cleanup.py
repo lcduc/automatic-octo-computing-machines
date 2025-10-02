@@ -15,7 +15,6 @@ from pydantic import BaseModel, Field
 from utils.cleanup import (
     cleanup_data_folders,
     cleanup_logs,
-    cleanup_ocr_temp_files,
 )
 from config.file.file_config import FileConfig
 from config.server.logging_config import LoggingConfig
@@ -48,8 +47,6 @@ async def cleanup_all_data():
     try:
         logger.info("🧹 Starting comprehensive data cleanup via API...")
         
-        # Clean up OCR temp files first
-        cleanup_ocr_temp_files()
         
         # Clean up all data folders
         cleanup_data_folders()

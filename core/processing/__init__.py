@@ -7,7 +7,7 @@ Provides processors for various file formats and document types.
 from .processors import (
     BaseProcessor,  # Abstract base for all processors
     TextProcessor,  # Plain text and markdown processing
-    PDFProcessor,  # PDF document extraction and OCR
+    PDFProcessor,  # PDF document extraction with Docling
     DocumentProcessor,  # Word document processing
     SpreadsheetProcessor,  # Excel and CSV processing
     URLProcessor,  # Web content extraction
@@ -21,7 +21,7 @@ from .main_processor import MainDocumentProcessor
 __all__ = [
     "BaseProcessor",  # Base processor class
     "TextProcessor",  # Text file processor
-    "PDFProcessor",  # PDF processor with OCR
+    "PDFProcessor",  # PDF processor with Docling
     "DocumentProcessor",  # Word document processor
     "SpreadsheetProcessor",  # Spreadsheet processor
     "URLProcessor",  # URL content processor

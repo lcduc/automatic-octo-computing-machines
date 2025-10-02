@@ -12,7 +12,6 @@ aiofiles==24.1.0
 psutil==6.1.0
 rank-bm25==0.2.2
 nltk==3.8.1
-markitdown[all]==0.1.2
 docling==2.54.0
 pydantic-settings==2.11.0
 pandas==2.2.3
@@ -28,3 +27,4 @@ streamlit==1.37.1
 huggingface_hub[hf_xet]==0.33.1
 easyocr==1.7.2
 pypdfium2==4.30.0
+opencv-python==4.8.1.78

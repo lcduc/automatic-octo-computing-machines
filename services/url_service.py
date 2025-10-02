@@ -1,7 +1,7 @@
 """
 URL processing service for handling URL content extraction and processing.
 Provides validation, concurrent processing, and batch operations for URL handling.
-Uses the original URL processor since MarkItDown doesn't support URLs.
+Uses the original URL processor since Docling doesn't support URLs.
 """
 
 # Standard library imports
