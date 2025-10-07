@@ -68,6 +68,10 @@ services:
 
       # RAG Configuration
       - EMBEDDING_MODEL=paraphrase-multilingual-MiniLM-L12-v2
+
+      # Chat Configuration
+      - CHAT_MODE=query_only
+      - MAX_HISTORY_LENGTH=10
       - RETRIEVAL_TOP_K=3
       - CHUNK_SIZE=1000
       - CHUNK_OVERLAP=0

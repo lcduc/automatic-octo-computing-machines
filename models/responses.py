@@ -291,3 +291,16 @@ class ChatRequest(BaseModel):
                 ]
             }
         }
+
+
+class QueryRequest(BaseModel):
+    """Simple query request model for query-only mode (temporarily without history)."""
+
+    query: str = Field(..., description="User query", min_length=1, max_length=2000)
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "query": "Hi?"
+            }
+        }

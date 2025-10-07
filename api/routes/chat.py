@@ -8,14 +8,16 @@ import hashlib
 import time
 
 # Third-party imports
-from fastapi import APIRouter, Query, HTTPException, Depends, Request
+from fastapi import APIRouter, Query, HTTPException, Depends, Request, Body
 from fastapi.responses import StreamingResponse
+from typing import Union
 
 # Local imports
 from api.dependencies import get_chat_service
 from services import ChatService
-from models.responses import ChatResponse, StatusEnum, ChatRequest
+from models.responses import ChatResponse, StatusEnum, ChatRequest, QueryRequest
 from config.llm.llm_config import LLMConfig
+from setting import Config
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -23,15 +25,30 @@ logger = logging.getLogger(__name__)
 
 @router.post("/")
 async def chat(
-    request: ChatRequest, chat_service: ChatService = Depends(get_chat_service)
+    request: QueryRequest = Body(...), 
+    chat_service: ChatService = Depends(get_chat_service)
 ):
     """
-    Chat endpoint for context-aware conversations with history support.
+    Chat endpoint with configurable mode (query-only or with history).
     Streams generated responses as tokens.
     """
 
     async def token_generator():
-        async for token in chat_service.stream_chat_with_memory(request.query, custom_history=request.history):
+        # Extract query from request
+        query = request.query
+        if not query:
+            yield "[ERROR] No query provided."
+            return
+        
+        # Determine history based on configuration
+        if Config.ChatConfig.ENABLE_HISTORY():
+            # History mode: no history for now (can be extended later)
+            history = []
+        else:
+            # Query-only mode: no history
+            history = None
+        
+        async for token in chat_service.stream_chat_with_memory(query, custom_history=history):
             yield token
 
     return StreamingResponse(token_generator(), media_type="text/event-stream")

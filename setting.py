@@ -15,6 +15,7 @@ from config.rag.query_expansion_config import VietnamesePreprocessingConfig
 from config.llm.confidence_config import ConfidenceConfig
 from config.file.url_config import URLConfig
 from config.server.health_config import HealthConfig
+from config.chat.chat_config import ChatConfig
 
 # Note: OpenAI client is now initialized per-request in the chatbot service
 # This avoids the deprecated openai.api_key global configuration
@@ -62,3 +63,4 @@ class Config:
     ConfidenceConfig = ConfidenceConfig
     URLConfig = URLConfig
     HealthConfig = HealthConfig
+    ChatConfig = ChatConfig

@@ -60,12 +60,12 @@ source venv/bin/activate
 
 The setup script automatically installs the correct PyTorch version. For manual installation:
 
-| Your System         | Command                                                                                                         |
-|---------------------|-----------------------------------------------------------------------------------------------------------------|
-| **CPU only**        | `pip install torch==2.7.1 torchvision==0.22.1 torchaudio==2.7.1`                                               |
+| Your System         | Command                                                                                                                               |
+|---------------------|---------------------------------------------------------------------------------------------------------------------------------------|
+| **CPU only**        | `pip install torch==2.7.1 torchvision==0.22.1 torchaudio==2.7.1`                                                                      |
 | **CUDA 11.8**       | `pip install torch==2.7.1+cu118 torchvision==0.22.1+cu118 torchaudio==2.7.1+cu118 --index-url https://download.pytorch.org/whl/cu118` |
 | **CUDA 12.1**       | `pip install torch==2.7.1+cu121 torchvision==0.22.1+cu121 torchaudio==2.7.1+cu121 --index-url https://download.pytorch.org/whl/cu121` |
-| **Other CUDA**      | [Find your version here](https://pytorch.org/get-started/locally/)                                              |
+| **Other CUDA**      | [Find your version here](https://pytorch.org/get-started/locally/)                                                                    |
 
 **To check your CUDA version:**  
 - Run `nvidia-smi` in your terminal.  
