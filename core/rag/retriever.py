@@ -83,6 +83,9 @@ class ContextRetriever:
             return top_indices
 
         # Get document metadata to check if chunks are from the same source
+        # Ensure vector store is loaded to get metadata
+        if not hasattr(self.vector_store, 'document_metadata') or self.vector_store.document_metadata is None:
+            self.vector_store.load_vector_store()
         document_metadata = self.vector_store.get_metadata()
         if not document_metadata or len(document_metadata) != total_documents:
             # Fallback: expand purely by index adjacency if metadata is missing
@@ -325,6 +328,8 @@ class ContextRetriever:
 
             # Apply context expansion to include adjacent chunks
             top_indices = [result["index"] for result in top_k_results]
+            # Get document metadata for proper file boundary handling
+            document_metadata = self.vector_store.get_metadata()
             expanded_indices = self._expand_context_with_adjacent_chunks(
                 top_indices, len(documents), RAGConfig.CONTEXT_EXPANSION_RADIUS()
             )
