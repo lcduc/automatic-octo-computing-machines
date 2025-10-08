@@ -25,6 +25,4 @@ redis==5.0.1
 PyPDF2==3.0.1
 streamlit==1.37.1
 huggingface_hub[hf_xet]==0.33.1
-easyocr==1.7.2
 pypdfium2==4.30.0
-opencv-python==4.8.1.78

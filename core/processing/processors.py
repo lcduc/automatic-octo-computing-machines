@@ -94,9 +94,9 @@ class TextProcessor(BaseProcessor):
 
 
 class PDFProcessor(BaseProcessor):
-    """Processor for PDF documents using Docling with embedded EasyOCR."""
+    """Processor for PDF documents using Docling for basic extraction."""
 
-    def __init__(self, extractor=None, enable_ocr: bool = True):
+    def __init__(self, extractor=None, enable_ocr: bool = False):
         super().__init__()
         self.extractor = extractor or PDFTextExtractor()
         self.enable_ocr = enable_ocr
@@ -109,12 +109,12 @@ class PDFProcessor(BaseProcessor):
     ) -> Tuple[List[str], Optional[float]]:
         self.validate_file_size(content)
         
-        # Use Docling processor for PDF processing with embedded EasyOCR
+        # Use Docling processor for PDF processing
         try:
             import time
             start_time = time.time()
             
-            # Process with Docling (which handles OCR automatically)
+            # Process with Docling for basic extraction
             result = await self.docling_processor.process_document(
                 content, 
                 filename or "unknown.pdf",

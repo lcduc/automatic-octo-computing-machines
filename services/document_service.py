@@ -1,7 +1,7 @@
 """
 Document processing service for orchestrating file and URL processing operations.
 Provides batch processing capabilities with efficient vector store management.
-Uses Docling with embedded EasyOCR for enhanced document processing.
+Uses Docling for basic document processing.
 """
 
 # Standard library imports
@@ -22,18 +22,19 @@ class DocumentService:
     """
     Service for document processing orchestration with batch capabilities.
     Handles file processing, URL extraction, and vector store management.
-    Uses Docling with embedded EasyOCR for superior document conversion.
+    Uses Docling for basic document conversion.
     """
 
     def __init__(self, processor=None, file_manager=None, enable_ocr: bool = None, llm_client=None, llm_model: str = None):
         """
         Initialize document service with processing components.
-        Sets up main processor with Docling and file manager with dependency injection.
+        - PDFs: Automatically use OCR
+        - Other formats: Use normal Docling extraction
         
         Args:
             processor: Main document processor instance
             file_manager: File manager instance
-            enable_ocr: Whether to enable OCR processing
+            enable_ocr: Deprecated - OCR is now automatic for PDFs
             llm_client: OpenAI client for enhanced processing
             llm_model: LLM model to use for enhanced processing
         """
@@ -43,7 +44,7 @@ class DocumentService:
             if processor is not None
             else MainDocumentProcessor(
                 file_manager=self.file_manager,
-                enable_ocr=enable_ocr,
+                enable_ocr=False,  # OCR is now automatic based on file type
                 llm_client=llm_client,
                 llm_model=llm_model
             )
@@ -56,6 +57,65 @@ class DocumentService:
             pdf_processor=PDFProcessor(),
             doc_processor=DocumentProcessor(),
         )
+        
+        # OCR concurrency control - configurable to prevent memory issues
+        from config.docling_config import DoclingConfig
+        max_concurrent_files = DoclingConfig.OCR_MAX_CONCURRENT_FILES()
+        self._ocr_semaphore = asyncio.Semaphore(max_concurrent_files)
+        logger.info(f"OCR concurrency control: max {max_concurrent_files} concurrent PDF files")
+
+    async def _process_with_ocr_control(self, file_content: bytes, filename: str) -> Dict[str, Any]:
+        """
+        Process a single file with OCR concurrency control to prevent memory exhaustion.
+        Uses semaphore to limit concurrent OCR operations and aggressive memory management.
+        """
+        async with self._ocr_semaphore:
+            logger.info(f"🔒 [DocumentService] Acquired OCR slot for {filename}")
+            try:
+                # Clear memory before processing
+                await self._aggressive_memory_cleanup()
+                
+                # Process the file
+                result = await self.processor.process_file(file_content, filename)
+                
+                # Clear memory after OCR processing
+                await self._aggressive_memory_cleanup()
+                
+                logger.info(f"🔓 [DocumentService] Released OCR slot for {filename}")
+                return result
+            except Exception as e:
+                logger.error(f"❌ [DocumentService] OCR processing failed for {filename}: {e}")
+                # Clear memory even on failure
+                await self._aggressive_memory_cleanup()
+                raise
+
+    async def _aggressive_memory_cleanup(self):
+        """Perform aggressive memory cleanup to prevent memory exhaustion."""
+        try:
+            import gc
+            import torch
+            
+            # Clear Python garbage collection
+            gc.collect()
+            
+            # Clear PyTorch GPU cache if available
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+                torch.cuda.synchronize()
+            
+            # Force garbage collection multiple times
+            for _ in range(3):
+                gc.collect()
+            
+            # Clear any potential caches in the processor
+            if hasattr(self.processor, 'docling_processor'):
+                self.processor.docling_processor._clear_memory_caches()
+            
+            # Small delay to allow memory to be freed
+            await asyncio.sleep(0.1)
+            
+        except Exception as e:
+            logger.debug(f"Memory cleanup warning: {e}")
 
     def _create_url_metadata(self, url: str, document_count: int) -> Dict[str, Any]:
         """
@@ -123,11 +183,18 @@ class DocumentService:
         failed_count = 0
         total_documents = 0
 
-        for i, (file_content, filename) in enumerate(file_data_list):
+        # Process files with OCR concurrency control
+        async def process_single_file(file_data: tuple) -> Dict[str, Any]:
+            """Process a single file with OCR concurrency control."""
+            file_content, filename = file_data
             logger.debug(f"🔗 [DocumentService] Processing file: {filename}")
             try:
-                # Process the file directly (no need to save to disk for batch processing)
-                result = await self.processor.process_file(file_content, filename)
+                # Use OCR concurrency control for PDFs, direct processing for others
+                if filename.lower().endswith('.pdf'):
+                    result = await self._process_with_ocr_control(file_content, filename)
+                else:
+                    result = await self.processor.process_file(file_content, filename)
+                
                 doc_count = len(result["documents"])
                 ocr_time = result["metadata"].get("ocr_time")
                 logger.info(
@@ -137,34 +204,60 @@ class DocumentService:
                 for j, doc in enumerate(result["documents"][:3]):  # Show first 3 chunks
                     preview = doc[:100].replace("\n", " ").replace("\r", " ")
                     logger.debug(f"  Chunk {j+1}: {preview}...")
-                # Store for batch processing
-                successful_documents.append(
-                    {"documents": result["documents"], "metadata": result["metadata"]}
-                )
-                results.append(
-                    {
-                        "filename": filename,
-                        "success": True,
-                        "document_count": doc_count,
-                        "metadata": result["metadata"],
-                        "process_time": ocr_time,
-                    }
-                )
-                successful_count += 1
-                total_documents += doc_count
+                
+                return {
+                    "filename": filename,
+                    "success": True,
+                    "document_count": doc_count,
+                    "metadata": result["metadata"],
+                    "process_time": ocr_time,
+                    "result": result
+                }
             except Exception as e:
                 logger.error(f"❌ [DocumentService Error] {str(e)} (file={filename})")
-                results.append(
-                    {
-                        "filename": filename,
-                        "success": False,
-                        "error": str(e),
-                        "document_count": 0,
-                        "metadata": {},
-                        "process_time": None,
-                    }
-                )
+                return {
+                    "filename": filename,
+                    "success": False,
+                    "error": str(e),
+                    "document_count": 0,
+                    "metadata": {},
+                    "process_time": None,
+                    "result": None
+                }
+        
+        # Process all files concurrently with OCR control
+        logger.info(f"🚀 [DocumentService] Processing {len(file_data_list)} files with OCR concurrency control")
+        tasks = [process_single_file(file_data) for file_data in file_data_list]
+        file_results = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        # Process results
+        for i, file_result in enumerate(file_results):
+            if isinstance(file_result, Exception):
+                # Handle exceptions from gather
+                filename = file_data_list[i][1] if i < len(file_data_list) else "unknown"
+                logger.error(f"❌ [DocumentService] Exception processing {filename}: {file_result}")
+                results.append({
+                    "filename": filename,
+                    "success": False,
+                    "error": str(file_result),
+                    "document_count": 0,
+                    "metadata": {},
+                    "process_time": None,
+                })
                 failed_count += 1
+            else:
+                # Handle normal results
+                if file_result["success"]:
+                    successful_documents.append({
+                        "documents": file_result["result"]["documents"], 
+                        "metadata": file_result["result"]["metadata"]
+                    })
+                    successful_count += 1
+                    total_documents += file_result["document_count"]
+                
+                results.append(file_result)
+                if not file_result["success"]:
+                    failed_count += 1
 
         # Batch update vector store for efficiency
         logger.info(

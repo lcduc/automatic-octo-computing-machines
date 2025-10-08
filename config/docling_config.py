@@ -1,93 +1,76 @@
 import os
+from pathlib import Path
 
 
 class DoclingConfig:
-    """Configuration for Docling document processing with embedded EasyOCR optimized for Vietnamese."""
+    """Configuration for Docling document processing with simple OCR support."""
     
-    # Docling OCR Configuration
+    # Basic Docling Configuration
     @staticmethod
     def DOCLING_OCR_ENABLED():
-        return os.getenv("DOCLING_OCR_ENABLED", "true").lower() == "true"
+        return os.getenv("DOCLING_OCR_ENABLED", "false").lower() == "true"
 
     @staticmethod
-    def DOCLING_OCR_LANGS():
-        """Get OCR languages as a list. Vietnamese first for better recognition."""
-        langs_str = os.getenv("DOCLING_OCR_LANGS", "vi,en")
-        return [lang.strip() for lang in langs_str.split(",") if lang.strip()]
+    def TESSERACT_CMD():
+        """Get Tesseract command path. Defaults to common Windows installation."""
+        return os.getenv("TESSERACT_CMD", r"C:\Program Files\Tesseract-OCR\tesseract.exe")
+    
+    @staticmethod
+    def TESSERACT_CMD_EXISTS():
+        """Check if Tesseract command exists and is accessible."""
+        tesseract_path = DoclingConfig.TESSERACT_CMD()
+        return Path(tesseract_path).exists() if tesseract_path else False
+    
+    
+    @staticmethod
+    def TESSERACT_TESSDATA_DIR():
+        """Get Tesseract tessdata directory. Points to project tessdata folder."""
+        return os.getenv("TESSERACT_TESSDATA_DIR", str(Path(__file__).parent.parent / "tessdata"))
+    
+    @staticmethod
+    def VIETNAMESE_TRAINEDDATA_PATH():
+        """Get path to Vietnamese traineddata file in the project."""
+        tessdata_dir = DoclingConfig.TESSERACT_TESSDATA_DIR()
+        return Path(tessdata_dir) / "vie.traineddata"
+    
+    # OCR Options Configuration
+    @staticmethod
+    def OCR_FORCE_FULL_PAGE():
+        """Whether to force full page OCR processing."""
+        return os.getenv("OCR_FORCE_FULL_PAGE", "true").lower() == "true"
+    
+    @staticmethod
+    def OCR_DO_TABLE_STRUCTURE():
+        """Whether to enable table structure detection."""
+        return os.getenv("OCR_DO_TABLE_STRUCTURE", "true").lower() == "true"
+    
+    @staticmethod
+    def OCR_DO_CELL_MATCHING():
+        """Whether to enable cell matching in tables."""
+        return os.getenv("OCR_DO_CELL_MATCHING", "true").lower() == "true"
+    
+    # Memory Optimization Configuration
+    @staticmethod
+    def OCR_PAGE_BY_PAGE():
+        """Whether to use page-by-page processing for memory efficiency."""
+        return os.getenv("OCR_PAGE_BY_PAGE", "true").lower() == "true"
 
     @staticmethod
-    def DOCLING_OCR_DPI():
-        """Get OCR DPI setting. Balanced 300 DPI for good quality vs memory usage."""
-        return int(os.getenv("DOCLING_OCR_DPI", "300"))
+    def OCR_DISABLE_TABLE_STRUCTURE():
+        """Whether to disable table structure detection for memory efficiency."""
+        return os.getenv("OCR_DISABLE_TABLE_STRUCTURE", "false").lower() == "true"
 
     @staticmethod
-    def DOCLING_OCR_GPU():
-        """Check if GPU should be used for OCR processing."""
-        return os.getenv("DOCLING_OCR_GPU", "true").lower() == "true"
+    def OCR_LOWER_RESOLUTION():
+        """Whether to use lower resolution processing for memory efficiency."""
+        return os.getenv("OCR_LOWER_RESOLUTION", "true").lower() == "true"
 
     @staticmethod
-    def DOCLING_OCR_TIMEOUT_SEC():
-        """Get OCR processing timeout in seconds. Balanced timeout."""
-        return int(os.getenv("DOCLING_OCR_TIMEOUT_SEC", "300"))
+    def OCR_CONCURRENT_PAGES():
+        """Number of pages to process concurrently within each PDF."""
+        return int(os.getenv("OCR_CONCURRENT_PAGES", "3"))
 
     @staticmethod
-    def DOCLING_OCR_SUBPROCESS():
-        """Check if OCR should run in subprocess for better memory management."""
-        return os.getenv("DOCLING_OCR_SUBPROCESS", "true").lower() == "true"
-
-    # Memory-efficient Vietnamese OCR optimizations
-    @staticmethod
-    def DOCLING_OCR_CONFIDENCE_THRESHOLD():
-        """Minimum confidence threshold for Vietnamese text recognition."""
-        return float(os.getenv("DOCLING_OCR_CONFIDENCE_THRESHOLD", "0.6"))
-
-    @staticmethod
-    def DOCLING_OCR_PREPROCESSING():
-        """Enable lightweight preprocessing for Vietnamese documents."""
-        return os.getenv("DOCLING_OCR_PREPROCESSING", "auto").lower()
-
-    @staticmethod
-    def DOCLING_OCR_DESKEW():
-        """Enable automatic deskewing only when needed."""
-        return os.getenv("DOCLING_OCR_DESKEW", "auto").lower()
-
-    @staticmethod
-    def DOCLING_OCR_DENOISE():
-        """Enable lightweight denoising."""
-        return os.getenv("DOCLING_OCR_DENOISE", "false").lower() == "true"
-
-    @staticmethod
-    def DOCLING_OCR_CONTRAST_ENHANCE():
-        """Enable minimal contrast enhancement for diacritics."""
-        return os.getenv("DOCLING_OCR_CONTRAST_ENHANCE", "auto").lower()
-
-    @staticmethod
-    def DOCLING_OCR_BATCH_SIZE():
-        """Batch size optimized for memory usage."""
-        return int(os.getenv("DOCLING_OCR_BATCH_SIZE", "2"))
-
-    @staticmethod
-    def DOCLING_OCR_MODEL_STORAGE():
-        """Directory for storing EasyOCR models."""
-        return os.getenv("DOCLING_OCR_MODEL_STORAGE", "./models/easyocr")
-
-    @staticmethod
-    def DOCLING_OCR_PARAGRAPH_MODE():
-        """Enable paragraph-aware text extraction."""
-        return os.getenv("DOCLING_OCR_PARAGRAPH_MODE", "true").lower() == "true"
-
-    @staticmethod
-    def DOCLING_OCR_MEMORY_LIMIT_MB():
-        """Memory limit for OCR processing in MB."""
-        return int(os.getenv("DOCLING_OCR_MEMORY_LIMIT_MB", "1024"))
-
-    @staticmethod
-    def DOCLING_OCR_QUALITY_MODE():
-        """OCR quality mode: 'fast', 'balanced', 'quality'."""
-        return os.getenv("DOCLING_OCR_QUALITY_MODE", "balanced").lower()
-
-    @staticmethod
-    def DOCLING_OCR_AUTO_OPTIMIZE():
-        """Auto-optimize settings based on document characteristics."""
-        return os.getenv("DOCLING_OCR_AUTO_OPTIMIZE", "true").lower() == "true"
-
+    def OCR_MAX_CONCURRENT_FILES():
+        """Maximum number of PDF files that can be processed concurrently."""
+        return int(os.getenv("OCR_MAX_CONCURRENT_FILES", "1"))
