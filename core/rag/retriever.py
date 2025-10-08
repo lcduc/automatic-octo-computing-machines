@@ -128,17 +128,42 @@ class ContextRetriever:
                 ordered.append(i)
                 seen.add(i)
 
-        # For each seed, add seed window [seed - r, ..., seed + r] in ascending order
+        # Group chunks by source to find proper adjacency within each source
+        source_chunks = {}
+        for i, metadata in enumerate(document_metadata):
+            source_id = metadata.get("source_id", "unknown")
+            if source_id not in source_chunks:
+                source_chunks[source_id] = []
+            source_chunks[source_id].append(i)
+
+        # For each seed, find its position within its source and expand within that source only
         for seed_pos, seed in enumerate(top_indices):
             if len(ordered) >= max_chunks:
                 break
+            
             seed_source = document_metadata[seed].get("source_id", "unknown")
-            start = max(0, seed - expansion_radius)
-            end = min(total_documents - 1, seed + expansion_radius)
-            for i in range(start, end + 1):
-                src = document_metadata[i].get("source_id", "unknown")
-                if src == seed_source:
-                    add_idx(i)
+            if seed_source not in source_chunks:
+                # If source not found, just add the seed itself
+                add_idx(seed)
+                continue
+                
+            # Find the seed's position within its source chunks
+            source_chunk_indices = source_chunks[seed_source]
+            try:
+                seed_position_in_source = source_chunk_indices.index(seed)
+            except ValueError:
+                # Seed not found in source chunks, just add it
+                add_idx(seed)
+                continue
+            
+            # Calculate expansion range within the source
+            start_in_source = max(0, seed_position_in_source - expansion_radius)
+            end_in_source = min(len(source_chunk_indices) - 1, seed_position_in_source + expansion_radius)
+            
+            # Add chunks from the source in order
+            for pos in range(start_in_source, end_in_source + 1):
+                chunk_index = source_chunk_indices[pos]
+                add_idx(chunk_index)
                 if len(ordered) >= max_chunks:
                     break
 
