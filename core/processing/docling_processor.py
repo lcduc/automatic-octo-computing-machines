@@ -14,6 +14,8 @@ import asyncio
 from pathlib import Path
 import os
 from typing import List, Dict, Any, Optional
+import io
+import numpy as np
 
 # Third-party imports
 try:
@@ -21,10 +23,13 @@ try:
     from docling.datamodel.base_models import InputFormat
     from docling.datamodel.pipeline_options import (
         PdfPipelineOptions, 
-        TesseractOcrOptions,
         TesseractCliOcrOptions
     )
     from docling.document_converter import PdfFormatOption
+    # OCR preprocessing imports
+    import cv2
+    from PIL import Image
+    import fitz  # PyMuPDF
 except Exception as _e:  # defer hard failure to runtime path
     DocumentConverter = None  # type: ignore
     InputFormat = None  # type: ignore
@@ -32,6 +37,9 @@ except Exception as _e:  # defer hard failure to runtime path
     TesseractOcrOptions = None  # type: ignore
     TesseractCliOcrOptions = None  # type: ignore
     PdfFormatOption = None  # type: ignore
+    cv2 = None  # type: ignore
+    Image = None  # type: ignore
+    fitz = None  # type: ignore
 
 # Local imports
 from models.metadata import MetadataBuilder, ProcessingMethod, SourceType, ProcessingStatus
@@ -55,6 +63,14 @@ class DoclingProcessor:
         """
         self.llm_client = llm_client
         self.llm_model = llm_model
+        
+        # Converter reuse for memory efficiency
+        self._pdf_converter = None
+        self._normal_converter = None
+        self._converter_lock = asyncio.Lock()
+        
+        # OCR preprocessing configuration
+        self._preprocessing_enabled = cv2 is not None and Image is not None
         
         try:
             if DocumentConverter is None:
@@ -151,6 +167,136 @@ class DoclingProcessor:
         except Exception as e:
             logger.debug(f"Cache clearing warning: {e}")
 
+    async def _get_pdf_converter(self):
+        """Get or create PDF converter with OCR (thread-safe)."""
+        if self._pdf_converter is None:
+            async with self._converter_lock:
+                if self._pdf_converter is None:
+                    logger.info("Initializing PDF converter with OCR...")
+                    # Create PDF converter with OCR
+                    pipeline_options = PdfPipelineOptions()
+                    pipeline_options.do_ocr = True
+                    pipeline_options.do_table_structure = True
+                    pipeline_options.table_structure_options.do_cell_matching = True
+
+                    # Use the exact same OCR options as the test file
+                    ocr_options = TesseractCliOcrOptions(
+                        force_full_page_ocr=True, 
+                        lang=["vie"],
+                        tesseract_cmd=DoclingConfig.TESSERACT_CMD()
+                    )
+                    pipeline_options.ocr_options = ocr_options
+
+                    self._pdf_converter = DocumentConverter(
+                        format_options={
+                            InputFormat.PDF: PdfFormatOption(
+                                pipeline_options=pipeline_options,
+                            )
+                        }
+                    )
+                    logger.info("✅ PDF converter initialized and cached")
+        return self._pdf_converter
+
+    async def _get_normal_converter(self):
+        """Get or create normal converter (thread-safe)."""
+        if self._normal_converter is None:
+            async with self._converter_lock:
+                if self._normal_converter is None:
+                    logger.info("Initializing normal converter...")
+                    self._normal_converter = DocumentConverter()
+                    logger.info("✅ Normal converter initialized and cached")
+        return self._normal_converter
+
+    def _preprocess_page_for_ocr(self, page_image: np.ndarray) -> np.ndarray:
+        """
+        Apply memory-efficient OCR preprocessing to a single page.
+        Returns preprocessed image optimized for OCR accuracy.
+        """
+        if not self._preprocessing_enabled:
+            return page_image
+            
+        try:
+            # 1. Scale to optimal resolution (300 DPI equivalent)
+            height, width = page_image.shape[:2]
+            target_dpi = 300
+            scale_factor = min(target_dpi / 72, 2.0)  # Cap at 2x to prevent memory issues
+            
+            if scale_factor > 1.1:  # Only scale if significant improvement
+                new_width = int(width * scale_factor)
+                new_height = int(height * scale_factor)
+                page_image = cv2.resize(page_image, (new_width, new_height), interpolation=cv2.INTER_CUBIC)
+            
+            # 2. Convert to grayscale if needed
+            if len(page_image.shape) == 3:
+                gray = cv2.cvtColor(page_image, cv2.COLOR_BGR2GRAY)
+            else:
+                gray = page_image.copy()
+            
+            # 3. Binarize using Otsu's method for automatic threshold
+            _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+            
+            # 4. Correct skew using Hough transform (memory efficient)
+            edges = cv2.Canny(binary, 50, 150, apertureSize=3)
+            lines = cv2.HoughLines(edges, 1, np.pi/180, threshold=100)
+            
+            if lines is not None and len(lines) > 0:
+                # Calculate average angle
+                angles = []
+                for line in lines[:min(20, len(lines))]:  # Limit to first 20 lines for efficiency
+                    rho, theta = line[0]
+                    angle = theta - np.pi/2
+                    angles.append(angle)
+                
+                if angles:
+                    avg_angle = np.median(angles)
+                    # Only correct if angle is significant (> 0.5 degrees)
+                    if abs(avg_angle) > 0.0087:  # 0.5 degrees in radians
+                        # Rotate image to correct skew
+                        h, w = binary.shape
+                        center = (w // 2, h // 2)
+                        rotation_matrix = cv2.getRotationMatrix2D(center, np.degrees(avg_angle), 1.0)
+                        binary = cv2.warpAffine(binary, rotation_matrix, (w, h), flags=cv2.INTER_CUBIC)
+            
+            # 5. Remove noise using morphological operations
+            kernel = np.ones((1, 1), np.uint8)
+            cleaned = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel)
+            
+            # 6. Enhance contrast using CLAHE (memory efficient)
+            clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+            enhanced = clahe.apply(cleaned)
+            
+            logger.debug("✅ OCR preprocessing applied successfully")
+            return enhanced
+            
+        except Exception as e:
+            logger.warning(f"OCR preprocessing failed, using original image: {e}")
+            return page_image
+
+    def _extract_page_as_image(self, pdf_doc, page_num: int) -> np.ndarray:
+        """
+        Extract a single page as a numpy array for preprocessing.
+        Memory efficient - processes one page at a time.
+        """
+        try:
+            page = pdf_doc[page_num]
+            # Render page as image with optimal DPI
+            mat = fitz.Matrix(2.0, 2.0)  # 2x scaling for better OCR
+            pix = page.get_pixmap(matrix=mat)
+            
+            # Convert to numpy array
+            img_data = pix.tobytes("ppm")
+            img = Image.open(io.BytesIO(img_data))
+            img_array = np.array(img)
+            
+            # Clean up immediately
+            pix = None
+            page = None
+            
+            return img_array
+            
+        except Exception as e:
+            logger.error(f"Failed to extract page {page_num} as image: {e}")
+            raise
 
     async def _process_pdf_page_by_page(self, content: bytes, filename: str) -> Dict[str, Any]:
         """
@@ -169,30 +315,9 @@ class DoclingProcessor:
 
             logger.info(f"Processing PDF with concurrent pages ({total_pages} pages) with optimized pipeline...")
 
-            # Initialize pipeline once and reuse for all pages
-            pipeline_options = PdfPipelineOptions()
-            pipeline_options.do_ocr = True
-            pipeline_options.do_table_structure = True  # Keep table structure for proper table extraction
-            pipeline_options.table_structure_options.do_cell_matching = True
-
-            # Use lower resolution OCR options
-            ocr_options = TesseractCliOcrOptions(
-                force_full_page_ocr=True,
-                lang=["vie"],
-                tesseract_cmd=DoclingConfig.TESSERACT_CMD()
-            )
-            pipeline_options.ocr_options = ocr_options
-
-            # Create converter once and reuse
-            converter = DocumentConverter(
-                format_options={
-                    InputFormat.PDF: PdfFormatOption(
-                        pipeline_options=pipeline_options,
-                    )
-                }
-            )
-
-            logger.info("✅ Pipeline initialized once - reusing for all pages")
+            # Get reusable converter
+            converter = await self._get_pdf_converter()
+            logger.info("✅ Using cached PDF converter with OCR")
 
             # Create semaphore to limit concurrent page processing (configurable)
             max_concurrent_pages = DoclingConfig.OCR_CONCURRENT_PAGES()
@@ -200,26 +325,56 @@ class DoclingProcessor:
             logger.info(f"Using {max_concurrent_pages} concurrent pages per PDF")
             
             async def process_single_page(page_num: int) -> tuple[int, str]:
-                """Process a single page and return (page_num, text)"""
+                """Process a single page with preprocessing and return (page_num, text)"""
                 async with page_semaphore:
                     logger.info(f"Processing page {page_num + 1} of {total_pages}")
 
-                    # Create a temporary PDF with only this page
-                    temp_pdf = fitz.open()
-                    temp_pdf.insert_pdf(pdf_doc, from_page=page_num, to_page=page_num)
-
-                    # Save temporary PDF to a more accessible location
-                    temp_dir = Path(tempfile.gettempdir()) / "docling_ocr"
-                    temp_dir.mkdir(exist_ok=True)
-                    temp_path = temp_dir / f"page_{page_num}_{int(time.time())}_{id(asyncio.current_task())}.pdf"
-                    temp_pdf.save(str(temp_path))
-
-                    temp_pdf.close()
-
                     try:
-                        # Process this single page using the reused converter
-                        doc = converter.convert(str(temp_path)).document
-                        page_text = doc.export_to_markdown()
+                        # Extract page as image for preprocessing
+                        if self._preprocessing_enabled:
+                            page_image = self._extract_page_as_image(pdf_doc, page_num)
+                            preprocessed_image = self._preprocess_page_for_ocr(page_image)
+                            
+                            # Convert preprocessed image back to PDF
+                            temp_dir = Path(tempfile.gettempdir()) / "docling_ocr"
+                            temp_dir.mkdir(exist_ok=True)
+                            temp_img_path = temp_dir / f"page_{page_num}_{int(time.time())}_{id(asyncio.current_task())}.png"
+                            
+                            # Save preprocessed image
+                            cv2.imwrite(str(temp_img_path), preprocessed_image)
+                            
+                            # Convert image to PDF for Docling processing
+                            temp_pdf_path = temp_dir / f"page_{page_num}_{int(time.time())}_{id(asyncio.current_task())}.pdf"
+                            
+                            # Create a simple PDF from the preprocessed image
+                            img = Image.open(str(temp_img_path))
+                            img.save(str(temp_pdf_path), "PDF", resolution=300.0)
+                            
+                            # Clean up image file
+                            temp_img_path.unlink(missing_ok=True)
+                            
+                            # Process the preprocessed PDF
+                            doc = converter.convert(str(temp_pdf_path)).document
+                            page_text = doc.export_to_markdown()
+                            
+                            # Clean up PDF file
+                            temp_pdf_path.unlink(missing_ok=True)
+                            
+                        else:
+                            # Fallback to original method without preprocessing
+                            temp_pdf = fitz.open()
+                            temp_pdf.insert_pdf(pdf_doc, from_page=page_num, to_page=page_num)
+
+                            temp_dir = Path(tempfile.gettempdir()) / "docling_ocr"
+                            temp_dir.mkdir(exist_ok=True)
+                            temp_path = temp_dir / f"page_{page_num}_{int(time.time())}_{id(asyncio.current_task())}.pdf"
+                            temp_pdf.save(str(temp_path))
+                            temp_pdf.close()
+
+                            doc = converter.convert(str(temp_path)).document
+                            page_text = doc.export_to_markdown()
+                            
+                            temp_path.unlink(missing_ok=True)
 
                         # Clear memory after each page
                         self._clear_memory_caches()
@@ -227,13 +382,9 @@ class DoclingProcessor:
 
                         return (page_num, page_text)
 
-                    finally:
-                        # Clean up temporary file
-                        try:
-                            if temp_path.exists():
-                                temp_path.unlink(missing_ok=True)
-                        except Exception as e:
-                            logger.debug(f"Could not remove temp file {temp_path}: {e}")
+                    except Exception as e:
+                        logger.error(f"Failed to process page {page_num + 1}: {e}")
+                        return (page_num, "")
 
             # Process all pages concurrently
             tasks = [process_single_page(page_num) for page_num in range(total_pages)]
@@ -295,6 +446,8 @@ class DoclingProcessor:
                 "pages_per_pdf": max_concurrent_pages,
                 "max_concurrent_files": DoclingConfig.OCR_MAX_CONCURRENT_FILES()
             }
+            metadata_dict["preprocessing_enabled"] = self._preprocessing_enabled
+            metadata_dict["converter_reuse"] = True
 
             return {
                 "documents": chunks,
@@ -427,46 +580,13 @@ class DoclingProcessor:
             is_pdf = suffix.lower() == '.pdf'
             
             if is_pdf and self.tesseract_available and TesseractCliOcrOptions and PdfPipelineOptions and InputFormat and PdfFormatOption:
-                # Check PDF page count and choose processing method
-                try:
-                    import fitz
-                    pdf_doc = fitz.open(stream=content, filetype="pdf")
-                    page_count = len(pdf_doc)
-                    pdf_doc.close()
-                    
-                    # Use page-by-page processing for all PDFs to minimize memory usage
-                    if page_count > 0:
-                        logger.info(f"PDF detected ({page_count} pages), using page-by-page processing...")
-                        result = await self._process_pdf_page_by_page(content, filename)
-                        return result
-                    
-                except Exception as e:
-                    logger.warning(f"Could not determine PDF page count: {e}")
+                # Use direct PDF processing with converter reuse
+                logger.info("Processing PDF with direct OCR pipeline using cached converter")
                 
-                # Fallback: PDF with OCR - use the exact same configuration as the test file
-                pipeline_options = PdfPipelineOptions()
-                pipeline_options.do_ocr = True
-                pipeline_options.do_table_structure = True  # Keep table structure for proper table extraction
-                pipeline_options.table_structure_options.do_cell_matching = True
-
-                # Use the exact same OCR options as the test file
-                ocr_options = TesseractCliOcrOptions(
-                    force_full_page_ocr=True, 
-                    lang=["vie"],
-                    tesseract_cmd=DoclingConfig.TESSERACT_CMD()
-                )
-
-                pipeline_options.ocr_options = ocr_options
-
-                converter = DocumentConverter(
-                    format_options={
-                        InputFormat.PDF: PdfFormatOption(
-                            pipeline_options=pipeline_options,
-                        )
-                    }
-                )
+                # Get reusable PDF converter
+                converter = await self._get_pdf_converter()
                 
-                logger.info("Processing PDF with OCR enabled (fallback method)...")
+                logger.info("Processing PDF with OCR enabled (direct method for best quality)...")
                 doc = converter.convert(str(temp_path)).document
                 text_md = doc.export_to_markdown()
                 ocr_used = True
@@ -477,7 +597,7 @@ class DoclingProcessor:
                 
             else:
                 # Other file types or PDF without Tesseract - use normal Docling extraction
-                converter = DocumentConverter()
+                converter = await self._get_normal_converter()
                 doc = converter.convert(str(temp_path)).document
                 text_md = doc.export_to_markdown()
                 ocr_used = False
@@ -513,6 +633,8 @@ class DoclingProcessor:
                 )
                 .set_quality_metrics(conversion_success=True)
                 .add_custom_metadata("markdown_length", len(text_md))
+                .add_custom_metadata("preprocessing_enabled", self._preprocessing_enabled)
+                .add_custom_metadata("converter_reuse", True)
                 .build()
             )
 
