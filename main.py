@@ -54,6 +54,7 @@ async def lifespan(app: FastAPI):
     print(f"📚 API Docs: {protocol}://{display_host}:{ServerConfig.PORT()}/docs")
     print(f"🤖 OpenAI Model: {LLMConfig.OPENAI_MODEL()}")
     print(f"🧠 Embedding Model: {RAGConfig.EMBEDDING_MODEL()}")
+    print(f"🎯 Reranker Model: {RAGConfig.RERANKER_MODEL()}")
     print(f"📁 Data Directory: {FileConfig.CHUNKS_DIR()}")
     print(f"🧑‍💻 Uvicorn Workers: {workers}")
     print("=" * 60)
