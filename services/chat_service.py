@@ -53,7 +53,6 @@ class ChatService:
         start_time = time.time()
         request_id = f"chat_{int(time.time() * 1000)}"
         logger.info(f"🔍 Processing chat request {request_id}: {query[:50]}...")
-        await self._history_lock.acquire()
         try:
             # Update request metrics for monitoring
             self.service_metrics["total_requests"] += 1
@@ -138,11 +137,12 @@ class ChatService:
                     context = ""
                     search_results = []
 
-            # Prepare history
+            # Prepare history (lock only around shared history access)
             if custom_history is not None:
                 history = custom_history[-LLMConfig.LLM_HISTORY_LENGTH() :]
             else:
-                history = self.request_history[-LLMConfig.LLM_HISTORY_LENGTH() :]
+                async with self._history_lock:
+                    history = self.request_history[-LLMConfig.LLM_HISTORY_LENGTH() :]
 
             # Generate response using the same context for both modes
             try:
@@ -188,14 +188,15 @@ class ChatService:
                     is_cached = result.get("cached", False)
                 # Update global history (append user and assistant turns)
                 if custom_history is None:
-                    self.request_history.append({"role": "user", "content": query})
-                    self.request_history.append(
-                        {"role": "assistant", "content": response_text}
-                    )
-                    # Trim to max history length
-                    self.request_history = self.request_history[
-                        -(LLMConfig.LLM_HISTORY_LENGTH() * 2) :
-                    ]
+                    async with self._history_lock:
+                        self.request_history.append({"role": "user", "content": query})
+                        self.request_history.append(
+                            {"role": "assistant", "content": response_text}
+                        )
+                        # Trim to max history length
+                        self.request_history = self.request_history[
+                            -(LLMConfig.LLM_HISTORY_LENGTH() * 2) :
+                        ]
                 return BaseResponse(
                     status=StatusEnum.SUCCESS,
                     response=response_text,
@@ -228,7 +229,7 @@ class ChatService:
                     document_count=len(current_documents),
                 ).dict()
         finally:
-            self._history_lock.release()
+            pass
 
     def _create_error_response(
         self,
@@ -411,45 +412,42 @@ class ChatService:
         Async generator for streaming chat responses with memory/history support.
         Calls the streaming method on ChatbotService and yields tokens.
         """
-        await self._history_lock.acquire()
+        # Validate input query
+        if not query or not query.strip():
+            yield "[ERROR] Empty query provided."
+            return
+        if not self.chatbot_service.api_available:
+            yield "[ERROR] Chat service is currently unavailable."
+            return
+        # Load vector store
         try:
-            # Validate input query
-            if not query or not query.strip():
-                yield "[ERROR] Empty query provided."
-                return
-            if not self.chatbot_service.api_available:
-                yield "[ERROR] Chat service is currently unavailable."
-                return
-            # Load vector store
-            try:
-                _, current_embeddings, current_documents = (
-                    vector_store.load_vector_store()
-                )
-            except Exception as e:
-                yield f"[ERROR] Knowledge base unavailable: {str(e)}"
-                return
-            if not current_documents:
+            _, current_embeddings, current_documents = (
+                vector_store.load_vector_store()
+            )
+        except Exception as e:
+            yield f"[ERROR] Knowledge base unavailable: {str(e)}"
+            return
+        if not current_documents:
+            current_embeddings = np.array([])
+            current_documents = []
+        else:
+            if current_embeddings is None:
                 current_embeddings = np.array([])
-                current_documents = []
-            else:
-                if current_embeddings is None:
-                    current_embeddings = np.array([])
-                elif isinstance(current_embeddings, list):
-                    current_embeddings = np.array(current_embeddings)
-            # Prepare history
-            if custom_history is not None:
-                history = custom_history[-LLMConfig.LLM_HISTORY_LENGTH() :]
-            else:
+            elif isinstance(current_embeddings, list):
+                current_embeddings = np.array(current_embeddings)
+        # Prepare history
+        if custom_history is not None:
+            history = custom_history[-LLMConfig.LLM_HISTORY_LENGTH() :]
+        else:
+            async with self._history_lock:
                 history = self.request_history[-LLMConfig.LLM_HISTORY_LENGTH() :]
-            # Note: Don't add current query to history here - it will be added in stream_response_with_history
-            # Stream response from chatbot_service
-            async for token in self.chatbot_service.stream_response_with_history(
-                query,
-                embeddings=current_embeddings,
-                documents=current_documents,
-                history=history,
-            ):
-                yield token
-            # Optionally update global history (not done here to avoid race conditions in streaming)
-        finally:
-            self._history_lock.release()
+        # Note: Don't add current query to history here - it will be added in stream_response_with_history
+        # Stream response from chatbot_service
+        async for token in self.chatbot_service.stream_response_with_history(
+            query,
+            embeddings=current_embeddings,
+            documents=current_documents,
+            history=history,
+        ):
+            yield token
+        # Optionally update global history (not done here to avoid race conditions in streaming)

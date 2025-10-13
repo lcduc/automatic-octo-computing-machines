@@ -164,6 +164,7 @@ class BaseProcessingService(ABC):
                                 {
                                     "chunks_directory": metadata_dict.get("chunks_directory"),
                                     "ocr_enabled": metadata_dict.get("ocr_enabled"),
+                                    "ocr_used": metadata_dict.get("ocr_used"),
                                     "conversion_success": metadata_dict.get("conversion_success"),
                                     "processing_status": metadata_dict.get("processing_status"),
                                     "total_chunks": metadata_dict.get("total_chunks"),
