@@ -32,6 +32,7 @@ class MainDocumentProcessor:
         enable_ocr: bool = None,  # Deprecated - OCR is now automatic for PDFs
         llm_client=None,
         llm_model: str = None,
+        preprocessing_config: str = "ocr_optimized",
     ):
         """
         Initialize main processor with file manager and Docling processor.
@@ -43,25 +44,28 @@ class MainDocumentProcessor:
             enable_ocr: Deprecated - OCR is now automatic for PDFs
             llm_client: OpenAI client for enhanced processing
             llm_model: LLM model to use for enhanced processing
+            preprocessing_config: Preprocessing configuration name ("ocr_optimized", "fast", "high_quality", "default")
         """
         self.file_manager = file_manager if file_manager is not None else FileManager()
         
-        # Initialize Docling processor with automatic OCR for PDFs
+        # Initialize Docling processor with automatic OCR for PDFs and preprocessing
         self.docling_processor = DoclingProcessor(
             enable_ocr=False,  # OCR is now automatic based on file type
             llm_client=llm_client,
-            llm_model=llm_model
+            llm_model=llm_model,
+            preprocessing_config=preprocessing_config
         )
         
         # Create async wrapper for compatibility
         self.async_processor = AsyncDoclingProcessor(
             enable_ocr=False,  # OCR is now automatic based on file type
             llm_client=llm_client,
-            llm_model=llm_model
+            llm_model=llm_model,
+            preprocessing_config=preprocessing_config
         )
         
         logger = __import__('logging').getLogger(__name__)
-        logger.info("MainDocumentProcessor initialized with automatic OCR for PDFs and normal extraction for other formats")
+        logger.info(f"MainDocumentProcessor initialized with automatic OCR for PDFs, preprocessing config: {preprocessing_config}")
 
     async def process_file(self, file_content: bytes, filename: str) -> Dict[str, Any]:
         """

@@ -25,7 +25,7 @@ class DocumentService:
     Uses Docling for basic document conversion.
     """
 
-    def __init__(self, processor=None, file_manager=None, enable_ocr: bool = None, llm_client=None, llm_model: str = None):
+    def __init__(self, processor=None, file_manager=None, enable_ocr: bool = None, llm_client=None, llm_model: str = None, preprocessing_config: str = "ocr_optimized"):
         """
         Initialize document service with processing components.
         - PDFs: Automatically use OCR
@@ -37,6 +37,7 @@ class DocumentService:
             enable_ocr: Deprecated - OCR is now automatic for PDFs
             llm_client: OpenAI client for enhanced processing
             llm_model: LLM model to use for enhanced processing
+            preprocessing_config: Preprocessing configuration name ("ocr_optimized", "fast", "high_quality", "default")
         """
         self.file_manager = file_manager if file_manager is not None else FileManager()
         self.processor = (
@@ -46,7 +47,8 @@ class DocumentService:
                 file_manager=self.file_manager,
                 enable_ocr=False,  # OCR is now automatic based on file type
                 llm_client=llm_client,
-                llm_model=llm_model
+                llm_model=llm_model,
+                preprocessing_config=preprocessing_config
             )
         )
         

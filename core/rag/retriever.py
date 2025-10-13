@@ -50,6 +50,12 @@ class ContextRetriever:
         self._bm25_instance = None
         self._tokenized_docs = None
 
+    def clear_cache(self):
+        """Clear BM25 cache to ensure consistent search results."""
+        self._bm25_cache_key = None
+        self._bm25_instance = None
+        self._tokenized_docs = None
+
     def _ensure_numpy(self, embedding) -> np.ndarray:
         """Convert various embedding formats to numpy arrays for consistent processing."""
         if isinstance(embedding, list):

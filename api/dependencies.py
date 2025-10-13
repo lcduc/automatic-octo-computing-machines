@@ -9,12 +9,14 @@ from core.llm import ChatbotService
 from core.rag import ContextRetriever
 from core.storage import vector_store as global_vector_store
 from core.storage.vector_store import VectorStore
+import os
 
 
 def get_document_service() -> DocumentService:
     """Get document service instance for document processing and management."""
-    # You can inject custom processors or file managers here if needed
-    return DocumentService()
+    # Get preprocessing configuration from environment variable
+    preprocessing_config = os.getenv("PREPROCESSING_CONFIG", "ocr_optimized")
+    return DocumentService(preprocessing_config=preprocessing_config)
 
 
 def get_chat_service() -> ChatService:

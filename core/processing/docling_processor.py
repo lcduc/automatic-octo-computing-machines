@@ -41,6 +41,19 @@ except Exception as _e:  # defer hard failure to runtime path
     Image = None  # type: ignore
     fitz = None  # type: ignore
 
+# Local preprocessing imports
+try:
+    from .preprocessing import DocumentPreprocessor, create_ocr_optimized_config
+    from config.preprocessing_config import PreprocessingConfigManager
+    PREPROCESSING_AVAILABLE = True
+except ImportError as e:
+    logger = logging.getLogger(__name__)
+    logger.warning(f"Advanced preprocessing not available: {e}")
+    DocumentPreprocessor = None  # type: ignore
+    create_ocr_optimized_config = None  # type: ignore
+    PreprocessingConfigManager = None  # type: ignore
+    PREPROCESSING_AVAILABLE = False
+
 # Local imports
 from models.metadata import MetadataBuilder, ProcessingMethod, SourceType, ProcessingStatus
 from config.file.file_config import FileConfig
@@ -55,11 +68,18 @@ class DoclingProcessor:
     Produces heading-based chunks from the exported markdown.
     """
 
-    def __init__(self, enable_ocr: bool = False, llm_client=None, llm_model: str = None):
+    def __init__(self, enable_ocr: bool = False, llm_client=None, llm_model: str = None, 
+                 preprocessing_config: str = "ocr_optimized"):
         """
         Initialize Docling processor with automatic OCR for PDFs and normal extraction for other formats.
         - PDFs: Always use OCR (like the test file)
         - Other formats: Use normal Docling extraction
+        
+        Args:
+            enable_ocr: Deprecated - OCR is now automatic for PDFs
+            llm_client: OpenAI client for enhanced processing
+            llm_model: LLM model to use for enhanced processing
+            preprocessing_config: Preprocessing configuration name ("ocr_optimized", "fast", "high_quality", "default")
         """
         self.llm_client = llm_client
         self.llm_model = llm_model
@@ -71,6 +91,24 @@ class DoclingProcessor:
         
         # OCR preprocessing configuration
         self._preprocessing_enabled = cv2 is not None and Image is not None
+        
+        # Initialize advanced preprocessing
+        self._advanced_preprocessing_enabled = PREPROCESSING_AVAILABLE and self._preprocessing_enabled
+        self._preprocessor = None
+        
+        if self._advanced_preprocessing_enabled:
+            try:
+                if PreprocessingConfigManager:
+                    settings = PreprocessingConfigManager.get_config_by_name(preprocessing_config)
+                    config = settings.to_preprocessing_config()
+                    self._preprocessor = DocumentPreprocessor(config)
+                    logger.info(f"Advanced preprocessing enabled with config: {preprocessing_config}")
+                else:
+                    self._preprocessor = DocumentPreprocessor()
+                    logger.info("Advanced preprocessing enabled with default config")
+            except Exception as e:
+                logger.warning(f"Failed to initialize advanced preprocessing: {e}")
+                self._advanced_preprocessing_enabled = False
         
         try:
             if DocumentConverter is None:
@@ -216,6 +254,24 @@ class DoclingProcessor:
             return page_image
             
         try:
+            # Use advanced preprocessing if available
+            if self._advanced_preprocessing_enabled and self._preprocessor:
+                logger.debug("Using advanced preprocessing pipeline")
+                return self._preprocessor.preprocess_pdf_page(page_image)
+            
+            # Fallback to basic preprocessing
+            logger.debug("Using basic preprocessing pipeline")
+            return self._basic_preprocess_page(page_image)
+            
+        except Exception as e:
+            logger.warning(f"OCR preprocessing failed, using original image: {e}")
+            return page_image
+    
+    def _basic_preprocess_page(self, page_image: np.ndarray) -> np.ndarray:
+        """
+        Basic preprocessing fallback when advanced preprocessing is not available.
+        """
+        try:
             # 1. Scale to optimal resolution (300 DPI equivalent)
             height, width = page_image.shape[:2]
             target_dpi = 300
@@ -265,11 +321,11 @@ class DoclingProcessor:
             clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
             enhanced = clahe.apply(cleaned)
             
-            logger.debug("✅ OCR preprocessing applied successfully")
+            logger.debug("✅ Basic OCR preprocessing applied successfully")
             return enhanced
             
         except Exception as e:
-            logger.warning(f"OCR preprocessing failed, using original image: {e}")
+            logger.warning(f"Basic OCR preprocessing failed, using original image: {e}")
             return page_image
 
     def _extract_page_as_image(self, pdf_doc, page_num: int) -> np.ndarray:
@@ -447,6 +503,8 @@ class DoclingProcessor:
                 "max_concurrent_files": DoclingConfig.OCR_MAX_CONCURRENT_FILES()
             }
             metadata_dict["preprocessing_enabled"] = self._preprocessing_enabled
+            metadata_dict["advanced_preprocessing_enabled"] = self._advanced_preprocessing_enabled
+            metadata_dict["ocr_forced_all_pdfs"] = DoclingConfig.OCR_FORCE_ALL_PDFS()
             metadata_dict["converter_reuse"] = True
 
             return {
@@ -580,20 +638,39 @@ class DoclingProcessor:
             is_pdf = suffix.lower() == '.pdf'
             
             if is_pdf and self.tesseract_available and TesseractCliOcrOptions and PdfPipelineOptions and InputFormat and PdfFormatOption:
-                # Use direct PDF processing with converter reuse
-                logger.info("Processing PDF with direct OCR pipeline using cached converter")
+                # Check if we should force OCR on all PDFs
+                force_ocr_all = DoclingConfig.OCR_FORCE_ALL_PDFS()
                 
-                # Get reusable PDF converter
-                converter = await self._get_pdf_converter()
-                
-                logger.info("Processing PDF with OCR enabled (direct method for best quality)...")
-                doc = converter.convert(str(temp_path)).document
-                text_md = doc.export_to_markdown()
-                ocr_used = True
-                
-                # Clear memory immediately after OCR processing
-                self._clear_memory_caches()
-                logger.debug("Memory cleared after OCR processing")
+                if force_ocr_all:
+                    # Force OCR on all PDFs regardless of text content
+                    logger.info("Processing PDF with forced OCR (OCR_FORCE_ALL_PDFS=true)...")
+                    
+                    # Get reusable PDF converter
+                    converter = await self._get_pdf_converter()
+                    
+                    doc = converter.convert(str(temp_path)).document
+                    text_md = doc.export_to_markdown()
+                    ocr_used = True
+                    
+                    # Clear memory immediately after OCR processing
+                    self._clear_memory_caches()
+                    logger.debug("Memory cleared after forced OCR processing")
+                    
+                else:
+                    # Use direct PDF processing with converter reuse (original behavior)
+                    logger.info("Processing PDF with direct OCR pipeline using cached converter")
+                    
+                    # Get reusable PDF converter
+                    converter = await self._get_pdf_converter()
+                    
+                    logger.info("Processing PDF with OCR enabled (direct method for best quality)...")
+                    doc = converter.convert(str(temp_path)).document
+                    text_md = doc.export_to_markdown()
+                    ocr_used = True
+                    
+                    # Clear memory immediately after OCR processing
+                    self._clear_memory_caches()
+                    logger.debug("Memory cleared after OCR processing")
                 
             else:
                 # Other file types or PDF without Tesseract - use normal Docling extraction
@@ -626,6 +703,7 @@ class DoclingProcessor:
                 )
                 .set_content_stats(total_chunks=len(chunks), total_characters=len(text_md))
                 .set_ocr_info(ocr_enabled=is_pdf and self.tesseract_available, ocr_used=ocr_used)
+                .add_custom_metadata("ocr_forced_all_pdfs", DoclingConfig.OCR_FORCE_ALL_PDFS())
                 .set_content_features(
                     has_tables="|" in text_md,
                     has_images="![" in text_md,
@@ -634,6 +712,7 @@ class DoclingProcessor:
                 .set_quality_metrics(conversion_success=True)
                 .add_custom_metadata("markdown_length", len(text_md))
                 .add_custom_metadata("preprocessing_enabled", self._preprocessing_enabled)
+                .add_custom_metadata("advanced_preprocessing_enabled", self._advanced_preprocessing_enabled)
                 .add_custom_metadata("converter_reuse", True)
                 .build()
             )

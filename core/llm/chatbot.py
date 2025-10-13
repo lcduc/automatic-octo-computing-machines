@@ -118,6 +118,9 @@ class ChatbotService:
             if documents is not None and embeddings is not None and len(documents) > 0:
                 logger.info(f"\U0001f4da RAG enabled: {len(documents)} documents available")
                 try:
+                    # Clear cache to ensure consistent search results
+                    self.context_retriever.clear_cache()
+                    
                     # Use enhanced hybrid search with query expansion
                     search_results = self.context_retriever.hybrid_search(
                         query=query,
@@ -489,6 +492,262 @@ class ChatbotService:
             "current_cache_size": 0
         }
 
+    def get_response_with_context(self, query: str, context: str, search_results: List[Dict[str, Any]] = None) -> Union[ChatResponse, ErrorResponse]:
+        """
+        Generate AI response using pre-built context (no RAG search).
+        This ensures consistency with test RAG process.
+        
+        Args:
+            query: User query to process
+            context: Pre-built context from RAG process
+            search_results: Search results metadata for confidence scoring
+
+        Returns:
+            Dict containing response, confidence metrics, and search metadata
+        """
+        if not self.api_available:
+            error_response = self._create_error_response(query, "I apologize, but the chat service is currently unavailable. Please try again later.")
+            return error_response
+
+        try:
+            logger.info(f"🤖 [Request] Received query: '{query[:50]}...' (id={hashlib.md5(query.encode()).hexdigest()[:8]})")
+            logger.info(f"📄 Using pre-built context: {len(context)} characters")
+            
+            # Log context preview for debugging
+            if context:
+                context_preview = context[:200].replace('\n', ' ').replace('\r', ' ')
+                logger.info(f"📄 Context preview: {context_preview}...")
+            else:
+                logger.warning("⚠️ No context provided")
+            
+            # Build OpenAI messages
+            messages = [
+                {"role": "system", "content": self.prompt_manager.get_system_prompt(context=context)}
+            ]
+            
+            # Add current query
+            messages.append({"role": "user", "content": query})
+
+            # Check cache for speed
+            cache_key = self._get_cache_key(query, context)
+            cached_response = self._get_cached_response(cache_key)
+            if cached_response:
+                logger.debug("⚡ Using cached response")
+                # Calculate confidence for cached response
+                confidence = self.confidence_scorer.calculate_confidence(
+                    cached_response, query, context, search_results or []
+                )
+                return ChatResponse(
+                    status=StatusEnum.SUCCESS,
+                    message="Response generated successfully",
+                    response=cached_response,
+                    query=query,
+                    confidence={
+                        "score": confidence.overall_score,
+                        "level": self.confidence_scorer.get_confidence_level(confidence.overall_score),
+                        "details": {
+                            "context_alignment": confidence.context_alignment,
+                            "response_length_appropriateness": confidence.response_length_appropriateness,
+                            "semantic_coherence": confidence.semantic_coherence,
+                            "source_citation": confidence.source_citation,
+                            "uncertainty_indicators": confidence.uncertainty_indicators,
+                            "reasoning": confidence.reasoning
+                        }
+                    },
+                    search_metadata={
+                        "results_count": len(search_results) if search_results else 0,
+                        "top_scores": [r.get("combined_score", 0) for r in (search_results or [])[:3] if r.get("combined_score", 0) > 0],
+                        "cached_response": True
+                    }
+                )
+
+            # Make optimized API call
+            logger.info("🚀 Making API call to OpenAI...")
+            client = openai.OpenAI(api_key=LLMConfig.OPENAI_API_KEY())
+            response = client.chat.completions.create(
+                model=LLMConfig.OPENAI_MODEL(),
+                messages=messages,  # type: ignore
+                max_tokens=LLMConfig.OPENAI_MAX_TOKENS(),
+                temperature=LLMConfig.OPENAI_TEMPERATURE(),
+                timeout=LLMConfig.OPENAI_TIMEOUT()
+            )
+
+            content = response.choices[0].message.content
+            response_text = content.strip() if content else ""
+            logger.info(f"✅ Response generated: {len(response_text)} characters")
+
+            # Calculate confidence score
+            confidence = self.confidence_scorer.calculate_confidence(
+                response_text, query, context, search_results or []
+            )
+            
+            logger.info(f"🎯 Confidence score: {confidence.overall_score:.3f} ({self.confidence_scorer.get_confidence_level(confidence.overall_score)})")
+
+            # Cache the response for speed
+            self._cache_response(cache_key, response_text)
+
+            logger.debug("✅ Response generated successfully")
+            return ChatResponse(
+                status=StatusEnum.SUCCESS,
+                message="Response generated successfully",
+                response=response_text,
+                query=query,
+                confidence={
+                    "score": confidence.overall_score,
+                    "level": self.confidence_scorer.get_confidence_level(confidence.overall_score),
+                    "details": {
+                        "context_alignment": confidence.context_alignment,
+                        "response_length_appropriateness": confidence.response_length_appropriateness,
+                        "semantic_coherence": confidence.semantic_coherence,
+                        "source_citation": confidence.source_citation,
+                        "uncertainty_indicators": confidence.uncertainty_indicators,
+                        "reasoning": confidence.reasoning
+                    }
+                },
+                search_metadata={
+                    "results_count": len(search_results) if search_results else 0,
+                    "top_scores": [r.get("combined_score", 0) for r in (search_results or [])[:3] if r.get("combined_score", 0) > 0],
+                    "cached_response": False
+                }
+            )
+
+        except Exception as e:
+            logger.error(f"❌ Error generating response: {e}")
+            return self._create_error_response(query, f"An error occurred while generating the response: {str(e)}")
+
+    def get_response_with_history_and_context(self, query: str, context: str, search_results: List[Dict[str, Any]] = None, history: Optional[List[Dict[str, str]]] = None) -> Dict[str, Any]:
+        """
+        Generate AI response using pre-built context with conversation history.
+        This ensures consistency with test RAG process while supporting history.
+        
+        Args:
+            query: User query to process
+            context: Pre-built context from RAG process
+            search_results: Search results metadata for confidence scoring
+            history: Conversation history
+
+        Returns:
+            Dict containing response, confidence metrics, and search metadata
+        """
+        if not self.api_available:
+            error_response = self._create_error_response(query, "I apologize, but the chat service is currently unavailable. Please try again later.")
+            return error_response
+
+        try:
+            logger.info(f"🤖 Processing query with history: '{query[:50]}...'")
+            logger.info(f"📚 History length: {len(history) if history else 0} messages")
+            logger.info(f"📄 Using pre-built context: {len(context)} characters")
+            
+            # Log context preview for debugging
+            if context:
+                context_preview = context[:200].replace('\n', ' ').replace('\r', ' ')
+                logger.info(f"📄 Context preview: {context_preview}...")
+            else:
+                logger.warning("⚠️ No context provided")
+            
+            # Build OpenAI messages with history
+            messages = [
+                {"role": "system", "content": self.prompt_manager.get_system_prompt(context=context)}
+            ]
+            
+            # Add conversation history if provided
+            if history:
+                # Limit history to prevent token overflow
+                max_history_messages = min(len(history), 20)  # Limit to last 20 messages
+                history_to_include = history[-max_history_messages:]
+                messages.extend(history_to_include)
+                logger.info(f"📚 Included {len(history_to_include)} history messages")
+            
+            # Add current query
+            messages.append({"role": "user", "content": query})
+
+            # Check cache for speed (cache key includes history for uniqueness)
+            cache_key = self._get_cache_key_with_history(query, context, history)
+            cached_response = self._get_cached_response(cache_key)
+            if cached_response:
+                logger.debug("⚡ Using cached response")
+                # Calculate confidence for cached response
+                confidence = self.confidence_scorer.calculate_confidence(
+                    cached_response, query, context, search_results or []
+                )
+                return {
+                    "response": cached_response,
+                    "confidence": confidence.overall_score,
+                    "confidence_level": self.confidence_scorer.get_confidence_level(confidence.overall_score),
+                    "confidence_details": {
+                        "context_alignment": confidence.context_alignment,
+                        "response_length_appropriateness": confidence.response_length_appropriateness,
+                        "semantic_coherence": confidence.semantic_coherence,
+                        "source_citation": confidence.source_citation,
+                        "uncertainty_indicators": confidence.uncertainty_indicators,
+                        "reasoning": confidence.reasoning
+                    },
+                    "search_results": {
+                        "count": len(search_results) if search_results else 0,
+                        "top_scores": [r.get("combined_score", 0) for r in (search_results or [])[:3] if r.get("combined_score", 0) > 0]
+                    },
+                    "success": True,
+                    "cached": True
+                }
+
+            # Make optimized API call
+            logger.info("🚀 Making API call to OpenAI...")
+            client = openai.OpenAI(api_key=LLMConfig.OPENAI_API_KEY())
+            response = client.chat.completions.create(
+                model=LLMConfig.OPENAI_MODEL(),
+                messages=messages,  # type: ignore
+                max_tokens=LLMConfig.OPENAI_MAX_TOKENS(),
+                temperature=LLMConfig.OPENAI_TEMPERATURE(),
+                timeout=LLMConfig.OPENAI_TIMEOUT()
+            )
+
+            content = response.choices[0].message.content
+            response_text = content.strip() if content else ""
+            logger.info(f"✅ Response generated: {len(response_text)} characters")
+
+            # Calculate confidence score
+            confidence = self.confidence_scorer.calculate_confidence(
+                response_text, query, context, search_results or []
+            )
+            
+            logger.info(f"🎯 Confidence score: {confidence.overall_score:.3f} ({self.confidence_scorer.get_confidence_level(confidence.overall_score)})")
+
+            # Cache the response for speed
+            self._cache_response(cache_key, response_text)
+
+            logger.debug("✅ Response generated successfully")
+            return {
+                "response": response_text,
+                "confidence": confidence.overall_score,
+                "confidence_level": self.confidence_scorer.get_confidence_level(confidence.overall_score),
+                "confidence_details": {
+                    "context_alignment": confidence.context_alignment,
+                    "response_length_appropriateness": confidence.response_length_appropriateness,
+                    "semantic_coherence": confidence.semantic_coherence,
+                    "source_citation": confidence.source_citation,
+                    "uncertainty_indicators": confidence.uncertainty_indicators,
+                    "reasoning": confidence.reasoning
+                },
+                "search_results": {
+                    "count": len(search_results) if search_results else 0,
+                    "top_scores": [r.get("combined_score", 0) for r in (search_results or [])[:3] if r.get("combined_score", 0) > 0]
+                },
+                "success": True,
+                "cached": False
+            }
+
+        except Exception as e:
+            logger.error(f"❌ Error generating response: {e}")
+            return {
+                "response": f"An error occurred while generating the response: {str(e)}",
+                "confidence": 0.0,
+                "confidence_level": "Low",
+                "confidence_details": {},
+                "search_results": {"count": 0, "top_scores": []},
+                "success": False,
+                "cached": False
+            }
+
     def get_response_with_history(self, query: str, embeddings=None, documents=None, history: Optional[List[Dict[str, str]]] = None) -> Dict[str, Any]:
         """
         Generate response from query with conversation history.
@@ -523,6 +782,9 @@ class ChatbotService:
             if documents is not None and embeddings is not None and len(documents) > 0:
                 logger.info(f"📚 RAG enabled: {len(documents)} documents available")
                 try:
+                    # Clear cache to ensure consistent search results
+                    self.context_retriever.clear_cache()
+                    
                     # Use enhanced hybrid search with query expansion
                     search_results = self.context_retriever.hybrid_search(
                         query=query,

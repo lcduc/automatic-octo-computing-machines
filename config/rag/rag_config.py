@@ -24,7 +24,7 @@ class RAGConfig:
 
     @staticmethod
     def SIMILARITY_THRESHOLD():
-        return float(os.getenv("SIMILARITY_THRESHOLD", "0.3"))  # Lower threshold for more results
+        return float(os.getenv("SIMILARITY_THRESHOLD", "0.5"))  # Lower threshold for more results
 
     @staticmethod
     def DIVERSITY_THRESHOLD():
@@ -56,7 +56,7 @@ class RAGConfig:
 
     @staticmethod
     def MIN_CONTEXT_CHUNKS():
-        return int(os.getenv("MIN_CONTEXT_CHUNKS", "2"))
+        return int(os.getenv("MIN_CONTEXT_CHUNKS", "0"))
 
     @staticmethod
     def MAX_CONTEXT_CHUNKS():

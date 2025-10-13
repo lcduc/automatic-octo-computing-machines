@@ -11,6 +11,7 @@ from core.llm import ChatbotService
 from core.storage import vector_store
 from config.server.health_config import HealthConfig
 from config.llm.llm_config import LLMConfig
+from config.rag.rag_config import RAGConfig
 from models.responses import ErrorResponse, BaseResponse, StatusEnum
 
 logger = logging.getLogger(__name__)
@@ -103,21 +104,63 @@ class ChatService:
                 elif isinstance(current_embeddings, list):
                     current_embeddings = np.array(current_embeddings)
 
+            # Perform RAG search once for consistency (same as test)
+            context = ""
+            search_results = []
+            if current_documents and len(current_documents) > 0 and current_embeddings is not None:
+                try:
+                    # Clear cache to ensure consistent search results
+                    self.chatbot_service.context_retriever.clear_cache()
+                    
+                    # Use the same RAG process as the test
+                    search_results = self.chatbot_service.context_retriever.hybrid_search(
+                        query=query,
+                        embeddings=current_embeddings,
+                        documents=current_documents,
+                        k=RAGConfig.RETRIEVAL_TOP_K(),
+                        semantic_weight=RAGConfig.SEMANTIC_WEIGHT()
+                    )
+                    
+                    # Build context from search results (same as test)
+                    context_chunks = []
+                    for result in search_results:
+                        context_chunks.append(f"[Chunk {result['index']}]\n{result['document']}\n")
+                    context = "\n".join(context_chunks)
+                    
+                    # Truncate context if too long (same as test)
+                    max_context_length = LLMConfig.MAX_CONTEXT_LENGTH()
+                    if len(context) > max_context_length:
+                        context = context[:max_context_length]
+                        logger.debug(f"🔧 Context truncated to {max_context_length} characters")
+                        
+                except Exception as e:
+                    logger.warning(f"⚠️ RAG search failed: {e}")
+                    context = ""
+                    search_results = []
+
             # Prepare history
             if custom_history is not None:
                 history = custom_history[-LLMConfig.LLM_HISTORY_LENGTH() :]
             else:
                 history = self.request_history[-LLMConfig.LLM_HISTORY_LENGTH() :]
-            # Note: Don't add current query to history here - it will be added in get_response_with_history
 
-            # Generate response using chatbot service with history
+            # Generate response using the same context for both modes
             try:
-                result = self.chatbot_service.get_response_with_history(
-                    query,
-                    embeddings=current_embeddings,
-                    documents=current_documents,
-                    history=history,
-                )
+                if history and len(history) > 0:
+                    # History mode: use get_response_with_history but with pre-built context
+                    result = self.chatbot_service.get_response_with_history_and_context(
+                        query=query,
+                        context=context,
+                        search_results=search_results,
+                        history=history,
+                    )
+                else:
+                    # Query-only mode: use get_response_with_context
+                    result = self.chatbot_service.get_response_with_context(
+                        query=query,
+                        context=context,
+                        search_results=search_results,
+                    )
                 # Calculate total processing time for performance monitoring
                 processing_time = time.time() - start_time
                 # Update service metrics for health monitoring
@@ -127,12 +170,22 @@ class ChatService:
                     f"✅ Request {request_id} completed successfully in {processing_time:.2f}s"
                 )
                 # Extract response and metadata from result for comprehensive response
-                response_text = result.get("response", "")
-                confidence_score = result.get("confidence", 0.0)
-                confidence_level = result.get("confidence_level", "Unknown")
-                confidence_details = result.get("confidence_details", {})
-                search_results = result.get("search_results", {})
-                is_cached = result.get("cached", False)
+                if hasattr(result, 'response'):
+                    # ChatResponse object
+                    response_text = result.response
+                    confidence_score = result.confidence.get("score", 0.0) if result.confidence else 0.0
+                    confidence_level = result.confidence.get("level", "Unknown") if result.confidence else "Unknown"
+                    confidence_details = result.confidence.get("details", {}) if result.confidence else {}
+                    search_results = result.search_metadata if hasattr(result, 'search_metadata') else {}
+                    is_cached = result.search_metadata.get("cached_response", False) if hasattr(result, 'search_metadata') else False
+                else:
+                    # Dictionary format
+                    response_text = result.get("response", "")
+                    confidence_score = result.get("confidence", 0.0)
+                    confidence_level = result.get("confidence_level", "Unknown")
+                    confidence_details = result.get("confidence_details", {})
+                    search_results = result.get("search_results", {})
+                    is_cached = result.get("cached", False)
                 # Update global history (append user and assistant turns)
                 if custom_history is None:
                     self.request_history.append({"role": "user", "content": query})

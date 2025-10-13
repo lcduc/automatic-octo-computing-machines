@@ -40,6 +40,11 @@ class DoclingConfig:
         return os.getenv("OCR_FORCE_FULL_PAGE", "true").lower() == "true"
     
     @staticmethod
+    def OCR_FORCE_ALL_PDFS():
+        """Whether to force OCR on all PDFs, even those with existing text content."""
+        return os.getenv("OCR_FORCE_ALL_PDFS", "false").lower() == "true"
+    
+    @staticmethod
     def OCR_DO_TABLE_STRUCTURE():
         """Whether to enable table structure detection."""
         return os.getenv("OCR_DO_TABLE_STRUCTURE", "true").lower() == "true"

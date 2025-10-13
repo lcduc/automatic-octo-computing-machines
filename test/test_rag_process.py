@@ -205,11 +205,27 @@ class RAGProcessTester:
         response_start = time.time()
         
         try:
-            # Generate response using the chatbot service
-            response = self.chatbot_service.get_response(
+            # Use the same search results from step 2 for consistency
+            # Build context from the same search results used in step 4
+            context_chunks = []
+            for result in search_results:
+                context_chunks.append(f"[Chunk {result['index']}]\n{result['document']}\n")
+            context = "\n".join(context_chunks)
+            
+            # Truncate context if too long (same as step 4)
+            max_context_length = LLMConfig.MAX_CONTEXT_LENGTH()
+            if len(context) > max_context_length:
+                context = context[:max_context_length]
+                print(f"   ⚠️  Context truncated to {max_context_length} characters")
+            
+            # Generate system prompt using the same context
+            system_prompt = self.prompt_manager.get_system_prompt(context=context)
+            
+            # Generate response using the chatbot service with the same context
+            response = self.chatbot_service.get_response_with_context(
                 query=query,
-                embeddings=embeddings,
-                documents=documents
+                context=context,
+                search_results=search_results
             )
             response_time = time.time() - response_start
             
