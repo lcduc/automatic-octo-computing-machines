@@ -8,12 +8,16 @@ import time
 
 # Third-party imports
 import psutil
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
 # Local imports
 from setting import Config
 from models.responses import HealthResponse, StatusEnum
 from pydantic import BaseModel, Field
+from utils.performance_monitor import get_performance_monitor
+from utils.background_tasks import get_background_manager
+from utils.model_preloader import get_model_preloader
+from api.dependencies import get_chat_service
 
 router = APIRouter()
 
@@ -93,3 +97,49 @@ async def detailed_status():
             system={},
             configuration={},
         )
+
+
+@router.get("/performance")
+async def performance_metrics():
+    """
+    Get detailed performance metrics for the chatbot.
+    Returns response times, cache hit rates, and system resource usage.
+    """
+    try:
+        monitor = get_performance_monitor()
+        stats = monitor.get_performance_stats()
+        health_status = monitor.get_health_status()
+        
+        return {
+            "status": "success",
+            "health_status": health_status,
+            "performance_metrics": stats,
+            "timestamp": time.time()
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "error": str(e),
+            "timestamp": time.time()
+        }
+
+
+@router.get("/cache-stats")
+async def cache_statistics(chat_service=Depends(get_chat_service)):
+    """
+    Get detailed cache statistics for all cache layers.
+    Returns information about smart cache, chatbot cache, and vector store cache.
+    """
+    try:
+        cache_stats = chat_service.get_cache_stats()
+        return {
+            "status": "success",
+            "cache_statistics": cache_stats,
+            "timestamp": time.time()
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "error": str(e),
+            "timestamp": time.time()
+        }

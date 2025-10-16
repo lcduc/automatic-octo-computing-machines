@@ -13,6 +13,9 @@ from config.server.health_config import HealthConfig
 from config.llm.llm_config import LLMConfig
 from config.rag.rag_config import RAGConfig
 from models.responses import ErrorResponse, BaseResponse, StatusEnum
+from utils.performance_monitor import get_performance_monitor
+from utils.model_preloader import get_model_preloader
+from core.caching import get_cache_service
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +45,71 @@ class ChatService:
             "average_response_time": 0.0,
             "service_start_time": datetime.now().isoformat(),
         }
+        
+        # Performance optimizations
+        self._vector_store_cache = None
+        self._vector_store_last_loaded = 0
+        self._vector_store_ttl = 300  # 5 minutes cache
+        
+        # Use existing smart cache service
+        self._smart_cache = get_cache_service()
+        
+        # Performance monitoring
+        self._performance_monitor = get_performance_monitor()
+
+    def _get_cached_vector_store(self):
+        """Get cached vector store or load if expired."""
+        # Try to get preloaded vector store first
+        preloader = get_model_preloader()
+        preloaded_data = preloader.get_vector_store_data()
+        if preloaded_data is not None:
+            logger.debug("⚡ Using preloaded vector store")
+            return preloaded_data
+        
+        # Fallback to cached loading
+        current_time = time.time()
+        if (self._vector_store_cache is None or 
+            current_time - self._vector_store_last_loaded > self._vector_store_ttl):
+            try:
+                # Use OptimizedVectorStore for better performance
+                from core.storage.vector_store_optimized import OptimizedVectorStore
+                vs = OptimizedVectorStore()
+                self._vector_store_cache = vs.load_vector_store()
+                self._vector_store_last_loaded = current_time
+                logger.debug("🔄 Vector store cache refreshed")
+            except Exception as e:
+                logger.error(f"❌ Error loading vector store: {e}")
+                return None
+        return self._vector_store_cache
+
+    def _get_cached_search_results(self, query: str, embeddings, documents, k: int, semantic_weight: float):
+        """Get cached search results using the existing smart cache service."""
+        import hashlib
+        context_hash = f"{len(documents)}_{k}_{semantic_weight}"
+        
+        # Try to get from smart cache first
+        cached_results = self._smart_cache.get(query, context_hash, use_similarity=True)
+        if cached_results is not None:
+            logger.debug("⚡ Using cached search results from smart cache")
+            return cached_results
+        
+        # Perform search and cache result
+        try:
+            results = self.chatbot_service.context_retriever.hybrid_search(
+                query=query,
+                embeddings=embeddings,
+                documents=documents,
+                k=k,
+                semantic_weight=semantic_weight
+            )
+            
+            # Cache using smart cache service
+            self._smart_cache.set(query, results, context_hash)
+            logger.debug("💾 Cached search results in smart cache")
+            return results
+        except Exception as e:
+            logger.warning(f"⚠️ Search failed: {e}")
+            return []
 
     async def chat_with_memory(
         self, query: str, custom_history: Optional[List[Dict[str, str]]] = None
@@ -52,7 +120,8 @@ class ChatService:
         """
         start_time = time.time()
         request_id = f"chat_{int(time.time() * 1000)}"
-        logger.info(f"🔍 Processing chat request {request_id}: {query[:50]}...")
+        if logger.isEnabledFor(logging.INFO):
+            logger.info("🔍 Processing chat request %s: %s...", request_id, query[:50])
         try:
             # Update request metrics for monitoring
             self.service_metrics["total_requests"] += 1
@@ -73,19 +142,18 @@ class ChatService:
                     start_time,
                 ).dict()
 
-            # Load vector store with error handling for knowledge base access
-            try:
-                _, current_embeddings, current_documents = (
-                    vector_store.load_vector_store()
-                )
-            except Exception as e:
-                logger.error(f"❌ Error loading vector store: {e}")
+            # Load vector store with caching for performance
+            vector_store_result = self._get_cached_vector_store()
+            if vector_store_result is None:
                 return self._create_error_response(
                     query,
                     "Knowledge base is currently unavailable",
                     request_id,
                     start_time,
                 ).dict()
+            
+            _, current_embeddings, current_documents = vector_store_result
+            is_cached = False  # Initialize is_cached variable
 
             # Handle empty knowledge base gracefully with universal prompt
             if not current_documents:
@@ -103,22 +171,22 @@ class ChatService:
                 elif isinstance(current_embeddings, list):
                     current_embeddings = np.array(current_embeddings)
 
-            # Perform RAG search once for consistency (same as test)
+            # Perform RAG search with caching for performance
             context = ""
             search_results = []
             if current_documents and len(current_documents) > 0 and current_embeddings is not None:
                 try:
-                    # Clear cache to ensure consistent search results
-                    self.chatbot_service.context_retriever.clear_cache()
-                    
-                    # Use the same RAG process as the test
-                    search_results = self.chatbot_service.context_retriever.hybrid_search(
+                    # Use cached search results for better performance
+                    search_start_time = time.time()
+                    search_results = self._get_cached_search_results(
                         query=query,
                         embeddings=current_embeddings,
                         documents=current_documents,
                         k=RAGConfig.RETRIEVAL_TOP_K(),
                         semantic_weight=RAGConfig.SEMANTIC_WEIGHT()
                     )
+                    search_time = time.time() - search_start_time
+                    logger.info(f"⏱️ RAG search time: {search_time:.3f}s")
                     
                     # Build context from search results (same as test)
                     context_chunks = []
@@ -146,8 +214,10 @@ class ChatService:
 
             # Generate response using the same context for both modes
             try:
+                llm_start_time = time.time()
                 if history and len(history) > 0:
                     # History mode: use get_response_with_history but with pre-built context
+                    logger.debug(f"🔄 Calling LLM with history (context: {len(context)} chars)")
                     result = self.chatbot_service.get_response_with_history_and_context(
                         query=query,
                         context=context,
@@ -156,19 +226,27 @@ class ChatService:
                     )
                 else:
                     # Query-only mode: use get_response_with_context
+                    logger.debug(f"🔄 Calling LLM without history (context: {len(context)} chars)")
                     result = self.chatbot_service.get_response_with_context(
                         query=query,
                         context=context,
                         search_results=search_results,
                     )
+                llm_time = time.time() - llm_start_time
+                logger.info(f"⏱️ LLM response time: {llm_time:.3f}s")
                 # Calculate total processing time for performance monitoring
                 processing_time = time.time() - start_time
                 # Update service metrics for health monitoring
                 self.service_metrics["successful_requests"] += 1
                 self._update_average_response_time(processing_time)
-                logger.info(
-                    f"✅ Request {request_id} completed successfully in {processing_time:.2f}s"
-                )
+                
+                # Record performance metrics
+                if hasattr(self, '_performance_monitor'):
+                    self._performance_monitor.record_request(processing_time, is_cached)
+                    self._performance_monitor.record_system_metrics()
+                
+                if logger.isEnabledFor(logging.INFO):
+                    logger.info("✅ Request %s completed successfully in %.2fs", request_id, processing_time)
                 # Extract response and metadata from result for comprehensive response
                 if hasattr(result, 'response'):
                     # ChatResponse object
@@ -217,9 +295,7 @@ class ChatService:
                     error=None,
                 ).dict()
             except Exception as e:
-                logger.error(
-                    f"❌ Error in chatbot service for request {request_id}: {e}"
-                )
+                logger.error("❌ Error in chatbot service for request %s: %s", request_id, e)
                 self.service_metrics["failed_requests"] += 1
                 return self._create_error_response(
                     query,
@@ -391,18 +467,65 @@ class ChatService:
         self.request_history.clear()
 
     def clear_cache(self) -> Dict[str, Any]:
-        """Clear the chatbot service cache."""
+        """Clear all caches including smart cache and local caches."""
         try:
-            result = self.chatbot_service.clear_cache()
-            logger.info(f"🧹 Chat service cache cleared: {result}")
-            return result
+            # Clear chatbot service cache
+            chatbot_result = self.chatbot_service.clear_cache()
+            
+            # Clear smart cache
+            self._smart_cache.clear()
+            smart_cache_stats = self._smart_cache.get_stats()
+            
+            # Clear local vector store cache
+            self._vector_store_cache = None
+            self._vector_store_last_loaded = 0
+            
+            logger.info("🧹 All caches cleared successfully")
+            return {
+                "message": "All caches cleared successfully",
+                "chatbot_cache": chatbot_result,
+                "smart_cache_cleared": True,
+                "smart_cache_stats": smart_cache_stats,
+                "vector_store_cache_cleared": True,
+                "timestamp": time.time()
+            }
         except Exception as e:
-            logger.error(f"Failed to clear cache: {e}")
+            logger.error("Failed to clear cache: %s", e)
             return {
                 "message": "Failed to clear cache",
                 "error": str(e),
-                "cleared_entries": 0,
-                "current_cache_size": 0,
+                "timestamp": time.time()
+            }
+
+    def get_cache_stats(self) -> Dict[str, Any]:
+        """Get comprehensive cache statistics from all cache layers."""
+        try:
+            # Get smart cache stats
+            smart_cache_stats = self._smart_cache.get_stats()
+            
+            # Get chatbot cache stats
+            chatbot_status = self.chatbot_service.get_service_status()
+            
+            return {
+                "smart_cache": smart_cache_stats,
+                "chatbot_cache": {
+                    "size": chatbot_status.get("cache_size", 0),
+                    "model": chatbot_status.get("model", "unknown"),
+                    "available": chatbot_status.get("service_available", False)
+                },
+                "vector_store_cache": {
+                    "cached": self._vector_store_cache is not None,
+                    "last_loaded": self._vector_store_last_loaded,
+                    "ttl_seconds": self._vector_store_ttl
+                },
+                "performance_metrics": self._performance_monitor.get_performance_stats(),
+                "timestamp": time.time()
+            }
+        except Exception as e:
+            logger.error("Failed to get cache stats: %s", e)
+            return {
+                "error": str(e),
+                "timestamp": time.time()
             }
 
     async def stream_chat_with_memory(
@@ -419,14 +542,13 @@ class ChatService:
         if not self.chatbot_service.api_available:
             yield "[ERROR] Chat service is currently unavailable."
             return
-        # Load vector store
-        try:
-            _, current_embeddings, current_documents = (
-                vector_store.load_vector_store()
-            )
-        except Exception as e:
-            yield f"[ERROR] Knowledge base unavailable: {str(e)}"
+        # Load vector store with caching
+        vector_store_result = self._get_cached_vector_store()
+        if vector_store_result is None:
+            yield "[ERROR] Knowledge base unavailable"
             return
+        
+        _, current_embeddings, current_documents = vector_store_result
         if not current_documents:
             current_embeddings = np.array([])
             current_documents = []

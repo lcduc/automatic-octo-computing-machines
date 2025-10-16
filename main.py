@@ -32,6 +32,8 @@ from config.rag.rag_config import RAGConfig
 from setting import validate_config
 from core.rag.embeddings import get_embedding_service
 from core.storage.vector_store_optimized import OptimizedVectorStore
+from utils.background_tasks import start_background_tasks, stop_background_tasks
+from utils.model_preloader import preload_all_models, get_model_preloader
 # File watching functionality removed
 
 @asynccontextmanager
@@ -67,6 +69,22 @@ async def lifespan(app: FastAPI):
         print("=" * 60)
     print("🎯 Ready to process files and answer questions!")
     print("   Press Ctrl+C to stop the server\n")
+    
+    # Preload all ML models for maximum performance
+    try:
+        logger.info("🚀 Preloading all ML models...")
+        await preload_all_models()
+        logger.info("✅ All models preloaded successfully")
+    except Exception as e:
+        logger.warning(f"⚠️ Model preloading failed: {e}")
+    
+    # Start background tasks for performance optimization
+    try:
+        await start_background_tasks()
+        logger.info("✅ Background tasks started")
+    except Exception as e:
+        logger.warning(f"⚠️ Background tasks failed to start: {e}")
+    
     # Warm up critical services to avoid first-request latency
     try:
         logger.info("🔥 Warming up embedding model and vector store...")
@@ -86,6 +104,23 @@ async def lifespan(app: FastAPI):
             logger.info("✅ Vector store loaded successfully")
         except Exception as e:
             logger.warning(f"Vector store warmup skipped: {e}")
+        
+        # Warm up OpenAI API to avoid first-request delay
+        try:
+            logger.info("🔥 Warming up OpenAI API...")
+            import openai
+            client = openai.OpenAI(api_key=LLMConfig.OPENAI_API_KEY())
+            # Make a tiny warmup call
+            response = client.chat.completions.create(
+                model=LLMConfig.OPENAI_MODEL(),
+                messages=[{"role": "user", "content": "Hi"}],
+                max_tokens=10,
+                timeout=5
+            )
+            logger.info("✅ OpenAI API warmed up successfully")
+        except Exception as e:
+            logger.warning(f"OpenAI API warmup skipped: {e}")
+        
         logger.info("✅ Warmup complete")
     except Exception as e:
         logger.warning(f"⚠️ Warmup failed: {e}")
@@ -93,6 +128,13 @@ async def lifespan(app: FastAPI):
     logger.info("Chatbot started successfully\n")
     yield
     print("\n🛑 Shutting down Chatbot...")
+    
+    # Stop background tasks
+    try:
+        await stop_background_tasks()
+        logger.info("✅ Background tasks stopped")
+    except Exception as e:
+        logger.warning(f"⚠️ Error stopping background tasks: {e}")
     
     print("✅ Shutdown completed. Goodbye!")
     logger.info("Chatbot shutdown complete")
@@ -117,8 +159,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Add compression middleware for faster responses
+from fastapi.middleware.gzip import GZipMiddleware
+app.add_middleware(GZipMiddleware, minimum_size=1000)
+
 # Include API routes from the router module
 app.include_router(router)
+
+# Include model status routes
+from api.routes.models import router as models_router
+app.include_router(models_router)
 
 
 def main():
@@ -150,8 +200,8 @@ def main():
     logger = logging.getLogger()  # Use root logger
     logger.info("TEST LOG: Main app logging system initialized and writing to file.\n")
 
-    # Add WORKERS config using ServerConfig
-    DEFAULT_WORKERS = ServerConfig.UVICORN_WORKERS()
+    # Add WORKERS config using ServerConfig with performance optimization
+    DEFAULT_WORKERS = min(2, ServerConfig.UVICORN_WORKERS())  # Limit workers for better memory management
 
     # Parse command line arguments for runtime configuration override
     parser = argparse.ArgumentParser(description="Run the Chatbot server")

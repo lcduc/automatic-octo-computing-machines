@@ -34,11 +34,11 @@ class Reranker:
                 from config.rag.rag_config import RAGConfig
                 model_name = RAGConfig.RERANKER_MODEL()
             except Exception:
-                model_name = "cross-encoder/ms-marco-MultiMiniLM-L-6-v2"
+                model_name = "cross-encoder/ms-marco-MiniLM-L-6-v2"
         self._model_name = model_name
         if CrossEncoder is not None or TRANSFORMERS_AVAILABLE:
             # Try configured model first, then known fallback models
-            for candidate in [model_name, "cross-encoder/ms-marco-MiniLM-L-6-v2", "cross-encoder/ms-marco-MultiMiniLM-L-6-v2"]:
+            for candidate in [model_name, "cross-encoder/ms-marco-MiniLM-L-6-v2"]:
                 try:
                     # Special handling for jinaai models that require trust_remote_code
                     if candidate.startswith("jinaai/") and TRANSFORMERS_AVAILABLE:

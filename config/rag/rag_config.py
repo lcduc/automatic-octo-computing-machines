@@ -4,11 +4,11 @@ import os
 class RAGConfig:
     @staticmethod
     def EMBEDDING_MODEL():
-        return os.getenv("EMBEDDING_MODEL", "all-MiniLM-L6-v2")  # Faster, smaller model
+        return os.getenv("EMBEDDING_MODEL", "paraphrase-multilingual-MiniLM-L12-v2")  # Multilingual support
 
     @staticmethod
     def RETRIEVAL_TOP_K():
-        return int(os.getenv("RETRIEVAL_TOP_K", "5"))  # Increased for better accuracy
+        return int(os.getenv("RETRIEVAL_TOP_K", "3"))  # Reduced for faster processing
 
     @staticmethod
     def CHUNK_SIZE():
@@ -32,7 +32,7 @@ class RAGConfig:
 
     @staticmethod
     def MAX_RETRIEVAL_RESULTS():
-        return int(os.getenv("MAX_RETRIEVAL_RESULTS", "8"))  # Reduced for speed
+        return int(os.getenv("MAX_RETRIEVAL_RESULTS", "3"))  # Further reduced for speed
 
     @staticmethod
     def EMBEDDING_BATCH_SIZE():
@@ -64,8 +64,8 @@ class RAGConfig:
 
     @staticmethod
     def RERANKER_MODEL():
-        # Stronger multilingual default for better Vietnamese support
-        return os.getenv("RERANKER_MODEL", "jinaai/jina-reranker-v2-base-multilingual")
+        # Fast multilingual reranker for English + Vietnamese support
+        return os.getenv("RERANKER_MODEL", "cross-encoder/ms-marco-MiniLM-L-6-v2")
 
     @staticmethod
     def QUERY_ADAPTER_PATH():
@@ -73,4 +73,4 @@ class RAGConfig:
 
     @staticmethod
     def RERANKER_ENABLED():
-        return os.getenv("RERANKER_ENABLED", "True").lower() == "true"
+        return os.getenv("RERANKER_ENABLED", "True").lower() == "true"  # Enabled for better quality

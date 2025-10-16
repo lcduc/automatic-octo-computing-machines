@@ -62,7 +62,7 @@ class DocumentService:
         
         # OCR concurrency control - configurable to prevent memory issues
         from config.docling_config import DoclingConfig
-        max_concurrent_files = DoclingConfig.OCR_MAX_CONCURRENT_FILES()
+        max_concurrent_files = min(2, DoclingConfig.OCR_MAX_CONCURRENT_FILES())  # Limit to 2 for better memory management
         self._ocr_semaphore = asyncio.Semaphore(max_concurrent_files)
         logger.info(f"OCR concurrency control: max {max_concurrent_files} concurrent PDF files")
 
@@ -357,7 +357,7 @@ class DocumentService:
         logger.info(f"🔄 Processing {len(urls)} URLs concurrently...")
         
         # Limit concurrent URL processing to prevent connection overload
-        max_concurrent_urls = min(5, len(urls))  # Process max 5 URLs at once
+        max_concurrent_urls = min(3, len(urls))  # Process max 3 URLs at once for better memory management
         semaphore = asyncio.Semaphore(max_concurrent_urls)
         
         async def process_url_with_semaphore(url):

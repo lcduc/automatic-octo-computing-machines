@@ -13,6 +13,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import httpx
 import openai
 from openai import AsyncOpenAI
+from httpx import Limits
 from openai.types.chat import ChatCompletionMessageParam
 
 from config.llm.llm_config import LLMConfig
@@ -48,12 +49,26 @@ class ChatbotService:
         self.prompt_manager = PromptManager()
         self.confidence_scorer = ConfidenceScorer()
         
-        # Initialize cache
+        # Initialize enhanced cache with smart strategies
         self._cache = {}
         self._cache_ttl = LLMConfig.LLM_CACHE_TTL()
+        self._cache_hits = 0
+        self._cache_misses = 0
+        self._cache_access_times = {}  # Track access times for LRU
+        self._semantic_cache = {}  # Cache for semantically similar queries
         
         # Initialize async OpenAI client
         self.async_openai_client = AsyncOpenAI(api_key=LLMConfig.OPENAI_API_KEY())
+        
+        # Initialize HTTP client with connection pooling for better performance
+        self._http_client = httpx.Client(
+            limits=Limits(
+                max_keepalive_connections=20,
+                max_connections=100,
+                keepalive_expiry=30.0
+            ),
+            timeout=httpx.Timeout(30.0)
+        )
         
         # Initialize thread pool workers
         self._max_workers = LLMConfig.LLM_MAX_WORKERS()
@@ -206,17 +221,35 @@ class ChatbotService:
             system_prompt = self.prompt_manager.get_system_prompt(context=context)
             logger.debug(f"📝 System prompt length: {len(system_prompt)} characters")
 
-            # Make optimized API call to OpenAI
+            # Make optimized API call to OpenAI with better error handling
             logger.info(f"🚀 [LLM] Calling OpenAI for query (id={hashlib.md5(query.encode()).hexdigest()[:8]})")
             logger.debug(f"📝 [LLM Payload] {messages}")
-            client = openai.OpenAI(api_key=LLMConfig.OPENAI_API_KEY())
-            response = client.chat.completions.create(
-                model=LLMConfig.OPENAI_MODEL(),
-                messages=messages,  # type: ignore
-                max_tokens=LLMConfig.OPENAI_MAX_TOKENS(),
-                temperature=LLMConfig.OPENAI_TEMPERATURE(),
-                timeout=LLMConfig.OPENAI_TIMEOUT()
-            )
+            
+            try:
+                client = openai.OpenAI(
+                    api_key=LLMConfig.OPENAI_API_KEY(),
+                    timeout=LLMConfig.OPENAI_TIMEOUT(),
+                    max_retries=2  # Add retry logic
+                )
+                response = client.chat.completions.create(
+                    model=LLMConfig.OPENAI_MODEL(),
+                    messages=messages,  # type: ignore
+                    max_tokens=LLMConfig.OPENAI_MAX_TOKENS(),
+                    temperature=LLMConfig.OPENAI_TEMPERATURE(),
+                    timeout=LLMConfig.OPENAI_TIMEOUT()
+                )
+            except openai.APITimeoutError:
+                logger.error("⏰ OpenAI API timeout - request took too long")
+                error_response = self._create_error_response(query, "The AI service is taking too long to respond. Please try again with a simpler question.")
+                return error_response
+            except openai.RateLimitError:
+                logger.error("🚫 OpenAI API rate limit exceeded")
+                error_response = self._create_error_response(query, "The AI service is currently busy. Please try again in a moment.")
+                return error_response
+            except Exception as e:
+                logger.error(f"❌ OpenAI API error: {e}")
+                error_response = self._create_error_response(query, f"AI service error: {str(e)}")
+                return error_response
 
             content = response.choices[0].message.content
             response_text = content.strip() if content else ""
@@ -447,39 +480,84 @@ class ChatbotService:
 
     def _get_cache_key(self, query: str, context: str) -> str:
         """Generate MD5-based cache key from query and context for efficient caching."""
-        content = f"{query}:{context}"
+        # Use only query for cache key to enable better caching
+        # Context varies but similar queries should be cached
+        content = f"{query.lower().strip()}"
         return hashlib.md5(content.encode()).hexdigest()[:16]
+    
+    def _get_semantic_cache_key(self, query: str) -> str:
+        """Generate semantic cache key for similar queries."""
+        # Normalize query for semantic similarity
+        normalized = query.lower().strip()
+        # Remove common words that don't affect meaning
+        stop_words = {'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by'}
+        words = [w for w in normalized.split() if w not in stop_words]
+        return hashlib.md5(' '.join(words).encode()).hexdigest()[:12]
 
     def _get_cached_response(self, cache_key: str) -> Optional[str]:
         """Retrieve cached response if available and not expired based on TTL configuration."""
         if cache_key in self._cache:
             cached_data = self._cache[cache_key]
             if time.time() - cached_data['timestamp'] < self._cache_ttl:
+                # Update access time for LRU
+                self._cache_access_times[cache_key] = time.time()
+                self._cache_hits += 1
                 return cached_data['response']
             else:
                 del self._cache[cache_key]  # Remove expired
+                if cache_key in self._cache_access_times:
+                    del self._cache_access_times[cache_key]
+        self._cache_misses += 1
         return None
 
     def _cache_response(self, cache_key: str, response: str):
-        """Cache response with simple LRU."""
-        # Simple LRU: remove oldest if cache is full
+        """Cache response with enhanced LRU and semantic caching."""
+        # Enhanced LRU: remove oldest if cache is full
         if len(self._cache) >= LLMConfig.LLM_CACHE_MAX_ENTRIES():
-            oldest_key = min(self._cache.keys(), key=lambda k: self._cache[k]['timestamp'])
-            del self._cache[oldest_key]
-
+            if self._cache_access_times:
+                oldest_key = min(self._cache_access_times.keys(), key=lambda k: self._cache_access_times[k])
+                del self._cache[oldest_key]
+                del self._cache_access_times[oldest_key]
+            else:
+                # Fallback to timestamp-based removal
+                oldest_key = min(self._cache.keys(), key=lambda k: self._cache[k]['timestamp'])
+                del self._cache[oldest_key]
+        
+        current_time = time.time()
         self._cache[cache_key] = {
             'response': response,
-            'timestamp': time.time()
+            'timestamp': current_time
         }
+        self._cache_access_times[cache_key] = current_time
+        
+        # Also cache semantically similar queries
+        # This is a simple implementation - in production, you'd use embeddings
+        if len(response) > 10:  # Only cache substantial responses
+            semantic_key = self._get_semantic_cache_key(cache_key)
+            if semantic_key not in self._semantic_cache:
+                self._semantic_cache[semantic_key] = response
 
     def get_service_status(self) -> Dict[str, Any]:
         """Get simple service status."""
+        total_requests = self._cache_hits + self._cache_misses
+        hit_rate = (self._cache_hits / total_requests * 100) if total_requests > 0 else 0
+        
         return {
             "service_available": self.api_available,
             "model": LLMConfig.OPENAI_MODEL(),
             "max_tokens": LLMConfig.OPENAI_MAX_TOKENS(),
-            "cache_size": len(self._cache)
+            "cache_size": len(self._cache),
+            "cache_hits": self._cache_hits,
+            "cache_misses": self._cache_misses,
+            "cache_hit_rate": f"{hit_rate:.1f}%",
+            "semantic_cache_size": len(self._semantic_cache)
         }
+    
+    def cleanup(self):
+        """Clean up resources and close connections."""
+        if hasattr(self, '_http_client'):
+            self._http_client.close()
+        logger.info("ChatbotService cleanup completed")
     
     def clear_cache(self) -> Dict[str, Any]:
         """Clear the response cache."""
@@ -561,16 +639,29 @@ class ChatbotService:
                     }
                 )
 
-            # Make optimized API call
+            # Make optimized API call with better error handling
             logger.info("🚀 Making API call to OpenAI...")
-            client = openai.OpenAI(api_key=LLMConfig.OPENAI_API_KEY())
-            response = client.chat.completions.create(
-                model=LLMConfig.OPENAI_MODEL(),
-                messages=messages,  # type: ignore
-                max_tokens=LLMConfig.OPENAI_MAX_TOKENS(),
-                temperature=LLMConfig.OPENAI_TEMPERATURE(),
-                timeout=LLMConfig.OPENAI_TIMEOUT()
-            )
+            try:
+                client = openai.OpenAI(api_key=LLMConfig.OPENAI_API_KEY())
+                response = client.chat.completions.create(
+                    model=LLMConfig.OPENAI_MODEL(),
+                    messages=messages,  # type: ignore
+                    max_tokens=LLMConfig.OPENAI_MAX_TOKENS(),
+                    temperature=LLMConfig.OPENAI_TEMPERATURE(),
+                    timeout=LLMConfig.OPENAI_TIMEOUT()
+                )
+            except openai.APITimeoutError:
+                logger.error("⏰ OpenAI API timeout - request took too long")
+                error_response = self._create_error_response(query, "The AI service is taking too long to respond. Please try again with a simpler question.")
+                return error_response
+            except openai.RateLimitError:
+                logger.error("🚫 OpenAI API rate limit exceeded")
+                error_response = self._create_error_response(query, "The AI service is currently busy. Please try again in a moment.")
+                return error_response
+            except Exception as e:
+                logger.error(f"❌ OpenAI API error: {e}")
+                error_response = self._create_error_response(query, f"AI service error: {str(e)}")
+                return error_response
 
             content = response.choices[0].message.content
             response_text = content.strip() if content else ""

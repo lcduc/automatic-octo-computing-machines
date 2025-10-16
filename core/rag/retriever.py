@@ -36,11 +36,14 @@ class ContextRetriever:
             self.similarity_calculator = SimilarityCalculator()
         else:
             self.similarity_calculator = similarity_calculator
-        self.reranker = Reranker()
+        # Only initialize reranker if enabled
+        if RAGConfig.RERANKER_ENABLED():
+            self.reranker = Reranker()
+        else:
+            self.reranker = None
 
         # Best-effort: load query adapter once at initialization
         try:
-            from config.rag.rag_config import RAGConfig
             self.embedding_service.load_query_adapter(RAGConfig.QUERY_ADAPTER_PATH())
         except Exception:
             pass
@@ -49,12 +52,15 @@ class ContextRetriever:
         self._bm25_cache_key = None
         self._bm25_instance = None
         self._tokenized_docs = None
+        self._query_cache = {}  # Cache for BM25 query results
+        self._query_preprocessing_cache = {}  # Cache for query preprocessing
 
     def clear_cache(self):
         """Clear BM25 cache to ensure consistent search results."""
         self._bm25_cache_key = None
         self._bm25_instance = None
         self._tokenized_docs = None
+        self._query_cache = {}
 
     def _ensure_numpy(self, embedding) -> np.ndarray:
         """Convert various embedding formats to numpy arrays for consistent processing."""
@@ -65,15 +71,30 @@ class ContextRetriever:
         return np.array(embedding)
 
     def _tokenize(self, text: str) -> List[str]:
-        """Tokenization for BM25: lowercase, strip punctuation, remove diacritics."""
+        """Tokenization for BM25: lowercase, strip punctuation, remove diacritics with caching."""
         if not text:
             return []
+        
+        # Check cache first
+        if text in self._query_preprocessing_cache:
+            return self._query_preprocessing_cache[text]
 
         # Lowercase, remove Vietnamese accents, strip punctuation/symbols
         text = TextUtils.strip_vietnamese_accents(text.lower())
         text = re.sub(r"[^\w\s]", " ", text)
         text = re.sub(r"\s+", " ", text).strip()
-        return text.split()
+        tokens = text.split()
+        
+        # Cache the result
+        self._query_preprocessing_cache[text] = tokens
+        
+        # Limit cache size
+        if len(self._query_preprocessing_cache) > 1000:
+            # Remove oldest entries
+            oldest_key = next(iter(self._query_preprocessing_cache))
+            del self._query_preprocessing_cache[oldest_key]
+        
+        return tokens
 
     def _expand_context_with_adjacent_chunks(
         self, top_indices: List[int], total_documents: int, expansion_radius: int = 1
@@ -275,16 +296,34 @@ class ContextRetriever:
                     query_embedding, embeddings
                 )
 
-            # Keyword search using BM25 with simple in-memory cache
+            # Keyword search using BM25 with enhanced caching
             try:
                 cache_key = (len(documents), hash(documents[0]) if documents else 0)
             except Exception:
                 cache_key = len(documents)
-            if self._bm25_cache_key != cache_key:
-                self._tokenized_docs = [self._tokenize(doc) for doc in documents]
-                self._bm25_instance = BM25Okapi(self._tokenized_docs)
-                self._bm25_cache_key = cache_key
-            keyword_scores = self._bm25_instance.get_scores(self._tokenize(query)) if self._bm25_instance else np.zeros(len(documents))
+            
+            # Check query cache first
+            query_cache_key = f"{query}_{cache_key}"
+            if query_cache_key in self._query_cache:
+                keyword_scores = self._query_cache[query_cache_key]
+            else:
+                # Initialize BM25 if needed
+                if self._bm25_cache_key != cache_key:
+                    self._tokenized_docs = [self._tokenize(doc) for doc in documents]
+                    self._bm25_instance = BM25Okapi(self._tokenized_docs)
+                    self._bm25_cache_key = cache_key
+                
+                # Compute BM25 scores
+                keyword_scores = self._bm25_instance.get_scores(self._tokenize(query)) if self._bm25_instance else np.zeros(len(documents))
+                
+                # Cache the result
+                self._query_cache[query_cache_key] = keyword_scores
+                
+                # Limit query cache size
+                if len(self._query_cache) > 500:
+                    # Remove oldest entries
+                    oldest_key = next(iter(self._query_cache))
+                    del self._query_cache[oldest_key]
 
             # Normalize scores to [0, 1] before combining
             norm_semantic_scores = self.similarity_calculator.normalize_similarities(
@@ -326,7 +365,7 @@ class ContextRetriever:
             prelim_top_k = results[: max(k * candidate_multiplier, k)]
 
             top_k_results = prelim_top_k[:k]
-            if RAGConfig.RERANKER_ENABLED():
+            if RAGConfig.RERANKER_ENABLED() and self.reranker is not None:
                 try:
                     top_k_results = self.reranker.rerank(query, prelim_top_k, k)
                 except Exception as e:
@@ -343,20 +382,24 @@ class ContextRetriever:
             # Rebuild final results directly from expanded indices order, preserving original scores when available
             expanded_results = []
             index_to_result = {r["index"]: r for r in top_k_results}
+            
+            # Pre-allocate result structure for better performance
+            default_result = {
+                "semantic_score": 0.0,
+                "keyword_score": 0.0,
+                "combined_score": 0.0,
+            }
+            
             for idx in expanded_indices:
                 base = index_to_result.get(idx)
                 if base:
                     expanded_results.append(base)
                 else:
-                    expanded_results.append(
-                        {
-                            "document": documents[idx],
-                            "semantic_score": 0.0,
-                            "keyword_score": 0.0,
-                            "combined_score": 0.0,
-                            "index": idx,
-                        }
-                    )
+                    # Create result with minimal string operations
+                    result = default_result.copy()
+                    result["document"] = documents[idx]
+                    result["index"] = idx
+                    expanded_results.append(result)
 
             # Ensure minimum context chunks
             final_results = self._ensure_minimum_context(expanded_results, documents)

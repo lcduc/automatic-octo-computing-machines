@@ -47,14 +47,20 @@ class OptimizedVectorStore(VectorStore):
 
     def load_vector_store(self) -> Tuple[Optional[Any], np.ndarray, List[str]]:
         """
-        Load vector store from HDF5 file - 5-10x faster than pickle.
+        Load vector store from HDF5 file with lazy loading for better memory efficiency.
         """
         logger.info(f"📂 [OptimizedVectorStore] Loading from HDF5: {self.h5_path}")
         
         try:
-            # Load embeddings and documents from HDF5
+            # Load embeddings and documents from HDF5 with memory mapping for large files
             with h5py.File(self.h5_path, 'r') as f:
-                self.embeddings = f['embeddings'][:]
+                # Use memory mapping for large datasets to reduce memory usage
+                if f['embeddings'].size > 1000000:  # 1M+ vectors
+                    logger.info("🔧 Using memory mapping for large dataset")
+                    self.embeddings = f['embeddings']  # Memory mapped, not loaded into RAM
+                else:
+                    self.embeddings = f['embeddings'][:]  # Load into memory for small datasets
+                
                 # Documents stored as UTF-8 encoded strings
                 self.documents = [doc.decode('utf-8') for doc in f['documents'][:]]
             

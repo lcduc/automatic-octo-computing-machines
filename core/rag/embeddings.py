@@ -28,6 +28,8 @@ class EmbeddingService:
         self.embedder = None
         self._embedding_cache = {}  # Simple in-memory cache
         self._cache_enabled = True
+        self._cache_hits = 0
+        self._cache_misses = 0
 
     def get_embedder(self):
         """
@@ -39,11 +41,18 @@ class EmbeddingService:
             gpu_available = bool(torch) and torch.cuda.is_available()
             print(f"🔍 GPU availability for embeddings: {gpu_available}")
 
-            # List of models to try in order of preference (multilingual support first)
+            # Get model from config, with fallback to multilingual support
+            try:
+                from config.rag.rag_config import RAGConfig
+                primary_model = RAGConfig.EMBEDDING_MODEL()
+            except Exception:
+                primary_model = "paraphrase-multilingual-MiniLM-L12-v2"
+            
+            # List of models to try in order of preference (respect env config first)
             models_to_try = [
+                primary_model,  # Use configured model first
                 "paraphrase-multilingual-MiniLM-L12-v2",  # Best multilingual support
                 "all-MiniLM-L6-v2",  # Fast and efficient
-                "all-mpnet-base-v2",  # High quality fallback
             ]
 
             for model_name in models_to_try:
@@ -78,7 +87,7 @@ class EmbeddingService:
 
     def encode(self, texts, convert_to_numpy=True):
         """
-        Encode texts into vector embeddings for similarity search.
+        Encode texts into vector embeddings for similarity search with caching.
 
         Args:
             texts: List of text strings to encode
@@ -87,8 +96,34 @@ class EmbeddingService:
         Returns:
             Vector embeddings ready for similarity calculations
         """
+        # Check cache first for single text queries
+        if isinstance(texts, str):
+            texts = [texts]
+            single_text = True
+        else:
+            single_text = False
+            
+        if self._cache_enabled and len(texts) == 1:
+            text = texts[0]
+            cache_key = f"{text}_{convert_to_numpy}"
+            if cache_key in self._embedding_cache:
+                self._cache_hits += 1
+                return self._embedding_cache[cache_key]
+            self._cache_misses += 1
+        
         embedder = self.get_embedder()
-        return embedder.encode(texts, convert_to_numpy=convert_to_numpy)
+        embeddings = embedder.encode(texts, convert_to_numpy=convert_to_numpy)
+        
+        # Cache single text results
+        if self._cache_enabled and len(texts) == 1:
+            self._embedding_cache[cache_key] = embeddings
+            # Limit cache size to prevent memory issues
+            if len(self._embedding_cache) > 1000:
+                # Remove oldest entries (simple FIFO)
+                oldest_key = next(iter(self._embedding_cache))
+                del self._embedding_cache[oldest_key]
+        
+        return embeddings
 
     # Query adapter (closed-form) support
     _query_adapter_matrix = None

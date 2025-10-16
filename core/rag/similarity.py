@@ -27,9 +27,14 @@ class SimilarityCalculator:
     ) -> np.ndarray:
         """
         Calculate cosine similarity between query and document embeddings.
-        Most commonly used metric for semantic similarity in RAG systems.
+        Optimized version using numpy operations for better performance.
         """
-        return cosine_similarity(query_embedding, document_embeddings)[0]
+        # Normalize vectors for cosine similarity
+        query_norm = query_embedding / np.linalg.norm(query_embedding)
+        doc_norms = document_embeddings / np.linalg.norm(document_embeddings, axis=1, keepdims=True)
+        
+        # Compute dot product (cosine similarity)
+        return np.dot(doc_norms, query_norm.T).flatten()
 
     def euclidean_distance(
         self, query_embedding: np.ndarray, document_embeddings: np.ndarray
