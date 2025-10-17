@@ -13,9 +13,9 @@ from concurrent.futures import ThreadPoolExecutor
 from fastapi import UploadFile, HTTPException
 
 # Local imports
-from config.file.file_config import FileConfig
+from config.settings import Config
 from models.responses import MultipleFileUploadResponse
-from utils.validation import ValidationUtils
+from utils.text_processing import ValidationUtils
 from .base_service import BaseProcessingService
 
 logger = logging.getLogger(__name__)
@@ -92,10 +92,10 @@ class UploadService(BaseProcessingService):
                     continue
 
         # Check total batch size against configured limits
-        if total_size > FileConfig.MAX_TOTAL_BATCH_SIZE():
+        if total_size > Config.File.MAX_TOTAL_BATCH_SIZE():
             raise HTTPException(
                 status_code=400,
-                detail=f"Total batch size too large. Maximum {FileConfig.MAX_TOTAL_BATCH_SIZE() / (1024*1024):.1f}MB allowed.",
+                detail=f"Total batch size too large. Maximum {Config.File.MAX_TOTAL_BATCH_SIZE() / (1024*1024):.1f}MB allowed.",
             )
 
         return valid_files

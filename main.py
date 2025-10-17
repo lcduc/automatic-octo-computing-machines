@@ -16,32 +16,28 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Setup Windows-specific asyncio fixes before any other imports
-from utils.asyncio_utils import setup_windows_asyncio, setup_asyncio_logging
-from utils.uvicorn_config import configure_uvicorn_for_windows, get_uvicorn_config, get_uvicorn_ssl_config
+from utils.system import setup_windows_asyncio, setup_asyncio_logging
+from utils.system import configure_uvicorn_for_windows, get_uvicorn_config, get_uvicorn_ssl_config
 setup_windows_asyncio()
 setup_asyncio_logging()
 configure_uvicorn_for_windows()
 
 # Local imports - Now import config classes after .env is loaded
 from api.routes import router
-from config.server.server_config import ServerConfig
-from config.server.logging_config import LoggingConfig
-from config.llm.llm_config import LLMConfig
-from config.file.file_config import FileConfig
-from config.rag.rag_config import RAGConfig
+from config.settings import Config
 from setting import validate_config
-from core.rag.embeddings import get_embedding_service
-from core.storage.vector_store_optimized import OptimizedVectorStore
-from utils.background_tasks import start_background_tasks, stop_background_tasks
-from utils.model_preloader import preload_all_models, get_model_preloader
+from core.ai_services.embeddings.embeddings import get_embedding_service
+from core.storage.vector_stores.vector_store_optimized import OptimizedVectorStore
+from utils.performance import start_background_tasks, stop_background_tasks
+from utils.performance import preload_all_models, get_model_preloader
 # File watching functionality removed
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger = logging.getLogger()
-    workers = ServerConfig.UVICORN_WORKERS()
+    workers = Config.Server.UVICORN_WORKERS()
     display_host = (
-        "localhost" if ServerConfig.HOST() == "0.0.0.0" else ServerConfig.HOST()
+        "localhost" if Config.Server.HOST() == "0.0.0.0" else Config.Server.HOST()
     )
     
     # Check if SSL is enabled
@@ -49,45 +45,45 @@ async def lifespan(app: FastAPI):
     protocol = "https" if ssl_config else "http"
     
     print("\n" + "=" * 60)
-    print("🚀 Chatbot")
+    print("Chatbot")
     print("=" * 60)
-    print(f"📡 Server: {protocol}://{display_host}:{ServerConfig.PORT()}")
-    print(f"🔍 Health Check: {protocol}://{display_host}:{ServerConfig.PORT()}/")
-    print(f"📚 API Docs: {protocol}://{display_host}:{ServerConfig.PORT()}/docs")
-    print(f"🤖 OpenAI Model: {LLMConfig.OPENAI_MODEL()}")
-    print(f"🧠 Embedding Model: {RAGConfig.EMBEDDING_MODEL()}")
-    print(f"🎯 Reranker Model: {RAGConfig.RERANKER_MODEL()}")
-    print(f"📁 Data Directory: {FileConfig.CHUNKS_DIR()}")
-    print(f"🧑‍💻 Uvicorn Workers: {workers}")
+    print(f"Server: {protocol}://{display_host}:{Config.Server.PORT()}")
+    print(f"Health Check: {protocol}://{display_host}:{Config.Server.PORT()}/")
+    print(f"API Docs: {protocol}://{display_host}:{Config.Server.PORT()}/docs")
+    print(f"OpenAI Model: {Config.LLM.OPENAI_MODEL()}")
+    print(f"Embedding Model: {Config.LLM.EMBEDDING_MODEL()}")
+    print(f"Reranker Model: {Config.LLM.RERANKER_MODEL()}")
+    print(f"Data Directory: {Config.Database.CHUNKS_DIR()}")
+    print(f"Uvicorn Workers: {workers}")
     print("=" * 60)
-    if not LLMConfig.OPENAI_API_KEY():
-        print("⚠️  WARNING: OpenAI API key not configured!")
+    if not Config.LLM.OPENAI_API_KEY():
+        print("WARNING: OpenAI API key not configured!")
         print("   Please set OPENAI_API_KEY in your .env file")
         print("=" * 60)
     else:
-        print("✅ Configuration validated successfully")
+        print("Configuration validated successfully")
         print("=" * 60)
-    print("🎯 Ready to process files and answer questions!")
+    print("Ready to process files and answer questions!")
     print("   Press Ctrl+C to stop the server\n")
     
     # Preload all ML models for maximum performance
     try:
-        logger.info("🚀 Preloading all ML models...")
+        logger.info("Preloading all ML models...")
         await preload_all_models()
-        logger.info("✅ All models preloaded successfully")
+        logger.info("All models preloaded successfully")
     except Exception as e:
-        logger.warning(f"⚠️ Model preloading failed: {e}")
+        logger.warning(f"Model preloading failed: {e}")
     
     # Start background tasks for performance optimization
     try:
         await start_background_tasks()
-        logger.info("✅ Background tasks started")
+        logger.info("Background tasks started")
     except Exception as e:
-        logger.warning(f"⚠️ Background tasks failed to start: {e}")
+        logger.warning(f"Background tasks failed to start: {e}")
     
     # Warm up critical services to avoid first-request latency
     try:
-        logger.info("🔥 Warming up embedding model and vector store...")
+        logger.info("Warming up embedding model and vector store...")
         embedding_service = get_embedding_service()
         embedder = embedding_service.get_embedder()
         # Tiny warmup encode to initialize model execution graph
@@ -101,42 +97,42 @@ async def lifespan(app: FastAPI):
         try:
             vs = OptimizedVectorStore()
             _ = vs.load_vector_store()
-            logger.info("✅ Vector store loaded successfully")
+            logger.info("Vector store loaded successfully")
         except Exception as e:
             logger.warning(f"Vector store warmup skipped: {e}")
         
         # Warm up OpenAI API to avoid first-request delay
         try:
-            logger.info("🔥 Warming up OpenAI API...")
+            logger.info("Warming up OpenAI API...")
             import openai
-            client = openai.OpenAI(api_key=LLMConfig.OPENAI_API_KEY())
+            client = openai.OpenAI(api_key=Config.LLM.OPENAI_API_KEY())
             # Make a tiny warmup call
             response = client.chat.completions.create(
-                model=LLMConfig.OPENAI_MODEL(),
+                model=Config.LLM.OPENAI_MODEL(),
                 messages=[{"role": "user", "content": "Hi"}],
                 max_tokens=10,
                 timeout=5
             )
-            logger.info("✅ OpenAI API warmed up successfully")
+            logger.info("OpenAI API warmed up successfully")
         except Exception as e:
             logger.warning(f"OpenAI API warmup skipped: {e}")
         
-        logger.info("✅ Warmup complete")
+        logger.info("Warmup complete")
     except Exception as e:
-        logger.warning(f"⚠️ Warmup failed: {e}")
+        logger.warning(f"Warmup failed: {e}")
 
     logger.info("Chatbot started successfully\n")
     yield
-    print("\n🛑 Shutting down Chatbot...")
+    print("\nShutting down Chatbot...")
     
     # Stop background tasks
     try:
         await stop_background_tasks()
-        logger.info("✅ Background tasks stopped")
+        logger.info("Background tasks stopped")
     except Exception as e:
-        logger.warning(f"⚠️ Error stopping background tasks: {e}")
+        logger.warning(f"Error stopping background tasks: {e}")
     
-    print("✅ Shutdown completed. Goodbye!")
+    print(" Shutdown completed. Goodbye!")
     logger.info("Chatbot shutdown complete")
 
 # Create FastAPI app with enhanced configuration
@@ -146,15 +142,15 @@ app = FastAPI(
     version="2.0.0",
     docs_url="/docs",
     redoc_url="/redoc",
-    debug=ServerConfig.DEBUG(),
+    debug=Config.Server.DEBUG(),
     lifespan=lifespan,
 )
 
 # Add CORS middleware with configuration for cross-origin requests
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=ServerConfig.CORS_ORIGINS(),
-    allow_credentials=ServerConfig.CORS_ALLOW_CREDENTIALS(),
+    allow_origins=Config.Server.CORS_ORIGINS(),
+    allow_credentials=Config.Server.CORS_ALLOW_CREDENTIALS(),
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -173,8 +169,8 @@ app.include_router(models_router)
 
 def main():
     # DEBUG: Print configuration values
-    print(f"🔍 DEBUG: ServerConfig.PORT = {ServerConfig.PORT()}")
-    print(f"🔍 DEBUG: ServerConfig.HOST = {ServerConfig.HOST()}\n")
+    print(f"DEBUG: ServerConfig.PORT = {Config.Server.PORT()}")
+    print(f"DEBUG: ServerConfig.HOST = {Config.Server.HOST()}\n")
 
     # Ensure log directory exists before any other imports
     log_dir = os.path.join('data', 'logs')
@@ -186,12 +182,12 @@ def main():
 
     # Configure logging as early as possible, force override
     handlers = []
-    if LoggingConfig.LOG_TO_FILE():
+    if Config.Logging.LOG_TO_FILE():
         handlers.append(logging.FileHandler(log_filepath, encoding="utf-8"))
     handlers.append(logging.StreamHandler())
 
     logging.basicConfig(
-        level=getattr(logging, LoggingConfig.LOG_LEVEL().upper(), logging.INFO),
+        level=getattr(logging, Config.Logging.LOG_LEVEL().upper(), logging.INFO),
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
         handlers=handlers,
         force=True
@@ -201,7 +197,7 @@ def main():
     logger.info("TEST LOG: Main app logging system initialized and writing to file.\n")
 
     # Add WORKERS config using ServerConfig with performance optimization
-    DEFAULT_WORKERS = min(2, ServerConfig.UVICORN_WORKERS())  # Limit workers for better memory management
+    DEFAULT_WORKERS = min(2, Config.Server.UVICORN_WORKERS())  # Limit workers for better memory management
 
     # Parse command line arguments for runtime configuration override
     parser = argparse.ArgumentParser(description="Run the Chatbot server")
@@ -222,9 +218,8 @@ def main():
     # Optional: build query adapter and exit
     if args.build_query_adapter:
         try:
-            from core.rag.query_adapter import build_from_evals, save_query_adapter
-            from core.rag.embeddings import get_embedding_service
-            from config.rag.rag_config import RAGConfig
+            from core.retrieval.query_expansion.query_adapter import build_from_evals, save_query_adapter
+            from core.ai_services.embeddings.embeddings import get_embedding_service
             import pandas as pd
 
             if not args.evals_file:
@@ -237,21 +232,21 @@ def main():
 
             embedder = get_embedding_service().get_embedder()
             adapter = build_from_evals(queries, positives, embedder, args.lambda_reg)
-            path = RAGConfig.QUERY_ADAPTER_PATH()
+            path = Config.RAG.QUERY_ADAPTER_PATH()
             save_query_adapter(adapter, path)
-            print(f"✅ Query adapter saved to {path} (dim={adapter.shape[0]})")
+            print(f"Query adapter saved to {path} (dim={adapter.shape[0]})")
             return
         except Exception as e:
-            print(f"❌ Failed to build query adapter: {e}")
+            print(f"Failed to build query adapter: {e}")
             return
 
     try:
         # Use command line args if provided, otherwise use config
-        host = args.host if args.host else ServerConfig.HOST()
-        port = args.port if args.port else ServerConfig.PORT()
+        host = args.host if args.host else Config.Server.HOST()
+        port = args.port if args.port else Config.Server.PORT()
 
         # Determine if we should enable auto-reload (development mode)
-        enable_reload = ServerConfig.DEBUG() or ServerConfig.RELOAD()
+        enable_reload = Config.Server.DEBUG()
         
         # Get uvicorn configuration optimized for Windows
         uvicorn_config = get_uvicorn_config()
@@ -273,17 +268,17 @@ def main():
         )
 
     except KeyboardInterrupt:
-        print("\n🛑 Server stopped by user")
+        print("\nServer stopped by user")
     except Exception as e:
         display_host = (
-            "localhost" if ServerConfig.HOST() == "0.0.0.0" else ServerConfig.HOST()
+            "localhost" if Config.Server.HOST() == "0.0.0.0" else Config.Server.HOST()
         )
-        print(f"\n❌ Error starting server: {e}")
-        print(f"\n💡 Alternative command:")
+        print(f"\nError starting server: {e}")
+        print(f"\nAlternative command:")
         print(
-            f"   uvicorn main:app --host {ServerConfig.HOST()} --port {ServerConfig.PORT()}"
+            f"   uvicorn main:app --host {Config.Server.HOST()} --port {Config.Server.PORT()}"
         )
-        print(f"   Then visit: http://{display_host}:{ServerConfig.PORT()}")
+        print(f"   Then visit: http://{display_host}:{Config.Server.PORT()}")
         logger.error(f"Failed to start server: {e}")
         exit(1)
 

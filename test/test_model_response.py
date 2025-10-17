@@ -28,9 +28,9 @@ load_dotenv()
 logging.basicConfig(level=logging.WARNING)  # Reduce noise
 
 # Import project modules
-from core.rag.retriever import ContextRetriever
-from core.storage.vector_store_optimized import OptimizedVectorStore
-from core.llm.chatbot import ChatbotService
+from core.retrieval.search.retriever import ContextRetriever
+from core.storage.vector_stores.vector_store_optimized import OptimizedVectorStore
+from core.ai_services.llm.chatbot import ChatbotService
 
 
 class ModelResponseTester:
@@ -47,32 +47,32 @@ class ModelResponseTester:
         self.vector_store = OptimizedVectorStore()
         self.chatbot_service = ChatbotService(context_retriever=self.retriever)
         
-        print("🔧 Initializing Model Response Tester...")
+        print(" Initializing Model Response Tester...")
         print()
     
     def load_data(self):
         """Load vector store data."""
-        print("📚 Loading vector store...")
+        print(" Loading vector store...")
         try:
             faiss_index, embeddings, documents = self.vector_store.load_vector_store()
             
             if documents is None or len(documents) == 0:
-                print("⚠️  No documents found in vector store!")
+                print("  No documents found in vector store!")
                 print("💡 This is normal if no files have been uploaded yet.")
                 print("   The system will still work but responses may be less accurate.")
                 # Return empty arrays instead of None to allow the test to continue
                 return np.array([]), []
             
-            print(f"✅ Loaded {len(documents)} documents")
+            print(f" Loaded {len(documents)} documents")
             return embeddings, documents
             
         except Exception as e:
-            print(f"❌ Error loading vector store: {e}")
+            print(f" Error loading vector store: {e}")
             return None, None
     
     def test_response(self, query: str, embeddings, documents):
         """Test model response for a given query."""
-        print(f"🔍 Query: '{query}'")
+        print(f" Query: '{query}'")
         print("=" * 80)
         
         start_time = time.time()
@@ -91,7 +91,7 @@ class ModelResponseTester:
             print()
             
             # Show the response
-            print("🤖 MODEL RESPONSE:")
+            print(" MODEL RESPONSE:")
             print("-" * 80)
             print(response.response if hasattr(response, 'response') else 'No response generated')
             print("-" * 80)
@@ -100,28 +100,28 @@ class ModelResponseTester:
             # Show confidence if available
             if hasattr(response, 'confidence') and response.confidence:
                 confidence = response.confidence
-                print(f"📊 Confidence: {confidence.get('score', 'N/A')} ({confidence.get('level', 'N/A')})")
+                print(f" Confidence: {confidence.get('score', 'N/A')} ({confidence.get('level', 'N/A')})")
                 print()
             
             # Show search metadata if available
             if hasattr(response, 'search_metadata') and response.search_metadata:
                 search_meta = response.search_metadata
-                print(f"🔍 Search Results: {search_meta.get('results_count', 'N/A')} chunks found")
+                print(f" Search Results: {search_meta.get('results_count', 'N/A')} chunks found")
                 if 'top_scores' in search_meta:
                     scores = search_meta['top_scores']
-                    print(f"🎯 Top Scores: {[f'{s:.3f}' for s in scores[:3]]}")
+                    print(f" Top Scores: {[f'{s:.3f}' for s in scores[:3]]}")
                 print()
             
             return response
             
         except Exception as e:
-            print(f"❌ Error generating response: {e}")
+            print(f" Error generating response: {e}")
             return {"error": str(e)}
 
 
 def main():
     """Main function."""
-    print("🚀 Model Response Tester")
+    print(" Model Response Tester")
     print("=" * 80)
     print()
     
@@ -141,7 +141,7 @@ def main():
         query = input("> ").strip()
     
     if not query:
-        print("❌ No query provided")
+        print(" No query provided")
         return
     
     print()
@@ -172,4 +172,4 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         print("\n👋 Interrupted by user. Goodbye!")
     except Exception as e:
-        print(f"\n❌ Unexpected error: {e}")
+        print(f"\n Unexpected error: {e}")

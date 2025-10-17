@@ -12,17 +12,16 @@ from fastapi import APIRouter, HTTPException, Depends, Body
 from pydantic import BaseModel, Field
 
 # Local imports
-from utils.cleanup import (
+from utils.file_operations import (
     cleanup_data_folders,
     cleanup_logs,
 )
-from config.file.file_config import FileConfig
-from config.server.logging_config import LoggingConfig
+from config.settings import Config
 from api.dependencies import get_vector_store
-from core.storage.vector_store import VectorStore
+from core.storage.vector_stores import VectorStore
 # File watching functionality removed
 from models.responses import VectorRebuildResponse, StatusEnum
-from config.rag.rag_config import RAGConfig
+# RAGConfig is now available through Config.RAG
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -54,23 +53,23 @@ async def cleanup_all_data():
         # Clean up logs
         cleanup_logs()
         
-        logger.info("✅ Comprehensive data cleanup completed via API")
+        logger.info(" Comprehensive data cleanup completed via API")
         
         return CleanupResponse(
             success=True,
             message="All data folders cleaned successfully",
             details={
                 "cleaned_directories": [
-                    FileConfig.CHUNKS_DIR(),
-                    FileConfig.VECTORS_DIR(),
-                    FileConfig.TEMP_DIR(),
+                    Config.File.CHUNKS_DIR,
+                    Config.File.VECTORS_DIR,
+                    Config.File.TEMP_DIR,
                     LoggingConfig.LOG_DIR(),
                 ],
                 "operation": "comprehensive_cleanup"
             }
         )
     except Exception as e:
-        logger.error(f"❌ Error during comprehensive cleanup: {e}")
+        logger.error(f" Error during comprehensive cleanup: {e}")
         raise HTTPException(
             status_code=500,
             detail=f"Failed to perform comprehensive cleanup: {str(e)}"
@@ -108,14 +107,14 @@ async def rebuild_vectors(
         # Prepare response details
         details = {
             "chunk_files_loaded": len(documents) if documents else 0,
-            "embedding_model": RAGConfig.EMBEDDING_MODEL(),
+            "embedding_model": Config.RAG.EMBEDDING_MODEL(),
             "vector_dimensions": embeddings.shape[1] if embeddings is not None and len(embeddings) > 0 else 0,
             "vector_store_type": "FAISS" if faiss_index is not None else "NumPy",
-            "chunks_directory": FileConfig.CHUNKS_DIR(),
-            "vectors_directory": FileConfig.VECTORS_DIR()
+            "chunks_directory": Config.File.CHUNKS_DIR,
+            "vectors_directory": Config.File.VECTORS_DIR
         }
         
-        logger.info(f"✅ Vector store rebuild completed via cleanup API: {len(documents)} documents processed in {processing_time_str}")
+        logger.info(f" Vector store rebuild completed via cleanup API: {len(documents)} documents processed in {processing_time_str}")
         
         return VectorRebuildResponse(
             status=StatusEnum.SUCCESS,
@@ -123,12 +122,12 @@ async def rebuild_vectors(
             documents_processed=len(documents) if documents else 0,
             vectors_created=len(embeddings) if embeddings is not None else 0,
             processing_time=processing_time_str,
-            vector_store_path=FileConfig.VECTOR_STORE_PATH(),
+            vector_store_path=Config.File.VECTOR_STORE_PATH,
             details=details
         )
         
     except Exception as e:
-        logger.error(f"❌ Error during vector store rebuild: {e}")
+        logger.error(f" Error during vector store rebuild: {e}")
         raise HTTPException(
             status_code=500,
             detail=f"Failed to rebuild vector store: {str(e)}"
@@ -147,9 +146,9 @@ async def update_query_adapter(payload: Dict[str, Any] = Body(default={})):  # s
     }
     """
     try:
-        from core.rag.query_adapter import build_from_evals, save_query_adapter
-        from core.rag.embeddings import get_embedding_service
-        from config.rag.rag_config import RAGConfig
+        from core.retrieval.query_expansion.query_adapter import build_from_evals, save_query_adapter
+        from core.ai_services.embeddings.embeddings import get_embedding_service
+        # RAGConfig is now available through Config.RAG
 
         queries = payload.get("queries", [])
         positives = payload.get("positives", [])
@@ -160,11 +159,11 @@ async def update_query_adapter(payload: Dict[str, Any] = Body(default={})):  # s
 
         embedder = get_embedding_service().get_embedder()
         adapter = build_from_evals(queries, positives, embedder, lambda_reg)
-        path = RAGConfig.QUERY_ADAPTER_PATH()
+        path = Config.RAG.QUERY_ADAPTER_PATH()
         save_query_adapter(adapter, path)
         return {"success": True, "path": path, "dim": int(adapter.shape[0])}
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ Error updating query adapter: {e}")
+        logger.error(f" Error updating query adapter: {e}")
         raise HTTPException(status_code=500, detail=str(e))

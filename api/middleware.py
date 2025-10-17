@@ -158,7 +158,7 @@ class ErrorHandlingMiddleware(BaseHTTPMiddleware):
         except Exception as e:
             request_id = hex(hash(request.url.path + str(time.time())))[2:10]
             logger.error(
-                f"❌ [Middleware Error] Unhandled error in {request.method} {request.url.path}: {str(e)} - RequestID: {request_id}"
+                f" [Middleware Error] Unhandled error in {request.method} {request.url.path}: {str(e)} - RequestID: {request_id}"
             )
 
             # Return generic error response to prevent information leakage
@@ -212,17 +212,17 @@ def setup_middleware(
 
     if enable_request_logging:
         app.add_middleware(RequestLoggingMiddleware)
-        logger.info("✅ Request logging middleware enabled")
+        logger.info(" Request logging middleware enabled")
 
     app.add_middleware(SecurityHeadersMiddleware)
-    logger.info("✅ Security headers middleware enabled")
+    logger.info(" Security headers middleware enabled")
 
     app.add_middleware(CacheControlMiddleware)
-    logger.info("✅ Cache control middleware enabled")
+    logger.info(" Cache control middleware enabled")
 
     if enable_rate_limiting:
         app.add_middleware(RateLimitingMiddleware, max_requests=100, window_seconds=60, max_concurrent=10)
-        logger.info("✅ Rate limiting middleware enabled")
+        logger.info(" Rate limiting middleware enabled")
 
     app.add_middleware(ErrorHandlingMiddleware)
-    logger.info("✅ Error handling middleware enabled")
+    logger.info(" Error handling middleware enabled")

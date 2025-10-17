@@ -4,7 +4,7 @@ Model status endpoints for monitoring preloaded ML models.
 
 import time
 from fastapi import APIRouter
-from utils.model_preloader import get_model_preloader
+from utils.performance import get_model_preloader
 
 router = APIRouter()
 

@@ -5,10 +5,9 @@ Provides service instances for API endpoints with proper dependency injection.
 
 # Local imports
 from services import DocumentService, ChatService, UploadService, URLService
-from core.llm import ChatbotService
-from core.rag import ContextRetriever
-from core.storage import vector_store as global_vector_store
-from core.storage.vector_store import VectorStore
+from core.ai_services import ChatbotService
+from core.retrieval import ContextRetriever
+from core.storage.vector_stores import VectorStore
 import os
 
 

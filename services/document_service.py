@@ -12,8 +12,9 @@ from typing import Dict, Any, List
 import time
 
 # Local imports
-from core.processing import MainDocumentProcessor, FileManager, URLProcessor
-from core.storage import vector_store
+from core.document_processing import MainDocumentProcessor, FileManager
+from core.document_processing.processors.processors import URLProcessor
+from core.storage.vector_stores import VectorStore
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +54,7 @@ class DocumentService:
         )
         
         # Restore original URL processor since Docling doesn't support URLs
-        from core.processing.processors import PDFProcessor, DocumentProcessor
+        from core.document_processing.processors.processors import PDFProcessor, DocumentProcessor
         self.url_processor = URLProcessor(
             file_manager=self.file_manager,
             pdf_processor=PDFProcessor(),
@@ -86,7 +87,7 @@ class DocumentService:
                 logger.info(f"🔓 [DocumentService] Released OCR slot for {filename}")
                 return result
             except Exception as e:
-                logger.error(f"❌ [DocumentService] OCR processing failed for {filename}: {e}")
+                logger.error(f" [DocumentService] OCR processing failed for {filename}: {e}")
                 # Clear memory even on failure
                 await self._aggressive_memory_cleanup()
                 raise
@@ -150,7 +151,7 @@ class DocumentService:
                 "document_count": len(documents),
             }
         except Exception as e:
-            logger.error(f"❌ [DocumentService Error] {str(e)} (url={url})")
+            logger.error(f" [DocumentService Error] {str(e)} (url={url})")
             return {
                 "success": False,
                 "error": str(e),
@@ -200,7 +201,7 @@ class DocumentService:
                 doc_count = len(result["documents"])
                 ocr_time = result["metadata"].get("ocr_time")
                 logger.info(
-                    f"✅ [DocumentService] Successfully processed {filename}: {doc_count} chunks"
+                    f" [DocumentService] Successfully processed {filename}: {doc_count} chunks"
                 )
                 # Log document previews for debugging
                 for j, doc in enumerate(result["documents"][:3]):  # Show first 3 chunks
@@ -216,7 +217,7 @@ class DocumentService:
                     "result": result
                 }
             except Exception as e:
-                logger.error(f"❌ [DocumentService Error] {str(e)} (file={filename})")
+                logger.error(f" [DocumentService Error] {str(e)} (file={filename})")
                 return {
                     "filename": filename,
                     "success": False,
@@ -228,7 +229,7 @@ class DocumentService:
                 }
         
         # Process all files concurrently with OCR control
-        logger.info(f"🚀 [DocumentService] Processing {len(file_data_list)} files with OCR concurrency control")
+        logger.info(f" [DocumentService] Processing {len(file_data_list)} files with OCR concurrency control")
         tasks = [process_single_file(file_data) for file_data in file_data_list]
         file_results = await asyncio.gather(*tasks, return_exceptions=True)
         
@@ -237,7 +238,7 @@ class DocumentService:
             if isinstance(file_result, Exception):
                 # Handle exceptions from gather
                 filename = file_data_list[i][1] if i < len(file_data_list) else "unknown"
-                logger.error(f"❌ [DocumentService] Exception processing {filename}: {file_result}")
+                logger.error(f" [DocumentService] Exception processing {filename}: {file_result}")
                 results.append({
                     "filename": filename,
                     "success": False,
@@ -271,10 +272,10 @@ class DocumentService:
 
         if vector_store_success:
             logger.info(
-                f"✅ Vector store updated successfully with {total_documents} total document chunks"
+                f" Vector store updated successfully with {total_documents} total document chunks"
             )
         else:
-            logger.warning("⚠️ Vector store update failed or was skipped")
+            logger.warning(" Vector store update failed or was skipped")
 
         response = self._create_batch_response(
             len(file_data_list),
@@ -353,7 +354,7 @@ class DocumentService:
                 "error": result.get("error"),
             }
 
-        # 🚀 Process all URLs concurrently for optimal performance (with concurrency limit)
+        #  Process all URLs concurrently for optimal performance (with concurrency limit)
         logger.info(f"🔄 Processing {len(urls)} URLs concurrently...")
         
         # Limit concurrent URL processing to prevent connection overload
@@ -409,7 +410,7 @@ class DocumentService:
             )
 
         logger.info(
-            f"✅ URL processing complete: {successful_count} successful, {failed_count} failed"
+            f" URL processing complete: {successful_count} successful, {failed_count} failed"
         )
 
         return self._create_batch_response(

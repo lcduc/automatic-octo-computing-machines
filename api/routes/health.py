@@ -14,9 +14,9 @@ from fastapi import APIRouter, Depends
 from setting import Config
 from models.responses import HealthResponse, StatusEnum
 from pydantic import BaseModel, Field
-from utils.performance_monitor import get_performance_monitor
-from utils.background_tasks import get_background_manager
-from utils.model_preloader import get_model_preloader
+from utils.performance import get_performance_monitor
+from utils.performance import get_background_manager
+from utils.performance import get_model_preloader
 from api.dependencies import get_chat_service
 
 router = APIRouter()

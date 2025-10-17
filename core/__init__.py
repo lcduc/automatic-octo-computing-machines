@@ -1,12 +1,12 @@
 """
 Core functionality package for the RAG chatbot system.
-Provides the main components for document processing, AI conversation, and knowledge management.
+Organized by domain for better maintainability and clarity.
 """
 
-# Import main components for easy access and simplified imports
-from .llm import ChatbotService, PromptManager
-from .processing import MainDocumentProcessor
-from .rag import EmbeddingService, ContextRetriever
+# Import main components from domain modules
+from .ai_services import ChatbotService, PromptManager, EmbeddingService
+from .document_processing import MainDocumentProcessor
+from .retrieval import ContextRetriever
 from .storage import VectorStore, DocumentStore
 
 # Export all main components for convenient access

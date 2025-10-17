@@ -28,7 +28,7 @@ load_dotenv()
 logging.basicConfig(level=logging.WARNING)  # Reduce noise
 
 # Import project modules
-from core.rag.retriever import ContextRetriever
+from core.retrieval.search.retriever import ContextRetriever
 from core.storage.vector_store_optimized import OptimizedVectorStore
 from config.rag.rag_config import RAGConfig
 
@@ -41,8 +41,8 @@ class ChunkRankingTester:
         self.retriever = ContextRetriever()
         self.vector_store = OptimizedVectorStore()
         
-        print("🔧 Initializing Chunk Ranking Tester...")
-        print(f"📊 Configuration:")
+        print(" Initializing Chunk Ranking Tester...")
+        print(f" Configuration:")
         print(f"   - Semantic Weight: {RAGConfig.SEMANTIC_WEIGHT()}")
         print(f"   - Similarity Threshold: {RAGConfig.SIMILARITY_THRESHOLD()}")
         print(f"   - Retrieval Top K: {RAGConfig.RETRIEVAL_TOP_K()}")
@@ -50,24 +50,24 @@ class ChunkRankingTester:
     
     def load_data(self):
         """Load vector store data."""
-        print("📚 Loading vector store...")
+        print(" Loading vector store...")
         try:
             faiss_index, embeddings, documents = self.vector_store.load_vector_store()
             
             if documents is None or len(documents) == 0:
-                print("⚠️  No documents found in vector store!")
+                print("  No documents found in vector store!")
                 return None, None
             
-            print(f"✅ Loaded {len(documents)} documents")
+            print(f" Loaded {len(documents)} documents")
             return embeddings, documents
             
         except Exception as e:
-            print(f"❌ Error loading vector store: {e}")
+            print(f" Error loading vector store: {e}")
             return None, None
     
     def test_ranking(self, query: str, embeddings, documents):
         """Test chunk ranking for a given query."""
-        print(f"🔍 Testing ranking for: '{query}'")
+        print(f" Testing ranking for: '{query}'")
         print("=" * 80)
         
         # Get search results
@@ -80,19 +80,19 @@ class ChunkRankingTester:
         )
         
         if not search_results:
-            print("⚠️  No chunks found above similarity threshold")
-            print(f"   🎯 Current threshold: {RAGConfig.SIMILARITY_THRESHOLD()}")
+            print("  No chunks found above similarity threshold")
+            print(f"    Current threshold: {RAGConfig.SIMILARITY_THRESHOLD()}")
             return
         
-        print(f"📊 Found {len(search_results)} relevant chunks:")
+        print(f" Found {len(search_results)} relevant chunks:")
         print()
         
         # Display detailed ranking
         for i, result in enumerate(search_results, 1):
             print(f"🏆 Rank #{i}")
             print(f"   📄 Chunk Index: {result['index']}")
-            print(f"   🎯 Combined Score: {result['combined_score']:.4f}")
-            print(f"   🧠 Semantic Score: {result['semantic_score']:.4f}")
+            print(f"    Combined Score: {result['combined_score']:.4f}")
+            print(f"    Semantic Score: {result['semantic_score']:.4f}")
             print(f"   🔤 Keyword Score: {result['keyword_score']:.4f}")
             print(f"   📏 Length: {len(result['document'])} chars")
             print(f"   📝 Content Preview:")
@@ -114,13 +114,13 @@ class ChunkRankingTester:
         semantic_scores = [r['semantic_score'] for r in results]
         keyword_scores = [r['keyword_score'] for r in results]
         
-        print(f"🎯 Combined Scores:")
+        print(f" Combined Scores:")
         print(f"   Min: {min(combined_scores):.4f}")
         print(f"   Max: {max(combined_scores):.4f}")
         print(f"   Avg: {sum(combined_scores)/len(combined_scores):.4f}")
         print()
         
-        print(f"🧠 Semantic Scores:")
+        print(f" Semantic Scores:")
         print(f"   Min: {min(semantic_scores):.4f}")
         print(f"   Max: {max(semantic_scores):.4f}")
         print(f"   Avg: {sum(semantic_scores)/len(semantic_scores):.4f}")
@@ -134,7 +134,7 @@ class ChunkRankingTester:
     
     def _show_keyword_analysis(self, query: str, results: List[Dict[str, Any]]):
         """Show keyword analysis for the query."""
-        print("🔍 Keyword Analysis:")
+        print(" Keyword Analysis:")
         print("-" * 40)
         
         # Tokenize query
@@ -148,14 +148,14 @@ class ChunkRankingTester:
             matching_tokens = [token for token in query_tokens if token in chunk_tokens]
             
             print(f"📄 Chunk #{i} (Index: {result['index']}):")
-            print(f"   🎯 Matching tokens: {matching_tokens}")
-            print(f"   📊 Match ratio: {len(matching_tokens)}/{len(query_tokens)} = {len(matching_tokens)/len(query_tokens):.2%}")
+            print(f"    Matching tokens: {matching_tokens}")
+            print(f"    Match ratio: {len(matching_tokens)}/{len(query_tokens)} = {len(matching_tokens)/len(query_tokens):.2%}")
             print()
 
 
 def main():
     """Main function."""
-    print("🚀 Chunk Ranking Tester")
+    print(" Chunk Ranking Tester")
     print("=" * 80)
     print()
     
@@ -175,7 +175,7 @@ def main():
         query = input("> ").strip()
     
     if not query:
-        print("❌ No query provided")
+        print(" No query provided")
         return
     
     print()
@@ -190,4 +190,4 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         print("\n👋 Interrupted by user. Goodbye!")
     except Exception as e:
-        print(f"\n❌ Unexpected error: {e}")
+        print(f"\n Unexpected error: {e}")

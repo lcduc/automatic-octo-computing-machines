@@ -8,6 +8,13 @@ services:
     ports:
       - "8500:8500"
     environment:
+      # OpenAI Configuration
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-your_openai_api_key_here}
+      - OPENAI_MODEL=gpt-4o-mini
+      - OPENAI_MAX_TOKENS=7000
+      - OPENAI_TEMPERATURE=0.2
+      - OPENAI_TIMEOUT=30
+
       # Server Configuration
       - HOST=0.0.0.0
       - PORT=8500
@@ -15,27 +22,16 @@ services:
       - RELOAD=False
       - UVICORN_WORKERS=1
 
-      # OpenAI Configuration
-      - OPENAI_MODEL=gpt-4o-mini
-      - OPENAI_MAX_TOKENS=200
-      - OPENAI_TEMPERATURE=0.7
-      - OPENAI_TIMEOUT=30
-
-      # Performance Optimization Settings
-      - LLM_CACHE_ENABLED=False
-      - LLM_CACHE_TTL=300
-      - LLM_CACHE_MAX_SIZE=100
-      - LLM_CACHE_MAX_ENTRIES=50
-      - MAX_CONTEXT_LENGTH=3000
-      - LLM_MAX_WORKERS=5
-      - LLM_HISTORY_LENGTH=9
-
       # Logging Configuration
       - LOG_LEVEL=ERROR
       - LOG_TO_FILE=False
       - LOG_DIR=data/logs
-      - LOG_MAX_SIZE=10485760
-      - LOG_BACKUP_COUNT=5
+
+      # LLM Config optimizations
+      - LLM_CACHE_ENABLED=True
+      - LLM_CACHE_TTL=3600
+      - LLM_CACHE_MAX_ENTRIES=1000
+      - MAX_CONTEXT_LENGTH=5000 
 
       # CORS Configuration
       - CORS_ORIGINS=*
@@ -47,47 +43,31 @@ services:
       - MAX_FILES_PER_BATCH=10
       - MAX_TOTAL_BATCH_SIZE=209715200
 
-      # OCR Configuration
-      - OCR_ENABLED=true
-      - OCR_MAX_WORKERS=4
-      - OCR_DESKEW=false
-      - OCR_GRAYSCALE=false
-      - OCR_BINARIZE=false
-      - OCR_BINARIZE_ADAPTIVE=false
-      - OCR_RESIZE=false
-      - OCR_RESIZE_HEIGHT=32
-      - OCR_CONTRAST_ENHANCE=false
-      - OCR_SHARPEN=false
-      - OCR_DENOISE=false
+      # Simple OCR Configuration
+      - DOCLING_OCR_ENABLED=true
+      - TESSERACT_CMD=/usr/bin/tesseract
+      - OCR_CONCURRENT_PAGES=2
+      - OCR_MAX_CONCURRENT_FILES=1
+      - OCR_FORCE_ALL_PDFS=false
+      - OCR_FORCE_FULL_PAGE=true
 
-      # Simple Data Structure Paths
+      # Data Structure Paths
       - CHUNKS_DIR=data/chunks
       - VECTORS_DIR=data/vectors
       - TEMP_DIR=data/temp
       - VECTOR_STORE_PATH=data/vectors/vector_store.pkl
+      - RAG_QUERY_ADAPTER_PATH=data/vectors/query_adapter.npy
 
       # RAG Configuration
       - EMBEDDING_MODEL=paraphrase-multilingual-MiniLM-L12-v2
-
-      # Chat Configuration
-      - CHAT_MODE=query_only
-      - MAX_HISTORY_LENGTH=10
+      - RERANKER_ENABLED=true
+      - RERANKER_MODEL=cross-encoder/ms-marco-MiniLM-L6-v2
       - RETRIEVAL_TOP_K=3
       - CHUNK_SIZE=1000
       - CHUNK_OVERLAP=0
-      - SEMANTIC_WEIGHT=0.6
-      - SIMILARITY_THRESHOLD=0.5
-      - DIVERSITY_THRESHOLD=0.8
-      - MAX_RETRIEVAL_RESULTS=10
 
-      # Context Expansion
-      - CONTEXT_EXPANSION_ENABLED=True
-      - CONTEXT_EXPANSION_RADIUS=1
-      - MIN_CONTEXT_CHUNKS=2
-      - MAX_CONTEXT_CHUNKS=5
-
-      # Vector store and embeddings
-      - VECTOR_STORE_BACKEND=faiss
+      # Vector Store Configuration
+      - VECTOR_STORE_BACKEND=optimized
       - USE_FAISS_INDEX=True
       - CACHE_EMBEDDINGS=True
       - EMBEDDING_BATCH_SIZE=32
@@ -97,39 +77,15 @@ services:
       - CLEAN_SPECIAL_CHARS=True
       - EXTRACT_CONTENT_WORDS=True
 
-      # Confidence Scoring Configuration
-      - CONFIDENCE_SCORING_ENABLED=True
-      - CONFIDENCE_CONTEXT_WEIGHT=0.35
-      - CONFIDENCE_LENGTH_WEIGHT=0.20
-      - CONFIDENCE_COHERENCE_WEIGHT=0.25
-      - CONFIDENCE_CITATION_WEIGHT=0.10
-      - CONFIDENCE_UNCERTAINTY_WEIGHT=0.10
-
-      # URL Content Chunking Configuration
-      - URL_CHUNK_SIZE=1500
-      - URL_CHUNK_OVERLAP=0
-      - URL_MIN_CHUNK_SIZE=100
-
-      # Web Crawling Configuration
-      - CRAWL_TIMEOUT=30
-      - CRAWL_MAX_PAGES=10
-      - CRAWL_MAX_DEPTH=2
-      - CRAWL_DELAY=1.0
-      - CRAWL_MAX_CONTENT_LENGTH=10485760
-
-      # GPU Configuration
-      - CUDA_VISIBLE_DEVICES=0
-      - NVIDIA_VISIBLE_DEVICES=all
-      
-      # Service Health Monitoring
-      - SERVICE_SUCCESS_RATE_THRESHOLD=80.0
-      - SERVICE_MIN_REQUESTS_FOR_HEALTH=10
-
       # Health Check Configuration
       - HEALTH_CHECK_INTERVAL=30
       - HEALTH_CHECK_TIMEOUT=30
       - HEALTH_CHECK_START_PERIOD=5
       - HEALTH_CHECK_RETRIES=3
+
+      # GPU support
+      - CUDA_VISIBLE_DEVICES=0
+      - NVIDIA_VISIBLE_DEVICES=all
     env_file:
       - .env
     volumes:

@@ -7,15 +7,13 @@ import numpy as np
 import asyncio
 
 # Local imports
-from core.llm import ChatbotService
-from core.storage import vector_store
-from config.server.health_config import HealthConfig
-from config.llm.llm_config import LLMConfig
-from config.rag.rag_config import RAGConfig
+from core.ai_services import ChatbotService
+from core.storage.vector_stores import VectorStore
+from config.settings import Config
 from models.responses import ErrorResponse, BaseResponse, StatusEnum
-from utils.performance_monitor import get_performance_monitor
-from utils.model_preloader import get_model_preloader
-from core.caching import get_cache_service
+from utils.performance import get_performance_monitor
+from utils.performance import get_model_preloader
+from core.infrastructure.caching.cache_service import get_cache_service
 
 logger = logging.getLogger(__name__)
 
@@ -78,7 +76,7 @@ class ChatService:
                 self._vector_store_last_loaded = current_time
                 logger.debug("🔄 Vector store cache refreshed")
             except Exception as e:
-                logger.error(f"❌ Error loading vector store: {e}")
+                logger.error(f" Error loading vector store: {e}")
                 return None
         return self._vector_store_cache
 
@@ -108,7 +106,7 @@ class ChatService:
             logger.debug("💾 Cached search results in smart cache")
             return results
         except Exception as e:
-            logger.warning(f"⚠️ Search failed: {e}")
+            logger.warning(f" Search failed: {e}")
             return []
 
     async def chat_with_memory(
@@ -121,7 +119,7 @@ class ChatService:
         start_time = time.time()
         request_id = f"chat_{int(time.time() * 1000)}"
         if logger.isEnabledFor(logging.INFO):
-            logger.info("🔍 Processing chat request %s: %s...", request_id, query[:50])
+            logger.info("Processing chat request %s: %s...", request_id, query[:50])
         try:
             # Update request metrics for monitoring
             self.service_metrics["total_requests"] += 1
@@ -134,7 +132,7 @@ class ChatService:
 
             # Check chatbot service availability before processing
             if not self.chatbot_service.api_available:
-                logger.error("❌ ChatbotService not available")
+                logger.error(" ChatbotService not available")
                 return self._create_error_response(
                     query,
                     "Chat service is currently unavailable",
@@ -164,7 +162,7 @@ class ChatService:
                 current_documents = []
             else:
                 logger.info(
-                    f"📚 Knowledge base loaded: {len(current_documents)} documents"
+                    f" Knowledge base loaded: {len(current_documents)} documents"
                 )
                 if current_embeddings is None:
                     current_embeddings = np.array([])
@@ -198,10 +196,10 @@ class ChatService:
                     max_context_length = LLMConfig.MAX_CONTEXT_LENGTH()
                     if len(context) > max_context_length:
                         context = context[:max_context_length]
-                        logger.debug(f"🔧 Context truncated to {max_context_length} characters")
+                        logger.debug(f" Context truncated to {max_context_length} characters")
                         
                 except Exception as e:
-                    logger.warning(f"⚠️ RAG search failed: {e}")
+                    logger.warning(f" RAG search failed: {e}")
                     context = ""
                     search_results = []
 
@@ -246,7 +244,7 @@ class ChatService:
                     self._performance_monitor.record_system_metrics()
                 
                 if logger.isEnabledFor(logging.INFO):
-                    logger.info("✅ Request %s completed successfully in %.2fs", request_id, processing_time)
+                    logger.info(" Request %s completed successfully in %.2fs", request_id, processing_time)
                 # Extract response and metadata from result for comprehensive response
                 if hasattr(result, 'response'):
                     # ChatResponse object
@@ -295,7 +293,7 @@ class ChatService:
                     error=None,
                 ).dict()
             except Exception as e:
-                logger.error("❌ Error in chatbot service for request %s: %s", request_id, e)
+                logger.error(" Error in chatbot service for request %s: %s", request_id, e)
                 self.service_metrics["failed_requests"] += 1
                 return self._create_error_response(
                     query,
@@ -349,7 +347,7 @@ class ChatService:
             Dict containing detailed knowledge base information
         """
         try:
-            logger.debug("🔍 Checking knowledge base status...")
+            logger.debug("Checking knowledge base status...")
             _, current_embeddings, current_documents = vector_store.load_vector_store()
 
             # Calculate additional metrics
@@ -375,12 +373,12 @@ class ChatService:
             }
 
             logger.debug(
-                f"✅ Knowledge base status: {status_info['status']} ({status_info['document_count']} docs)"
+                f" Knowledge base status: {status_info['status']} ({status_info['document_count']} docs)"
             )
             return status_info
 
         except Exception as e:
-            logger.error(f"❌ Error getting knowledge base status: {str(e)}")
+            logger.error(f" Error getting knowledge base status: {str(e)}")
             return {
                 "available": False,
                 "document_count": 0,
@@ -445,7 +443,7 @@ class ChatService:
             }
 
         except Exception as e:
-            logger.error(f"❌ Error getting comprehensive service status: {e}")
+            logger.error(f" Error getting comprehensive service status: {e}")
             return {
                 "service_name": "ChatService",
                 "overall_health": "error",

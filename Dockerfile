@@ -69,9 +69,13 @@ WORKDIR /app
 # Copy application code
 COPY --chown=app:app . .
 
-# Create data directories with proper permissions
+# Create data directories with proper permissions for domain-driven structure
 RUN mkdir -p data/chunks data/vectors data/temp logs && \
     chown -R app:app data/ logs/
+
+# Create additional directories for the new structure
+RUN mkdir -p scripts && \
+    chown -R app:app scripts/
 
 # Switch to non-root user
 USER app

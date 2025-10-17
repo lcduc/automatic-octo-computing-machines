@@ -36,11 +36,11 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Import project modules
-from core.rag.retriever import ContextRetriever
-from core.rag.embeddings import get_embedding_service
-from core.storage.vector_store_optimized import OptimizedVectorStore
-from core.llm.prompts import PromptManager
-from core.llm.chatbot import ChatbotService
+from core.retrieval.search.retriever import ContextRetriever
+from core.ai_services.embeddings.embeddings import get_embedding_service
+from core.storage.vector_stores.vector_store_optimized import OptimizedVectorStore
+from core.ai_services.llm.prompts import PromptManager
+from core.ai_services.llm.chatbot import ChatbotService
 from config.rag.rag_config import RAGConfig
 from config.llm.llm_config import LLMConfig
 
@@ -56,8 +56,8 @@ class RAGProcessTester:
         self.embedding_service = get_embedding_service()
         self.chatbot_service = ChatbotService(context_retriever=self.retriever)
         
-        print("🔧 Initializing RAG Process Tester...")
-        print(f"📊 Configuration:")
+        print(" Initializing RAG Process Tester...")
+        print(f" Configuration:")
         print(f"   - Embedding Model: {RAGConfig.EMBEDDING_MODEL()}")
         print(f"   - Retrieval Top K: {RAGConfig.RETRIEVAL_TOP_K()}")
         print(f"   - Semantic Weight: {RAGConfig.SEMANTIC_WEIGHT()}")
@@ -67,16 +67,16 @@ class RAGProcessTester:
     
     def load_vector_store(self) -> tuple:
         """Load the vector store and return embeddings and documents."""
-        print("📚 Loading vector store...")
+        print(" Loading vector store...")
         try:
             faiss_index, embeddings, documents = self.vector_store.load_vector_store()
             
             if documents is None or len(documents) == 0:
-                print("⚠️  No documents found in vector store!")
+                print("  No documents found in vector store!")
                 print("   Please upload some documents first using the /files/upload endpoint")
                 return None, None
             
-            print(f"✅ Loaded {len(documents)} documents from vector store")
+            print(f" Loaded {len(documents)} documents from vector store")
             print(f"   - Embeddings shape: {embeddings.shape if embeddings is not None else 'None'}")
             print(f"   - FAISS index: {'Available' if faiss_index is not None else 'Not available'}")
             print()
@@ -84,12 +84,12 @@ class RAGProcessTester:
             return embeddings, documents
             
         except Exception as e:
-            print(f"❌ Error loading vector store: {e}")
+            print(f" Error loading vector store: {e}")
             return None, None
     
     def process_query(self, query: str, embeddings, documents) -> Dict[str, Any]:
         """Process a query through the complete RAG pipeline."""
-        print(f"🔍 Processing query: '{query}'")
+        print(f" Processing query: '{query}'")
         print("=" * 80)
         
         start_time = time.time()
@@ -99,7 +99,7 @@ class RAGProcessTester:
         query_start = time.time()
         query_embedding = self.embedding_service.encode([query], convert_to_numpy=True)
         query_time = time.time() - query_start
-        print(f"   ✅ Query embedding generated in {query_time:.3f}s")
+        print(f"    Query embedding generated in {query_time:.3f}s")
         print(f"   📐 Embedding dimensions: {query_embedding.shape}")
         print()
         
@@ -117,12 +117,12 @@ class RAGProcessTester:
             )
             search_time = time.time() - search_start
             
-            print(f"   ✅ Hybrid search completed in {search_time:.3f}s")
-            print(f"   📊 Found {len(search_results)} relevant chunks")
+            print(f"    Hybrid search completed in {search_time:.3f}s")
+            print(f"    Found {len(search_results)} relevant chunks")
             print()
             
         except Exception as e:
-            print(f"   ❌ Search failed: {e}")
+            print(f"    Search failed: {e}")
             return {"error": str(e)}
         
         # Step 3: Display detailed ranking information
@@ -130,8 +130,8 @@ class RAGProcessTester:
         print("-" * 80)
         
         if not search_results:
-            print("   ⚠️  No chunks found above similarity threshold")
-            print(f"   🎯 Current threshold: {RAGConfig.SIMILARITY_THRESHOLD()}")
+            print("     No chunks found above similarity threshold")
+            print(f"    Current threshold: {RAGConfig.SIMILARITY_THRESHOLD()}")
             print()
         else:
             # Get document metadata for source information
@@ -142,9 +142,9 @@ class RAGProcessTester:
                 source = document_metadata[chunk_idx].get("source_id", "unknown") if document_metadata else "unknown"
                 
                 print(f"   📄 Chunk #{i} (Index: {result['index']})")
-                print(f"      📁 Document Source: {source}")
-                print(f"      🎯 Combined Score: {result['combined_score']:.4f}")
-                print(f"      🧠 Semantic Score: {result['semantic_score']:.4f}")
+                print(f"       Document Source: {source}")
+                print(f"       Combined Score: {result['combined_score']:.4f}")
+                print(f"       Semantic Score: {result['semantic_score']:.4f}")
                 print(f"      🔤 Keyword Score: {result['keyword_score']:.4f}")
                 print(f"      📏 Document Length: {len(result['document'])} chars")
                 print(f"      📝 Preview: {result['document'][:100]}...")
@@ -164,13 +164,13 @@ class RAGProcessTester:
             max_context_length = LLMConfig.MAX_CONTEXT_LENGTH()
             if len(context) > max_context_length:
                 context = context[:max_context_length]
-                print(f"   ⚠️  Context truncated to {max_context_length} characters")
+                print(f"     Context truncated to {max_context_length} characters")
         else:
             context = ""
-            print("   ⚠️  No context available (no chunks retrieved)")
+            print("     No context available (no chunks retrieved)")
         
         context_time = time.time() - context_start
-        print(f"   ✅ Context built in {context_time:.3f}s")
+        print(f"    Context built in {context_time:.3f}s")
         print(f"   📏 Context length: {len(context)} characters")
         print()
         
@@ -181,14 +181,14 @@ class RAGProcessTester:
         system_prompt = self.prompt_manager.get_system_prompt(context=context)
         prompt_time = time.time() - prompt_start
         
-        print(f"   ✅ System prompt generated in {prompt_time:.3f}s")
+        print(f"    System prompt generated in {prompt_time:.3f}s")
         print(f"   📏 System prompt length: {len(system_prompt)} characters")
         print()
         
         # Step 6: Display complete prompt
         print("6️⃣ Complete Prompt Assembly:")
         print("=" * 80)
-        print("🤖 SYSTEM PROMPT:")
+        print(" SYSTEM PROMPT:")
         print("-" * 40)
         print(system_prompt)
         print("-" * 40)
@@ -216,7 +216,7 @@ class RAGProcessTester:
             max_context_length = LLMConfig.MAX_CONTEXT_LENGTH()
             if len(context) > max_context_length:
                 context = context[:max_context_length]
-                print(f"   ⚠️  Context truncated to {max_context_length} characters")
+                print(f"     Context truncated to {max_context_length} characters")
             
             # Generate system prompt using the same context
             system_prompt = self.prompt_manager.get_system_prompt(context=context)
@@ -229,12 +229,12 @@ class RAGProcessTester:
             )
             response_time = time.time() - response_start
             
-            print(f"   ✅ Model response generated in {response_time:.3f}s")
+            print(f"    Model response generated in {response_time:.3f}s")
             response_text = response.response if hasattr(response, 'response') else ''
             print(f"   📏 Response length: {len(response_text)} characters")
             print()
             
-            print("🤖 MODEL RESPONSE:")
+            print(" MODEL RESPONSE:")
             print("-" * 40)
             print(response_text)
             print("-" * 40)
@@ -242,9 +242,9 @@ class RAGProcessTester:
             
             # Show response metadata if available
             if hasattr(response, 'confidence') and response.confidence:
-                print("📊 Response Confidence:")
+                print(" Response Confidence:")
                 confidence = response.confidence
-                print(f"   🎯 Overall Score: {confidence.get('score', 'N/A')}")
+                print(f"    Overall Score: {confidence.get('score', 'N/A')}")
                 print(f"   📈 Level: {confidence.get('level', 'N/A')}")
                 if 'details' in confidence:
                     details = confidence['details']
@@ -255,15 +255,15 @@ class RAGProcessTester:
                 print()
             
             if hasattr(response, 'search_metadata') and response.search_metadata:
-                print("🔍 Search Metadata:")
+                print(" Search Metadata:")
                 search_meta = response.search_metadata
-                print(f"   📊 Results Count: {search_meta.get('results_count', 'N/A')}")
-                print(f"   🎯 Top Scores: {search_meta.get('top_scores', 'N/A')}")
+                print(f"    Results Count: {search_meta.get('results_count', 'N/A')}")
+                print(f"    Top Scores: {search_meta.get('top_scores', 'N/A')}")
                 print(f"   💾 Cached: {search_meta.get('cached_response', 'N/A')}")
                 print()
                 
         except Exception as e:
-            print(f"   ❌ Error generating response: {e}")
+            print(f"    Error generating response: {e}")
             response_time = time.time() - response_start
             response = {"error": str(e)}
         
@@ -295,12 +295,12 @@ class RAGProcessTester:
     def display_summary(self, results: Dict[str, Any]):
         """Display a summary of the RAG process results."""
         if "error" in results:
-            print(f"❌ Process failed: {results['error']}")
+            print(f" Process failed: {results['error']}")
             return
         
-        print("📊 RAG Process Summary:")
+        print(" RAG Process Summary:")
         print("=" * 80)
-        print(f"🔍 Query: {results['query']}")
+        print(f" Query: {results['query']}")
         print(f"⏱️  Total Processing Time: {results['processing_time']:.3f}s")
         print(f"   - Query Embedding: {results['query_embedding_time']:.3f}s")
         print(f"   - Hybrid Search: {results['search_time']:.3f}s")
@@ -308,10 +308,10 @@ class RAGProcessTester:
         print(f"   - Prompt Generation: {results['prompt_generation_time']:.3f}s")
         print(f"   - Response Generation: {results['response_generation_time']:.3f}s")
         print()
-        print(f"📚 Documents: {results['total_documents']} total, {results['chunks_retrieved']} retrieved")
+        print(f" Documents: {results['total_documents']} total, {results['chunks_retrieved']} retrieved")
         print(f"📏 Context: {results['context_length']} characters")
         print(f"📝 System Prompt: {results['prompt_length']} characters")
-        print(f"🤖 Model Response: {results['response_length']} characters")
+        print(f" Model Response: {results['response_length']} characters")
         print()
         
         if results['search_results']:
@@ -321,14 +321,14 @@ class RAGProcessTester:
                       f"(Semantic: {result['semantic_score']:.4f}, "
                       f"Keyword: {result['keyword_score']:.4f})")
         else:
-            print("⚠️  No chunks retrieved above similarity threshold")
+            print("  No chunks retrieved above similarity threshold")
         print()
         
         # Show response quality metrics if available
         if results['response_confidence']:
-            print("📊 Response Quality Metrics:")
+            print(" Response Quality Metrics:")
             confidence = results['response_confidence']
-            print(f"   🎯 Overall Confidence: {confidence.get('score', 'N/A')}")
+            print(f"    Overall Confidence: {confidence.get('score', 'N/A')}")
             print(f"   📈 Quality Level: {confidence.get('level', 'N/A')}")
             if 'details' in confidence:
                 details = confidence['details']
@@ -339,17 +339,17 @@ class RAGProcessTester:
             print()
         
         if results['search_metadata']:
-            print("🔍 Search Performance:")
+            print(" Search Performance:")
             search_meta = results['search_metadata']
-            print(f"   📊 Chunks Found: {search_meta.get('results_count', 'N/A')}")
-            print(f"   🎯 Top Scores: {search_meta.get('top_scores', 'N/A')}")
+            print(f"    Chunks Found: {search_meta.get('results_count', 'N/A')}")
+            print(f"    Top Scores: {search_meta.get('top_scores', 'N/A')}")
             print(f"   💾 Cached Response: {search_meta.get('cached_response', 'N/A')}")
             print()
 
 
 def main():
     """Main function to run the RAG process tester."""
-    print("🚀 RAG Process Tester")
+    print(" RAG Process Tester")
     print("=" * 80)
     print()
     
@@ -359,7 +359,7 @@ def main():
     # Load vector store
     embeddings, documents = tester.load_vector_store()
     if embeddings is None or documents is None:
-        print("❌ Cannot proceed without vector store data")
+        print(" Cannot proceed without vector store data")
         return
     
     # Get query from command line or interactive input
@@ -374,7 +374,7 @@ def main():
             return
     
     if not query:
-        print("❌ No query provided")
+        print(" No query provided")
         return
     
     print()
@@ -409,5 +409,5 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         print("\n👋 Interrupted by user. Goodbye!")
     except Exception as e:
-        print(f"\n❌ Unexpected error: {e}")
+        print(f"\n Unexpected error: {e}")
         logger.exception("Unexpected error in RAG process tester")

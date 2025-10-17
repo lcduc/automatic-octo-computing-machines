@@ -213,7 +213,7 @@ def test_real_llm_responses():
         raw_response = asyncio.run(get_real_llm_response(query))
         
         if raw_response.startswith("Error:"):
-            print(f"❌ Failed to get response: {raw_response}")
+            print(f" Failed to get response: {raw_response}")
             continue
             
         # Process the response
@@ -262,7 +262,7 @@ def main():
     test_edge_cases()
     
     print_separator("TEST COMPLETED")
-    print("✅ All tests completed successfully!")
+    print(" All tests completed successfully!")
     print("\nThis demonstrates how the formatting pipeline:")
     print("1. Preserves the raw markdown syntax from the LLM")
     print("2. Converts escape sequences to actual newlines")

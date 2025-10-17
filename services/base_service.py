@@ -12,8 +12,7 @@ from typing import List, Dict, Any, Union
 from fastapi import HTTPException
 
 # Local imports
-from setting import Config
-from config.file.file_config import FileConfig
+from config.settings import Config
 from .document_service import DocumentService
 from models.responses import (
     StatusEnum,
@@ -51,10 +50,10 @@ class BaseProcessingService(ABC):
         """
         try:
             # Validate batch size
-            if len(items) > FileConfig.MAX_FILES_PER_BATCH():
+            if len(items) > Config.File.MAX_FILES_PER_BATCH:
                 raise HTTPException(
                     status_code=400,
-                    detail=f"Too many {item_type}. Maximum {FileConfig.MAX_FILES_PER_BATCH()} {item_type} per batch.",
+                    detail=f"Too many {item_type}. Maximum {Config.File.MAX_FILES_PER_BATCH} {item_type} per batch.",
                 )
 
             # Check if any items are provided
