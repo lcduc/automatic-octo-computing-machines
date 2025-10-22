@@ -15,7 +15,7 @@ except ImportError:
     UNDERTHE_SEA_AVAILABLE = False
 
 # Local imports
-from config.rag.query_expansion_config import VietnamesePreprocessingConfig
+from config.settings import Config
 
 logger = logging.getLogger(__name__)
 
@@ -25,10 +25,10 @@ class VietnamesePreprocessor:
 
     def __init__(self):
         # Load configuration
-        self.enabled = VietnamesePreprocessingConfig.VIETNAMESE_PREPROCESSING_ENABLED()
-        self.clean_special_chars = VietnamesePreprocessingConfig.CLEAN_SPECIAL_CHARS()
+        self.enabled = Config.RAG.VIETNAMESE_PREPROCESSING_ENABLED()
+        self.clean_special_chars = Config.RAG.CLEAN_SPECIAL_CHARS()
         self.extract_content_words = (
-            VietnamesePreprocessingConfig.EXTRACT_CONTENT_WORDS()
+            Config.RAG.EXTRACT_CONTENT_WORDS()
         )
 
         if not self.enabled:
@@ -121,7 +121,7 @@ class VietnamesePreprocessor:
         - Remove special characters (keep Vietnamese diacritics)
         - Normalize whitespace using TextUtils
         """
-        from utils.text_utils import TextUtils
+        from utils.text_processing.text_utils import TextUtils
 
         if not text:
             return ""

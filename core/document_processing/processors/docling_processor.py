@@ -44,7 +44,7 @@ except Exception as _e:  # defer hard failure to runtime path
 # Local preprocessing imports
 try:
     from .preprocessing import DocumentPreprocessor, create_ocr_optimized_config
-    from config.document_processing.preprocessing_config import PreprocessingConfigManager
+    from config.settings import Config
     PREPROCESSING_AVAILABLE = True
 except ImportError as e:
     logger = logging.getLogger(__name__)
@@ -57,7 +57,6 @@ except ImportError as e:
 # Local imports
 from models.metadata import MetadataBuilder, ProcessingMethod, SourceType, ProcessingStatus
 from config.settings import Config
-from config.document_processing.docling_config import DoclingConfig
 
 logger = logging.getLogger(__name__)
 
@@ -99,7 +98,7 @@ class DoclingProcessor:
         if self._advanced_preprocessing_enabled:
             try:
                 if PreprocessingConfigManager:
-                    settings = PreprocessingConfigManager.get_config_by_name(preprocessing_config)
+                    settings = Config.OCR.get_config_by_name(preprocessing_config)
                     config = settings.to_preprocessing_config()
                     self._preprocessor = DocumentPreprocessor(config)
                     logger.info(f"Advanced preprocessing enabled with config: {preprocessing_config}")
@@ -122,7 +121,7 @@ class DoclingProcessor:
             os.environ['TESSDATA_PREFIX'] = str(tessdata_dir.absolute())
             
             # Also copy traineddata files to the default Tesseract tessdata directory
-            tesseract_tessdata_dir = Path(DoclingConfig.TESSERACT_CMD()).parent / "tessdata"
+            tesseract_tessdata_dir = Path(Config.OCR.TESSERACT_CMD()).parent / "tessdata"
             
             # Copy vie.traineddata
             vie_traineddata_src = tessdata_dir / "vie.traineddata"
@@ -153,8 +152,8 @@ class DoclingProcessor:
                 del os.environ['TESSDATA_PREFIX']
             
             # Check if Tesseract is available for PDF OCR
-            tesseract_cmd = DoclingConfig.TESSERACT_CMD()
-            self.tesseract_available = DoclingConfig.TESSERACT_CMD_EXISTS()
+            tesseract_cmd = Config.OCR.TESSERACT_CMD()
+            self.tesseract_available = Config.OCR.TESSERACT_CMD_EXISTS()
             
             if self.tesseract_available:
                 logger.info(f" Docling processor initialized with OCR support for PDFs")
@@ -221,7 +220,7 @@ class DoclingProcessor:
                     ocr_options = TesseractCliOcrOptions(
                         force_full_page_ocr=True, 
                         lang=["vie"],
-                        tesseract_cmd=DoclingConfig.TESSERACT_CMD()
+                        tesseract_cmd=Config.OCR.TESSERACT_CMD()
                     )
                     pipeline_options.ocr_options = ocr_options
 
@@ -376,7 +375,7 @@ class DoclingProcessor:
             logger.info(" Using cached PDF converter with OCR")
 
             # Create semaphore to limit concurrent page processing (configurable)
-            max_concurrent_pages = DoclingConfig.OCR_CONCURRENT_PAGES()
+            max_concurrent_pages = Config.OCR.OCR_CONCURRENT_PAGES()
             page_semaphore = asyncio.Semaphore(max_concurrent_pages)
             logger.info(f"Using {max_concurrent_pages} concurrent pages per PDF")
             
@@ -500,11 +499,11 @@ class DoclingProcessor:
             metadata_dict["concurrent_pages"] = max_concurrent_pages
             metadata_dict["concurrency_config"] = {
                 "pages_per_pdf": max_concurrent_pages,
-                "max_concurrent_files": DoclingConfig.OCR_MAX_CONCURRENT_FILES()
+                "max_concurrent_files": Config.OCR.OCR_MAX_CONCURRENT_FILES()
             }
             metadata_dict["preprocessing_enabled"] = self._preprocessing_enabled
             metadata_dict["advanced_preprocessing_enabled"] = self._advanced_preprocessing_enabled
-            metadata_dict["ocr_forced_all_pdfs"] = DoclingConfig.OCR_FORCE_ALL_PDFS()
+            metadata_dict["ocr_forced_all_pdfs"] = Config.OCR.OCR_FORCE_ALL_PDFS()
             metadata_dict["converter_reuse"] = True
 
             return {
@@ -564,7 +563,7 @@ class DoclingProcessor:
                     ocr_options = TesseractCliOcrOptions(
                         force_full_page_ocr=True,
                         lang=["vie"],
-                        tesseract_cmd=DoclingConfig.TESSERACT_CMD()
+                        tesseract_cmd=Config.OCR.TESSERACT_CMD()
                     )
                     pipeline_options.ocr_options = ocr_options
 
@@ -639,7 +638,7 @@ class DoclingProcessor:
             
             if is_pdf and self.tesseract_available and TesseractCliOcrOptions and PdfPipelineOptions and InputFormat and PdfFormatOption:
                 # Check if we should force OCR on all PDFs
-                force_ocr_all = DoclingConfig.OCR_FORCE_ALL_PDFS()
+                force_ocr_all = Config.OCR.OCR_FORCE_ALL_PDFS()
                 
                 if force_ocr_all:
                     # Force OCR on all PDFs regardless of text content
@@ -703,7 +702,7 @@ class DoclingProcessor:
                 )
                 .set_content_stats(total_chunks=len(chunks), total_characters=len(text_md))
                 .set_ocr_info(ocr_enabled=is_pdf and self.tesseract_available, ocr_used=ocr_used)
-                .add_custom_metadata("ocr_forced_all_pdfs", DoclingConfig.OCR_FORCE_ALL_PDFS())
+                .add_custom_metadata("ocr_forced_all_pdfs", Config.OCR.OCR_FORCE_ALL_PDFS())
                 .set_content_features(
                     has_tables="|" in text_md,
                     has_images="![" in text_md,

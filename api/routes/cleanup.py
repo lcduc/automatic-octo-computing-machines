@@ -18,6 +18,9 @@ from utils.file_operations import (
 )
 from config.settings import Config
 from api.dependencies import get_vector_store
+
+# Create alias for backward compatibility
+LoggingConfig = Config.Logging
 from core.storage.vector_stores import VectorStore
 # File watching functionality removed
 from models.responses import VectorRebuildResponse, StatusEnum
@@ -60,9 +63,9 @@ async def cleanup_all_data():
             message="All data folders cleaned successfully",
             details={
                 "cleaned_directories": [
-                    Config.File.CHUNKS_DIR,
-                    Config.File.VECTORS_DIR,
-                    Config.File.TEMP_DIR,
+                    Config.File.CHUNKS_DIR(),
+                    Config.File.VECTORS_DIR(),
+                    Config.File.TEMP_DIR(),
                     LoggingConfig.LOG_DIR(),
                 ],
                 "operation": "comprehensive_cleanup"
@@ -110,8 +113,8 @@ async def rebuild_vectors(
             "embedding_model": Config.RAG.EMBEDDING_MODEL(),
             "vector_dimensions": embeddings.shape[1] if embeddings is not None and len(embeddings) > 0 else 0,
             "vector_store_type": "FAISS" if faiss_index is not None else "NumPy",
-            "chunks_directory": Config.File.CHUNKS_DIR,
-            "vectors_directory": Config.File.VECTORS_DIR
+            "chunks_directory": Config.File.CHUNKS_DIR(),
+            "vectors_directory": Config.File.VECTORS_DIR()
         }
         
         logger.info(f" Vector store rebuild completed via cleanup API: {len(documents)} documents processed in {processing_time_str}")
@@ -122,7 +125,7 @@ async def rebuild_vectors(
             documents_processed=len(documents) if documents else 0,
             vectors_created=len(embeddings) if embeddings is not None else 0,
             processing_time=processing_time_str,
-            vector_store_path=Config.File.VECTOR_STORE_PATH,
+            vector_store_path=Config.File.VECTOR_STORE_PATH(),
             details=details
         )
         

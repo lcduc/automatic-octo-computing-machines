@@ -45,8 +45,8 @@ class SmartCacheService:
             ttl_seconds: Time to live in seconds (default from config)
         """
         self._cache: Dict[str, CacheEntry] = {}
-        self._max_size = max_size or LLMConfig.LLM_CACHE_MAX_SIZE()
-        self._ttl_seconds = ttl_seconds or LLMConfig.LLM_CACHE_TTL()
+        self._max_size = max_size or Config.LLM.LLM_CACHE_MAX_SIZE()
+        self._ttl_seconds = ttl_seconds or Config.LLM.LLM_CACHE_TTL()
         self._hits = 0
         self._misses = 0
         
@@ -54,7 +54,7 @@ class SmartCacheService:
         self._embedding_cache: Dict[str, Any] = {}
         
         # Persistent cache file
-        self._cache_file = os.path.join(Config.File.TEMP_DIR, "smart_cache.pkl")
+        self._cache_file = os.path.join(Config.File.TEMP_DIR(), "smart_cache.pkl")
         self._load_persistent_cache()
         
         logger.info(f" SmartCacheService initialized: max_size={self._max_size}, ttl={self._ttl_seconds}s")

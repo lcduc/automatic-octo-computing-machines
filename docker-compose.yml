@@ -60,7 +60,7 @@ services:
 
       # RAG Configuration
       - EMBEDDING_MODEL=paraphrase-multilingual-MiniLM-L12-v2
-      - RERANKER_ENABLED=true
+      - RERANKING_ENABLED=true
       - RERANKER_MODEL=cross-encoder/ms-marco-MiniLM-L6-v2
       - RETRIEVAL_TOP_K=3
       - CHUNK_SIZE=1000

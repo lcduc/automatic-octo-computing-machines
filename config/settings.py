@@ -66,6 +66,42 @@ class LLMConfig:
     @staticmethod
     def HISTORY_LENGTH():
         return int(os.getenv("LLM_HISTORY_LENGTH", "9"))
+    
+    @staticmethod
+    def MAX_CONTEXT_LENGTH():
+        return int(os.getenv("MAX_CONTEXT_LENGTH", "5000"))
+    
+    @staticmethod
+    def OPENAI_MAX_TOKENS():
+        return int(os.getenv("OPENAI_MAX_TOKENS", "4000"))
+    
+    @staticmethod
+    def OPENAI_TEMPERATURE():
+        return float(os.getenv("OPENAI_TEMPERATURE", "0.1"))
+    
+    @staticmethod
+    def OPENAI_TIMEOUT():
+        return int(os.getenv("OPENAI_TIMEOUT", "30"))
+    
+    @staticmethod
+    def LLM_CACHE_TTL():
+        return int(os.getenv("LLM_CACHE_TTL", "3600"))
+    
+    @staticmethod
+    def LLM_CACHE_MAX_ENTRIES():
+        return int(os.getenv("LLM_CACHE_MAX_ENTRIES", "1000"))
+    
+    @staticmethod
+    def LLM_CACHE_MAX_SIZE():
+        return int(os.getenv("LLM_CACHE_MAX_SIZE", "100"))
+    
+    @staticmethod
+    def LLM_MAX_WORKERS():
+        return int(os.getenv("LLM_MAX_WORKERS", "5"))
+    
+    @staticmethod
+    def LLM_HISTORY_LENGTH():
+        return int(os.getenv("LLM_HISTORY_LENGTH", "9"))
 
 
 class FileConfig:
@@ -96,6 +132,22 @@ class FileConfig:
     @staticmethod
     def CHUNK_OVERLAP():
         return int(os.getenv("CHUNK_OVERLAP", "0"))
+    
+    @staticmethod
+    def TEMP_DIR():
+        return os.getenv("TEMP_DIR", "data/temp")
+    
+    @staticmethod
+    def CHUNKS_DIR():
+        return os.getenv("CHUNKS_DIR", "data/chunks")
+    
+    @staticmethod
+    def VECTORS_DIR():
+        return os.getenv("VECTORS_DIR", "data/vectors")
+    
+    @staticmethod
+    def VECTOR_STORE_PATH():
+        return os.getenv("VECTOR_STORE_PATH", "data/vectors/vector_store.pkl")
 
 
 class ServerConfig:
@@ -149,6 +201,54 @@ class RAGConfig:
     @staticmethod
     def QUERY_ADAPTER_PATH():
         return os.getenv("QUERY_ADAPTER_PATH", "data/query_adapter.pkl")
+    
+    @staticmethod
+    def RETRIEVAL_TOP_K():
+        return int(os.getenv("RETRIEVAL_TOP_K", "3"))
+    
+    @staticmethod
+    def SEMANTIC_WEIGHT():
+        return float(os.getenv("SEMANTIC_WEIGHT", "0.7"))
+    
+    @staticmethod
+    def MAX_CONTEXT_CHUNKS():
+        return int(os.getenv("MAX_CONTEXT_CHUNKS", "5"))
+    
+    @staticmethod
+    def EMBEDDING_MODEL():
+        return os.getenv("EMBEDDING_MODEL", "paraphrase-multilingual-MiniLM-L12-v2")
+    
+    @staticmethod
+    def RERANKER_MODEL():
+        return os.getenv("RERANKER_MODEL", "cross-encoder/ms-marco-MiniLM-L6-v2")
+    
+    @staticmethod
+    def VIETNAMESE_PREPROCESSING_ENABLED():
+        return os.getenv("VIETNAMESE_PREPROCESSING_ENABLED", "True").lower() == "true"
+    
+    @staticmethod
+    def CLEAN_SPECIAL_CHARS():
+        return os.getenv("CLEAN_SPECIAL_CHARS", "True").lower() == "true"
+    
+    @staticmethod
+    def EXTRACT_CONTENT_WORDS():
+        return os.getenv("EXTRACT_CONTENT_WORDS", "True").lower() == "true"
+    
+    @staticmethod
+    def CONTEXT_EXPANSION_ENABLED():
+        return os.getenv("CONTEXT_EXPANSION_ENABLED", "True").lower() == "true"
+    
+    @staticmethod
+    def CONTEXT_EXPANSION_RADIUS():
+        return int(os.getenv("CONTEXT_EXPANSION_RADIUS", "1"))
+    
+    @staticmethod
+    def MIN_CONTEXT_CHUNKS():
+        return int(os.getenv("MIN_CONTEXT_CHUNKS", "2"))
+    
+    @staticmethod
+    def USE_FAISS_INDEX():
+        return os.getenv("USE_FAISS_INDEX", "True").lower() == "true"
 
 
 class ChatConfig:
@@ -189,6 +289,24 @@ class OCRConfig:
     @staticmethod
     def OCR_FORCE_ALL_PDFS():
         return os.getenv("OCR_FORCE_ALL_PDFS", "false").lower() == "true"
+    
+    @staticmethod
+    def OCR_CONCURRENT_PAGES():
+        return int(os.getenv("OCR_CONCURRENT_PAGES", "2"))
+    
+    @staticmethod
+    def OCR_MAX_CONCURRENT_FILES():
+        return int(os.getenv("OCR_MAX_CONCURRENT_FILES", "1"))
+    
+    @staticmethod
+    def TESSERACT_CMD_EXISTS():
+        import shutil
+        return shutil.which(OCRConfig.TESSERACT_CMD()) is not None
+    
+    @staticmethod
+    def get_config_by_name(config_name: str):
+        """Legacy method for backward compatibility."""
+        return {"name": config_name}
 
 
 class LoggingConfig:
@@ -205,6 +323,10 @@ class LoggingConfig:
     @staticmethod
     def LOG_MAX_SIZE():
         return int(os.getenv("LOG_MAX_SIZE", "10485760"))  # 10MB
+    
+    @staticmethod
+    def LOG_DIR():
+        return os.getenv("LOG_DIR", "data/logs")
     
     @staticmethod
     def LOG_BACKUP_COUNT():
@@ -256,6 +378,18 @@ class ConfidenceConfig:
 
 
 # Centralized configuration class for easy access
+class HealthConfig:
+    """Health monitoring configuration."""
+    
+    @staticmethod
+    def SERVICE_SUCCESS_RATE_THRESHOLD():
+        return float(os.getenv("SERVICE_SUCCESS_RATE_THRESHOLD", "80.0"))
+    
+    @staticmethod
+    def SERVICE_MIN_REQUESTS_FOR_HEALTH():
+        return int(os.getenv("SERVICE_MIN_REQUESTS_FOR_HEALTH", "10"))
+
+
 class Config:
     """Centralized configuration access point."""
     
@@ -269,6 +403,7 @@ class Config:
     Logging = LoggingConfig
     URL = URLConfig
     Confidence = ConfidenceConfig
+    Health = HealthConfig
     
     @staticmethod
     def validate():
@@ -276,12 +411,12 @@ class Config:
         logger = __import__('logging').getLogger(__name__)
         
         # Check for required OpenAI API key
-        if not LLMConfig.OPENAI_API_KEY():
+        if not Config.LLM.OPENAI_API_KEY():
             logger.warning(" Warning: OPENAI_API_KEY not set. Chat functionality may not work.")
             return False
         
         # Create necessary directories
-        from utils import FileManager
+        from utils.file_operations.file_manager import FileManager
         directories = [
             DatabaseConfig.CHUNKS_DIR(),
             DatabaseConfig.VECTORS_DIR(),

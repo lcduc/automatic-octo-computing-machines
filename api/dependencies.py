@@ -37,5 +37,6 @@ def get_url_service() -> URLService:
 
 
 def get_vector_store() -> VectorStore:
-    """Use the global vector store singleton (consistent with ChatService)."""
-    return global_vector_store  # type: ignore
+    """Get vector store instance for document retrieval and management."""
+    from core.storage.vector_stores.vector_store_optimized import OptimizedVectorStore
+    return OptimizedVectorStore()

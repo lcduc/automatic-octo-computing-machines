@@ -138,7 +138,7 @@ class FileManager:
         Sanitize filename by removing invalid characters for safe file operations.
         Uses ValidationUtils for validation and sanitization.
         """
-        from utils.validation import ValidationUtils
+        from utils.text_processing.validation import ValidationUtils
         return ValidationUtils.sanitize_filename(filename)
 
     @staticmethod
@@ -178,7 +178,7 @@ class FileManager:
             if not path.exists():
                 return 0
             cleaned_count = 0
-            from utils.file_utils import FileUtils
+            from utils.file_operations.file_manager import FileManager as FileUtils
 
             for item in path.iterdir():
                 try:

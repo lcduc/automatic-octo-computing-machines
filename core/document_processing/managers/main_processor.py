@@ -67,8 +67,8 @@ class MainDocumentProcessor:
 
     async def process_file(self, file_content: bytes, filename: str) -> Dict[str, Any]:
         """
-        Process file content using Docling with heading-based chunking and extract text content with comprehensive metadata.
-        Handles file validation, processing, and chunk storage.
+        Process file content using appropriate processor based on file type.
+        Uses custom SpreadsheetProcessor for Excel files and Docling for other formats.
 
         Args:
             file_content: Raw file content in bytes
@@ -83,38 +83,69 @@ class MainDocumentProcessor:
         if file_ext not in self.SUPPORTED_EXTENSIONS:
             raise ValueError(f"Unsupported file type: {file_ext}")
 
-        # Check if Docling supports this format
-        if not self.docling_processor.is_format_supported(filename):
-            raise ValueError(f"Docling does not support {file_ext} files")
-
         try:
-            # Process the file using Docling with heading-aware chunking
-            result = await self.docling_processor.process_document(
-                file_content, 
-                filename
-            )
+            # Use custom SpreadsheetProcessor for Excel files to handle sheets separately
+            if file_ext in ['.xlsx', '.xls', '.csv']:
+                from ..processors.processors import SpreadsheetProcessor
+                spreadsheet_processor = SpreadsheetProcessor()
+                
+                # Process using our custom extractor that handles sheets separately
+                documents = await spreadsheet_processor.process(file_content, filename)
+                
+                if not documents:
+                    raise ValueError(f"No content could be extracted from {filename}")
 
-            # Validate that content was successfully extracted
-            if not result.get("documents"):
-                raise ValueError(f"No content could be extracted from {filename}")
+                # Save chunks to files for persistence and debugging
+                chunks_dir = await self.file_manager.save_chunks_to_files(
+                    documents, filename
+                )
 
-            # Save chunks to files for persistence and debugging
-            chunks_dir = await self.file_manager.save_chunks_to_files(
-                result["documents"], filename
-            )
-
-            # Return comprehensive metadata and processed documents
-            return {
-                "documents": result["documents"],
-                "metadata": {
-                    **result["metadata"],
-                    "chunks_directory": chunks_dir,
-                    "processing_timestamp": datetime.now().isoformat(),
-                    "processor_version": result["metadata"].get("processor_version", "docling"),
-                    "chunk_size": Config.File.CHUNK_SIZE,
-                    "chunk_overlap": Config.File.CHUNK_OVERLAP,
+                # Return comprehensive metadata and processed documents
+                return {
+                    "documents": documents,
+                    "metadata": {
+                        "chunks_directory": chunks_dir,
+                        "processing_timestamp": datetime.now().isoformat(),
+                        "processor_version": "spreadsheet_processor",
+                        "chunk_size": Config.File.CHUNK_SIZE(),
+                        "chunk_overlap": Config.File.CHUNK_OVERLAP(),
+                        "file_type": file_ext,
+                        "total_chunks": len(documents),
+                    }
                 }
-            }
+            else:
+                # Use Docling for other supported formats
+                # Check if Docling supports this format
+                if not self.docling_processor.is_format_supported(filename):
+                    raise ValueError(f"Docling does not support {file_ext} files")
+
+                # Process the file using Docling with heading-aware chunking
+                result = await self.docling_processor.process_document(
+                    file_content, 
+                    filename
+                )
+
+                # Validate that content was successfully extracted
+                if not result.get("documents"):
+                    raise ValueError(f"No content could be extracted from {filename}")
+
+                # Save chunks to files for persistence and debugging
+                chunks_dir = await self.file_manager.save_chunks_to_files(
+                    result["documents"], filename
+                )
+
+                # Return comprehensive metadata and processed documents
+                return {
+                    "documents": result["documents"],
+                    "metadata": {
+                        **result["metadata"],
+                        "chunks_directory": chunks_dir,
+                        "processing_timestamp": datetime.now().isoformat(),
+                        "processor_version": result["metadata"].get("processor_version", "docling"),
+                        "chunk_size": Config.File.CHUNK_SIZE(),
+                        "chunk_overlap": Config.File.CHUNK_OVERLAP(),
+                    }
+                }
 
         except Exception as e:
             logger = __import__('logging').getLogger(__name__)

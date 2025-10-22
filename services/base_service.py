@@ -50,10 +50,10 @@ class BaseProcessingService(ABC):
         """
         try:
             # Validate batch size
-            if len(items) > Config.File.MAX_FILES_PER_BATCH:
+            if len(items) > Config.File.MAX_FILES_PER_BATCH():
                 raise HTTPException(
                     status_code=400,
-                    detail=f"Too many {item_type}. Maximum {Config.File.MAX_FILES_PER_BATCH} {item_type} per batch.",
+                    detail=f"Too many {item_type}. Maximum {Config.File.MAX_FILES_PER_BATCH()} {item_type} per batch.",
                 )
 
             # Check if any items are provided
@@ -157,7 +157,7 @@ class BaseProcessingService(ABC):
                             # Use normalized metadata fields
                             file_type=metadata_dict.get("file_extension", "unknown"),
                             processing_method=metadata_dict.get("processing_method", "unknown"),
-                            processing_time=metadata_dict.get("processing_time_seconds"),
+                            processing_time=f"{metadata_dict.get('processing_time_seconds', 0):.2f}s" if metadata_dict.get("processing_time_seconds") else None,
                             # Optional debug info (only if needed)
                             debug_info=(
                                 {

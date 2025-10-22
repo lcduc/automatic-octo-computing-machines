@@ -14,7 +14,8 @@ import time
 # Local imports
 from core.document_processing import MainDocumentProcessor, FileManager
 from core.document_processing.processors.processors import URLProcessor
-from core.storage.vector_stores import VectorStore
+from core.storage.vector_stores import OptimizedVectorStore
+from config.settings import Config
 
 logger = logging.getLogger(__name__)
 
@@ -62,10 +63,12 @@ class DocumentService:
         )
         
         # OCR concurrency control - configurable to prevent memory issues
-        from config.docling_config import DoclingConfig
-        max_concurrent_files = min(2, DoclingConfig.OCR_MAX_CONCURRENT_FILES())  # Limit to 2 for better memory management
+        max_concurrent_files = min(2, Config.OCR.OCR_MAX_CONCURRENT_FILES())  # Limit to 2 for better memory management
         self._ocr_semaphore = asyncio.Semaphore(max_concurrent_files)
         logger.info(f"OCR concurrency control: max {max_concurrent_files} concurrent PDF files")
+        
+        # Initialize vector store
+        self.vector_store = OptimizedVectorStore()
 
     async def _process_with_ocr_control(self, file_content: bytes, filename: str) -> Dict[str, Any]:
         """
@@ -296,7 +299,7 @@ class DocumentService:
         Updates vector store once with all successful documents to avoid repeated rebuilds.
         """
         if successful_documents and rebuild_at_end:
-            return vector_store.add_documents_batch(
+            return self.vector_store.add_documents_batch(
                 successful_documents, rebuild_at_end=True
             )
         return False

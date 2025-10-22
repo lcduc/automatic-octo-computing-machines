@@ -36,7 +36,7 @@ class URLService(BaseProcessingService):
         """
         try:
             # Validate the URL
-            from utils.validation import ValidationUtils
+            from utils.text_processing.validation import ValidationUtils
             validation = ValidationUtils.validate_url(url)
             if not validation["valid"]:
                 raise ValueError(f"Invalid URL: {url} - {validation['error']}")
@@ -107,7 +107,7 @@ class URLService(BaseProcessingService):
         Validate URLs and prepare them for processing with format checks.
         Filters out invalid URLs and ensures proper HTTP/HTTPS protocol usage.
         """
-        from utils.validation import ValidationUtils
+        from utils.text_processing.validation import ValidationUtils
 
         valid_urls = []
         for url in urls:

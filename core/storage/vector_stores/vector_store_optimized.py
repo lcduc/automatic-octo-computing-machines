@@ -49,7 +49,7 @@ class OptimizedVectorStore(VectorStore):
         """
         Load vector store from HDF5 file with lazy loading for better memory efficiency.
         """
-        logger.info(f"📂 [OptimizedVectorStore] Loading from HDF5: {self.h5_path}")
+        logger.info(f"[OptimizedVectorStore] Loading from HDF5: {self.h5_path}")
         
         try:
             # Load embeddings and documents from HDF5 with memory mapping for large files
@@ -83,7 +83,7 @@ class OptimizedVectorStore(VectorStore):
                             needs_rebuild = True
                             break
                 if needs_rebuild:
-                    from .metadata_store import MetadataStore
+                    from core.storage.metadata_stores.metadata_store import MetadataStore
                     logger.warning(" Metadata missing or misaligned. Rebuilding metadata from chunks directory...")
                     rebuilt = MetadataStore().create_metadata_from_chunks(self.documents)
                     # If rebuild fails to match length, fall back to minimal source ids
@@ -105,7 +105,7 @@ class OptimizedVectorStore(VectorStore):
             return None, self.embeddings, self.documents
             
         except FileNotFoundError:
-            logger.warning("📂 HDF5 vector store not found, creating new one...")
+            logger.warning("HDF5 vector store not found, creating new one...")
             return self.rebuild_vector_store()
         except Exception as e:
             logger.error(f" [OptimizedVectorStore Error] {e}")
@@ -115,10 +115,10 @@ class OptimizedVectorStore(VectorStore):
         """
         Save vector store to HDF5 with compression for optimal performance.
         """
-        logger.info(f"💾 [OptimizedVectorStore] Saving to HDF5: {self.h5_path}")
+        logger.info(f"[OptimizedVectorStore] Saving to HDF5: {self.h5_path}")
         
         try:
-            from utils.file_utils import FileUtils
+            from utils.file_operations.file_manager import FileManager as FileUtils
             FileUtils.ensure_directory_exists(os.path.dirname(self.h5_path))
             
             # Save embeddings and documents to HDF5 with compression
@@ -153,7 +153,7 @@ class OptimizedVectorStore(VectorStore):
         """
         Create embeddings with batch processing for efficiency.
         """
-        logger.info(f"🔄 Creating embeddings for {len(documents)} documents...")
+        logger.info(f"Creating embeddings for {len(documents)} documents...")
         
         embedder = get_embedder()
         
@@ -207,10 +207,10 @@ class OptimizedVectorStore(VectorStore):
         """
         Rebuild vector store from chunk files with optimized processing.
         """
-        logger.info(f"🔄 [OptimizedVectorStore] Rebuilding from chunk files...")
+        logger.info(f"[OptimizedVectorStore] Rebuilding from chunk files...")
         
-        from .document_store import DocumentStore
-        from .metadata_store import MetadataStore
+        from core.storage.metadata_stores.document_store import DocumentStore
+        from core.storage.metadata_stores.metadata_store import MetadataStore
         
         doc_store = DocumentStore()
         meta_store = MetadataStore()

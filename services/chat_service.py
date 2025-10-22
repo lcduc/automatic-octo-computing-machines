@@ -70,7 +70,7 @@ class ChatService:
             current_time - self._vector_store_last_loaded > self._vector_store_ttl):
             try:
                 # Use OptimizedVectorStore for better performance
-                from core.storage.vector_store_optimized import OptimizedVectorStore
+                from core.storage.vector_stores.vector_store_optimized import OptimizedVectorStore
                 vs = OptimizedVectorStore()
                 self._vector_store_cache = vs.load_vector_store()
                 self._vector_store_last_loaded = current_time
@@ -180,8 +180,8 @@ class ChatService:
                         query=query,
                         embeddings=current_embeddings,
                         documents=current_documents,
-                        k=RAGConfig.RETRIEVAL_TOP_K(),
-                        semantic_weight=RAGConfig.SEMANTIC_WEIGHT()
+                        k=Config.RAG.RETRIEVAL_TOP_K(),
+                        semantic_weight=Config.RAG.SEMANTIC_WEIGHT()
                     )
                     search_time = time.time() - search_start_time
                     logger.info(f"⏱️ RAG search time: {search_time:.3f}s")
@@ -193,7 +193,7 @@ class ChatService:
                     context = "\n".join(context_chunks)
                     
                     # Truncate context if too long (same as test)
-                    max_context_length = LLMConfig.MAX_CONTEXT_LENGTH()
+                    max_context_length = Config.LLM.MAX_CONTEXT_LENGTH()
                     if len(context) > max_context_length:
                         context = context[:max_context_length]
                         logger.debug(f" Context truncated to {max_context_length} characters")
@@ -205,10 +205,10 @@ class ChatService:
 
             # Prepare history (lock only around shared history access)
             if custom_history is not None:
-                history = custom_history[-LLMConfig.LLM_HISTORY_LENGTH() :]
+                history = custom_history[-Config.LLM.LLM_HISTORY_LENGTH() :]
             else:
                 async with self._history_lock:
-                    history = self.request_history[-LLMConfig.LLM_HISTORY_LENGTH() :]
+                    history = self.request_history[-Config.LLM.LLM_HISTORY_LENGTH() :]
 
             # Generate response using the same context for both modes
             try:
@@ -271,7 +271,7 @@ class ChatService:
                         )
                         # Trim to max history length
                         self.request_history = self.request_history[
-                            -(LLMConfig.LLM_HISTORY_LENGTH() * 2) :
+                            -(Config.LLM.LLM_HISTORY_LENGTH() * 2) :
                         ]
                 return BaseResponse(
                     status=StatusEnum.SUCCESS,
@@ -419,8 +419,8 @@ class ChatService:
             elif not kb_status["available"]:
                 overall_health = "no_data"
             elif (
-                success_rate < HealthConfig.SERVICE_SUCCESS_RATE_THRESHOLD()
-                and total_requests > HealthConfig.SERVICE_MIN_REQUESTS_FOR_HEALTH()
+                success_rate < Config.Health.SERVICE_SUCCESS_RATE_THRESHOLD()
+                and total_requests > Config.Health.SERVICE_MIN_REQUESTS_FOR_HEALTH()
             ):
                 overall_health = "degraded"
 
@@ -557,10 +557,10 @@ class ChatService:
                 current_embeddings = np.array(current_embeddings)
         # Prepare history
         if custom_history is not None:
-            history = custom_history[-LLMConfig.LLM_HISTORY_LENGTH() :]
+            history = custom_history[-Config.LLM.LLM_HISTORY_LENGTH() :]
         else:
             async with self._history_lock:
-                history = self.request_history[-LLMConfig.LLM_HISTORY_LENGTH() :]
+                history = self.request_history[-Config.LLM.LLM_HISTORY_LENGTH() :]
         # Note: Don't add current query to history here - it will be added in stream_response_with_history
         # Stream response from chatbot_service
         async for token in self.chatbot_service.stream_response_with_history(

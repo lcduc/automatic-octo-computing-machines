@@ -41,8 +41,7 @@ from core.ai_services.embeddings.embeddings import get_embedding_service
 from core.storage.vector_stores.vector_store_optimized import OptimizedVectorStore
 from core.ai_services.llm.prompts import PromptManager
 from core.ai_services.llm.chatbot import ChatbotService
-from config.rag.rag_config import RAGConfig
-from config.llm.llm_config import LLMConfig
+from config.settings import Config
 
 
 class RAGProcessTester:
@@ -58,11 +57,11 @@ class RAGProcessTester:
         
         print(" Initializing RAG Process Tester...")
         print(f" Configuration:")
-        print(f"   - Embedding Model: {RAGConfig.EMBEDDING_MODEL()}")
-        print(f"   - Retrieval Top K: {RAGConfig.RETRIEVAL_TOP_K()}")
-        print(f"   - Semantic Weight: {RAGConfig.SEMANTIC_WEIGHT()}")
-        print(f"   - Similarity Threshold: {RAGConfig.SIMILARITY_THRESHOLD()}")
-        print(f"   - Max Context Chunks: {RAGConfig.MAX_CONTEXT_CHUNKS()}")
+        print(f"   - Embedding Model: {Config.RAG.EMBEDDING_MODEL()}")
+        print(f"   - Retrieval Top K: {Config.RAG.RETRIEVAL_TOP_K()}")
+        print(f"   - Semantic Weight: {Config.RAG.SEMANTIC_WEIGHT()}")
+        print(f"   - Similarity Threshold: {Config.RAG.SIMILARITY_THRESHOLD()}")
+        print(f"   - Max Context Chunks: {Config.RAG.MAX_CONTEXT_CHUNKS()}")
         print()
     
     def load_vector_store(self) -> tuple:
@@ -112,8 +111,8 @@ class RAGProcessTester:
                 query=query,
                 embeddings=embeddings,
                 documents=documents,
-                k=RAGConfig.RETRIEVAL_TOP_K(),
-                semantic_weight=RAGConfig.SEMANTIC_WEIGHT()
+                k=Config.RAG.RETRIEVAL_TOP_K(),
+                semantic_weight=Config.RAG.SEMANTIC_WEIGHT()
             )
             search_time = time.time() - search_start
             
@@ -131,7 +130,7 @@ class RAGProcessTester:
         
         if not search_results:
             print("     No chunks found above similarity threshold")
-            print(f"    Current threshold: {RAGConfig.SIMILARITY_THRESHOLD()}")
+            print(f"    Current threshold: {Config.RAG.SIMILARITY_THRESHOLD()}")
             print()
         else:
             # Get document metadata for source information
@@ -161,7 +160,7 @@ class RAGProcessTester:
             context = "\n".join(context_chunks)
             
             # Truncate context if too long
-            max_context_length = LLMConfig.MAX_CONTEXT_LENGTH()
+            max_context_length = Config.LLM.MAX_CONTEXT_LENGTH()
             if len(context) > max_context_length:
                 context = context[:max_context_length]
                 print(f"     Context truncated to {max_context_length} characters")
@@ -213,7 +212,7 @@ class RAGProcessTester:
             context = "\n".join(context_chunks)
             
             # Truncate context if too long (same as step 4)
-            max_context_length = LLMConfig.MAX_CONTEXT_LENGTH()
+            max_context_length = Config.LLM.MAX_CONTEXT_LENGTH()
             if len(context) > max_context_length:
                 context = context[:max_context_length]
                 print(f"     Context truncated to {max_context_length} characters")

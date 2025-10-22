@@ -4,14 +4,29 @@ Centralized configuration management organized by domain.
 """
 
 from .settings import Config
-from .llm import LLMConfig, ConfidenceConfig, ChatConfig
-from .document_processing import DoclingConfig, PreprocessingConfigManager, PreprocessingSettings
-from .file import FileConfig, URLConfig
-from .rag import RAGConfig, VietnamesePreprocessingConfig
-from .server import ServerConfig, LoggingConfig, HealthConfig
+
+# Legacy imports for backward compatibility
+# These map to the centralized Config object
+from .settings import Config as LegacyConfig
+
+# Create legacy aliases for backward compatibility
+LLMConfig = Config.LLM
+ConfidenceConfig = Config.Confidence
+ChatConfig = Config.Chat
+DoclingConfig = Config.OCR  # OCR config for document processing
+PreprocessingConfigManager = Config.OCR
+PreprocessingSettings = Config.OCR
+FileConfig = Config.File
+URLConfig = Config.URL
+RAGConfig = Config.RAG
+VietnamesePreprocessingConfig = Config.RAG
+ServerConfig = Config.Server
+LoggingConfig = Config.Logging
+HealthConfig = Config.Server  # Health config is part of Server config
 
 __all__ = [
     "Config",
+    # Legacy aliases for backward compatibility
     "LLMConfig",
     "ConfidenceConfig", 
     "ChatConfig",

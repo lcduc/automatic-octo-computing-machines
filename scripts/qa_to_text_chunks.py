@@ -26,6 +26,7 @@ import json
 from pathlib import Path
 import unicodedata
 import pandas as pd
+from openpyxl import load_workbook
 
 # ---------- helpers ----------
 def normalize_header(s: str) -> str:
@@ -57,21 +58,53 @@ def detect_q_a_columns(df: pd.DataFrame, qcol_hint=None, acol_hint=None):
             acol = acol or df.columns[1]
     return qcol, acol
 
+def _worksheet_to_dataframe(ws):
+    # Convert an openpyxl worksheet to a DataFrame using first non-empty row as header
+    values = list(ws.iter_rows(values_only=True))
+    if not values:
+        return pd.DataFrame()
+    header_row = None
+    header_idx = None
+    for idx, r in enumerate(values):
+        if any(cell is not None and str(cell).strip() != "" for cell in r):
+            header_row = r
+            header_idx = idx
+            break
+    if header_row is None:
+        return pd.DataFrame()
+    headers = [
+        (str(h).strip() if h is not None and str(h).strip() != "" else f"col_{i+1}")
+        for i, h in enumerate(header_row)
+    ]
+    data_rows = []
+    for r in values[header_idx + 1 :]:
+        # trim or pad row to header length
+        row_vals = [None] * len(headers)
+        for i, cell in enumerate(r):
+            if i < len(headers):
+                # Format numbers to match Excel display (round to 2 decimal places)
+                if isinstance(cell, (int, float)):
+                    if isinstance(cell, float) and cell.is_integer():
+                        row_vals[i] = int(cell)
+                    else:
+                        row_vals[i] = round(cell, 2)
+                else:
+                    row_vals[i] = cell
+        data_rows.append(row_vals)
+    return pd.DataFrame(data_rows, columns=headers)
+
+
 def read_excel_input(path: Path, sheet=None, qcol=None, acol=None):
+    # Read with openpyxl data_only=True to get evaluated values instead of formulas
+    wb = load_workbook(path, data_only=True)
+    sheets = {}
     if sheet is not None:
-        df = pd.read_excel(path, sheet_name=sheet, engine="openpyxl")
-        if isinstance(df, dict):
-            first = list(df.keys())[0]
-            df = df[first]
+        ws = wb[sheet] if isinstance(sheet, str) else wb.worksheets[int(sheet)]
+        sheets[ws.title] = _worksheet_to_dataframe(ws)
     else:
-        all_sheets = pd.read_excel(path, sheet_name=None, engine="openpyxl")
-        if isinstance(all_sheets, dict):
-            first = list(all_sheets.keys())[0]
-            df = all_sheets[first]
-        else:
-            df = all_sheets
-    qcol_detected, acol_detected = detect_q_a_columns(df, qcol, acol)
-    return df, qcol_detected, acol_detected
+        for ws in wb.worksheets:
+            sheets[ws.title] = _worksheet_to_dataframe(ws)
+    return sheets
 
 def read_chat_jsonl_input(path: Path):
     rows = []
@@ -121,46 +154,71 @@ def main():
     target_dir = out_root / source_basename
     target_dir.mkdir(parents=True, exist_ok=True)
 
-    # read input to DataFrame of rows with columns question/answer
+    # read input to DataFrame(s) of rows with columns question/answer
     if inp.suffix.lower() in [".xlsx", ".xls"]:
-        df, qcol, acol = read_excel_input(inp, args.sheet, args.qcol, args.acol)
+        sheet_to_df = read_excel_input(inp, args.sheet, args.qcol, args.acol)
     else:
         df, qcol, acol = read_chat_jsonl_input(inp)
 
-    if qcol is None or acol is None:
-        raise SystemExit("Could not detect question/answer columns automatically. Provide --qcol and --acol.")
+    if inp.suffix.lower() in [".xlsx", ".xls"]:
+        # For Excel: create separate chunk folders per sheet
+        overall_total = 0
+        for sheet_name, df in sheet_to_df.items():
+            if df.empty:
+                continue
+            qcol, acol = detect_q_a_columns(df, args.qcol, args.acol)
+            if qcol is None or acol is None:
+                continue
+            pairs = []
+            for _, row in df.iterrows():
+                q = (row.get(qcol) if qcol in row else row.get("question")) or ""
+                a = (row.get(acol) if acol in row else row.get("answer")) or ""
+                q = str(q).strip()
+                a = str(a).strip()
+                if not q or not a:
+                    continue
+                pairs.append((q, a))
+            if not pairs:
+                continue
+            # sanitize sheet name for filesystem
+            safe_sheet = "".join(ch if ch.isalnum() or ch in ("-", "_", " ") else "_" for ch in sheet_name).strip()
+            sheet_dir = target_dir / safe_sheet
+            sheet_dir.mkdir(parents=True, exist_ok=True)
+            pad = max(3, len(str(len(pairs))))
+            for i, (q, a) in enumerate(pairs, start=1):
+                filename = f"chunk_{i:0{pad}d}.txt"
+                path = sheet_dir / filename
+                content = f"Q: {q}\n\nA: {a}"
+                path.write_text(content, encoding="utf-8")
+            print(f"Wrote {len(pairs)} chunk files to: {sheet_dir}")
+            overall_total += len(pairs)
+        if overall_total == 0:
+            print("No valid Q/A pairs found across sheets.")
+            return
+    else:
+        if qcol is None or acol is None:
+            raise SystemExit("Could not detect question/answer columns automatically. Provide --qcol and --acol.")
 
-    # Build list of (question, answer)
-    pairs = []
-    for _, row in df.iterrows():
-        q = (row.get(qcol) if qcol in row else row.get("question")) or ""
-        a = (row.get(acol) if acol in row else row.get("answer")) or ""
-        q = str(q).strip()
-        a = str(a).strip()
-        if not q or not a:
-            continue
-        pairs.append((q, a))
-
-    total = len(pairs)
-    if total == 0:
-        print("No valid Q/A pairs found.")
-        return
-
-    # zero-pad width
-    pad = max(3, len(str(total)))
-    for i, (q, a) in enumerate(pairs, start=1):
-        filename = f"chunk_{i:0{pad}d}.txt"
-        path = target_dir / filename
-        content = f"Q: {q}\n\nA: {a}"
-        path.write_text(content, encoding="utf-8")
-    print(f"Wrote {total} chunk files to: {target_dir}")
-
-    # print first few files produced
-    preview = list(target_dir.glob("chunk_*.txt"))[:10]
-    if preview:
-        print("Preview (first files):")
-        for p in preview:
-            print(" -", p.name)
+        pairs = []
+        for _, row in df.iterrows():
+            q = (row.get(qcol) if qcol in row else row.get("question")) or ""
+            a = (row.get(acol) if acol in row else row.get("answer")) or ""
+            q = str(q).strip()
+            a = str(a).strip()
+            if not q or not a:
+                continue
+            pairs.append((q, a))
+        total = len(pairs)
+        if total == 0:
+            print("No valid Q/A pairs found.")
+            return
+        pad = max(3, len(str(total)))
+        for i, (q, a) in enumerate(pairs, start=1):
+            filename = f"chunk_{i:0{pad}d}.txt"
+            path = target_dir / filename
+            content = f"Q: {q}\n\nA: {a}"
+            path.write_text(content, encoding="utf-8")
+        print(f"Wrote {total} chunk files to: {target_dir}")
 
 if __name__ == "__main__":
     main()

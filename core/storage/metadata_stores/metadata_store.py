@@ -10,7 +10,7 @@ class MetadataStore:
     """Handles document metadata storage and management."""
 
     def __init__(self):
-        self.chunks_dir = Path(Config.File.CHUNKS_DIR)
+        self.chunks_dir = Path(Config.File.CHUNKS_DIR())
 
     def create_metadata_from_chunks(self, documents: List[str]) -> List[Dict[str, Any]]:
         """Create metadata for each document from chunk files."""

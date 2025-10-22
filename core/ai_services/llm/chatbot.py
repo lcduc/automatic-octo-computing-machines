@@ -50,14 +50,14 @@ class ChatbotService:
         
         # Initialize enhanced cache with smart strategies
         self._cache = {}
-        self._cache_ttl = LLMConfig.LLM_CACHE_TTL()
+        self._cache_ttl = Config.LLM.LLM_CACHE_TTL()
         self._cache_hits = 0
         self._cache_misses = 0
         self._cache_access_times = {}  # Track access times for LRU
         self._semantic_cache = {}  # Cache for semantically similar queries
         
         # Initialize async OpenAI client
-        self.async_openai_client = AsyncOpenAI(api_key=LLMConfig.OPENAI_API_KEY())
+        self.async_openai_client = AsyncOpenAI(api_key=Config.LLM.OPENAI_API_KEY())
         
         # Initialize HTTP client with connection pooling for better performance
         self._http_client = httpx.Client(
@@ -70,7 +70,7 @@ class ChatbotService:
         )
         
         # Initialize thread pool workers
-        self._max_workers = LLMConfig.LLM_MAX_WORKERS()
+        self._max_workers = Config.LLM.LLM_MAX_WORKERS()
         
         # Test API availability on initialization
         self._api_available = self._test_api()
@@ -82,13 +82,13 @@ class ChatbotService:
 
     def _test_api(self) -> bool:
         """Test OpenAI API availability and connectivity."""
-        if not LLMConfig.OPENAI_API_KEY():
+        if not Config.LLM.OPENAI_API_KEY():
             logger.warning(" OpenAI API key not configured")
             return False
         try:
-            client = openai.OpenAI(api_key=LLMConfig.OPENAI_API_KEY())
+            client = openai.OpenAI(api_key=Config.LLM.OPENAI_API_KEY())
             client.chat.completions.create(
-                model=LLMConfig.OPENAI_MODEL(),
+                model=Config.LLM.OPENAI_MODEL(),
                 messages=[{"role": "user", "content": "test"}],
                 max_tokens=1
             )
@@ -140,8 +140,8 @@ class ChatbotService:
                         query=query,
                         embeddings=embeddings,
                         documents=documents,
-                        k=RAGConfig.RETRIEVAL_TOP_K(),
-                        semantic_weight=RAGConfig.SEMANTIC_WEIGHT()
+                        k=Config.RAG.RETRIEVAL_TOP_K(),
+                        semantic_weight=Config.RAG.SEMANTIC_WEIGHT()
                     )
                     
                     # Assemble context from top-ranked chunks for precision
@@ -163,9 +163,9 @@ class ChatbotService:
                         logger.warning(" No context retrieved from documents")
                     
                     # Optimize context length for performance
-                    if context and len(context) > LLMConfig.MAX_CONTEXT_LENGTH():
+                    if context and len(context) > Config.LLM.MAX_CONTEXT_LENGTH():
                         original_length = len(context)
-                        context = context[:LLMConfig.MAX_CONTEXT_LENGTH()]
+                        context = context[:Config.LLM.MAX_CONTEXT_LENGTH()]
                         logger.debug(f" Context truncated: {original_length} -> {len(context)} chars for performance")
                 except Exception as e:
                     logger.warning(f" Context retrieval failed: {e}")
@@ -226,16 +226,16 @@ class ChatbotService:
             
             try:
                 client = openai.OpenAI(
-                    api_key=LLMConfig.OPENAI_API_KEY(),
-                    timeout=LLMConfig.OPENAI_TIMEOUT(),
+                    api_key=Config.LLM.OPENAI_API_KEY(),
+                    timeout=Config.LLM.OPENAI_TIMEOUT(),
                     max_retries=2  # Add retry logic
                 )
                 response = client.chat.completions.create(
-                    model=LLMConfig.OPENAI_MODEL(),
+                    model=Config.LLM.OPENAI_MODEL(),
                     messages=messages,  # type: ignore
-                    max_tokens=LLMConfig.OPENAI_MAX_TOKENS(),
-                    temperature=LLMConfig.OPENAI_TEMPERATURE(),
-                    timeout=LLMConfig.OPENAI_TIMEOUT()
+                    max_tokens=Config.LLM.OPENAI_MAX_TOKENS(),
+                    temperature=Config.LLM.OPENAI_TEMPERATURE(),
+                    timeout=Config.LLM.OPENAI_TIMEOUT()
                 )
             except openai.APITimeoutError:
                 logger.error("⏰ OpenAI API timeout - request took too long")
@@ -512,7 +512,7 @@ class ChatbotService:
     def _cache_response(self, cache_key: str, response: str):
         """Cache response with enhanced LRU and semantic caching."""
         # Enhanced LRU: remove oldest if cache is full
-        if len(self._cache) >= LLMConfig.LLM_CACHE_MAX_ENTRIES():
+        if len(self._cache) >= Config.LLM.LLM_CACHE_MAX_ENTRIES():
             if self._cache_access_times:
                 oldest_key = min(self._cache_access_times.keys(), key=lambda k: self._cache_access_times[k])
                 del self._cache[oldest_key]
@@ -543,8 +543,8 @@ class ChatbotService:
         
         return {
             "service_available": self.api_available,
-            "model": LLMConfig.OPENAI_MODEL(),
-            "max_tokens": LLMConfig.OPENAI_MAX_TOKENS(),
+            "model": Config.LLM.OPENAI_MODEL(),
+            "max_tokens": Config.LLM.OPENAI_MAX_TOKENS(),
             "cache_size": len(self._cache),
             "cache_hits": self._cache_hits,
             "cache_misses": self._cache_misses,
@@ -641,13 +641,13 @@ class ChatbotService:
             # Make optimized API call with better error handling
             logger.info(" Making API call to OpenAI...")
             try:
-                client = openai.OpenAI(api_key=LLMConfig.OPENAI_API_KEY())
+                client = openai.OpenAI(api_key=Config.LLM.OPENAI_API_KEY())
                 response = client.chat.completions.create(
-                    model=LLMConfig.OPENAI_MODEL(),
+                    model=Config.LLM.OPENAI_MODEL(),
                     messages=messages,  # type: ignore
-                    max_tokens=LLMConfig.OPENAI_MAX_TOKENS(),
-                    temperature=LLMConfig.OPENAI_TEMPERATURE(),
-                    timeout=LLMConfig.OPENAI_TIMEOUT()
+                    max_tokens=Config.LLM.OPENAI_MAX_TOKENS(),
+                    temperature=Config.LLM.OPENAI_TEMPERATURE(),
+                    timeout=Config.LLM.OPENAI_TIMEOUT()
                 )
             except openai.APITimeoutError:
                 logger.error("⏰ OpenAI API timeout - request took too long")
@@ -782,13 +782,13 @@ class ChatbotService:
 
             # Make optimized API call
             logger.info(" Making API call to OpenAI...")
-            client = openai.OpenAI(api_key=LLMConfig.OPENAI_API_KEY())
+            client = openai.OpenAI(api_key=Config.LLM.OPENAI_API_KEY())
             response = client.chat.completions.create(
-                model=LLMConfig.OPENAI_MODEL(),
+                model=Config.LLM.OPENAI_MODEL(),
                 messages=messages,  # type: ignore
-                max_tokens=LLMConfig.OPENAI_MAX_TOKENS(),
-                temperature=LLMConfig.OPENAI_TEMPERATURE(),
-                timeout=LLMConfig.OPENAI_TIMEOUT()
+                max_tokens=Config.LLM.OPENAI_MAX_TOKENS(),
+                temperature=Config.LLM.OPENAI_TEMPERATURE(),
+                timeout=Config.LLM.OPENAI_TIMEOUT()
             )
 
             content = response.choices[0].message.content
@@ -880,8 +880,8 @@ class ChatbotService:
                         query=query,
                         embeddings=embeddings,
                         documents=documents,
-                        k=RAGConfig.RETRIEVAL_TOP_K(),
-                        semantic_weight=RAGConfig.SEMANTIC_WEIGHT()
+                        k=Config.RAG.RETRIEVAL_TOP_K(),
+                        semantic_weight=Config.RAG.SEMANTIC_WEIGHT()
                     )
                     
                     # Assemble context from top-ranked chunks for precision
@@ -900,9 +900,9 @@ class ChatbotService:
                         logger.warning(" No context retrieved from documents")
                     
                     # Optimize context length for speed
-                    if context and len(context) > LLMConfig.MAX_CONTEXT_LENGTH():
+                    if context and len(context) > Config.LLM.MAX_CONTEXT_LENGTH():
                         original_length = len(context)
-                        context = context[:LLMConfig.MAX_CONTEXT_LENGTH()]
+                        context = context[:Config.LLM.MAX_CONTEXT_LENGTH()]
                         logger.debug(f" Context truncated: {original_length} -> {len(context)} chars for performance")
                 except Exception as e:
                     logger.warning(f" Context retrieval failed: {e}")
@@ -957,13 +957,13 @@ class ChatbotService:
 
             # Make optimized API call
             logger.info(" Making API call to OpenAI...")
-            client = openai.OpenAI(api_key=LLMConfig.OPENAI_API_KEY())
+            client = openai.OpenAI(api_key=Config.LLM.OPENAI_API_KEY())
             response = client.chat.completions.create(
-                model=LLMConfig.OPENAI_MODEL(),
+                model=Config.LLM.OPENAI_MODEL(),
                 messages=messages,  # type: ignore
-                max_tokens=LLMConfig.OPENAI_MAX_TOKENS(),
-                temperature=LLMConfig.OPENAI_TEMPERATURE(),
-                timeout=LLMConfig.OPENAI_TIMEOUT()
+                max_tokens=Config.LLM.OPENAI_MAX_TOKENS(),
+                temperature=Config.LLM.OPENAI_TEMPERATURE(),
+                timeout=Config.LLM.OPENAI_TIMEOUT()
             )
 
             content = response.choices[0].message.content
@@ -1046,8 +1046,8 @@ class ChatbotService:
                     query=query,
                     embeddings=embeddings,
                     documents=documents,
-                    k=RAGConfig.RETRIEVAL_TOP_K(),
-                    semantic_weight=RAGConfig.SEMANTIC_WEIGHT()
+                    k=Config.RAG.RETRIEVAL_TOP_K(),
+                    semantic_weight=Config.RAG.SEMANTIC_WEIGHT()
                 )
                 
                 # Build context from top-ranked chunks
@@ -1090,10 +1090,10 @@ class ChatbotService:
         try:
             # Async OpenAI call using the shared AsyncOpenAI client
             response = await self.async_openai_client.chat.completions.create(
-                model=LLMConfig.OPENAI_MODEL(),
+                model=Config.LLM.OPENAI_MODEL(),
                 messages=messages,  # type: ignore
-                max_tokens=LLMConfig.OPENAI_MAX_TOKENS(),
-                temperature=LLMConfig.OPENAI_TEMPERATURE()
+                max_tokens=Config.LLM.OPENAI_MAX_TOKENS(),
+                temperature=Config.LLM.OPENAI_TEMPERATURE()
             )
             content = response.choices[0].message.content
             response_text = content.strip() if content else ""
@@ -1186,8 +1186,8 @@ class ChatbotService:
                         query=query,
                         embeddings=embeddings,
                         documents=documents,
-                        k=RAGConfig.RETRIEVAL_TOP_K(),
-                        semantic_weight=RAGConfig.SEMANTIC_WEIGHT()
+                        k=Config.RAG.RETRIEVAL_TOP_K(),
+                        semantic_weight=Config.RAG.SEMANTIC_WEIGHT()
                     )
                     
                     # Build context from hybrid search results
@@ -1197,8 +1197,8 @@ class ChatbotService:
                             context_chunks.append(f"[Chunk {result['index']}]\n{result['document']}\n")
                         context = "\n".join(context_chunks)
                     
-                    if context and len(context) > LLMConfig.MAX_CONTEXT_LENGTH():
-                        context = context[:LLMConfig.MAX_CONTEXT_LENGTH()]
+                    if context and len(context) > Config.LLM.MAX_CONTEXT_LENGTH():
+                        context = context[:Config.LLM.MAX_CONTEXT_LENGTH()]
                 except Exception as e:
                     logger.warning(f" Hybrid search failed: {e}")
                     context = ""
@@ -1218,10 +1218,10 @@ class ChatbotService:
 
             # Use the shared AsyncOpenAI client for streaming
             response_stream = await self.async_openai_client.chat.completions.create(
-                model=LLMConfig.OPENAI_MODEL(),
+                model=Config.LLM.OPENAI_MODEL(),
                 messages=openai_messages,  # type: ignore
-                max_tokens=LLMConfig.OPENAI_MAX_TOKENS(),
-                temperature=LLMConfig.OPENAI_TEMPERATURE(),
+                max_tokens=Config.LLM.OPENAI_MAX_TOKENS(),
+                temperature=Config.LLM.OPENAI_TEMPERATURE(),
                 stream=True
             )
             async for chunk in response_stream:

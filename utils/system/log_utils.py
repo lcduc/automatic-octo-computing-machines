@@ -140,7 +140,7 @@ class LogManager:
     def cleanup_old_logs(self, keep_days: int = 7) -> int:
         """Remove log files older than specified days."""
         import time
-        from utils import FileManager
+        from utils.file_operations.file_manager import FileManager
 
         cutoff_time = time.time() - (keep_days * 24 * 60 * 60)
         removed_count = 0

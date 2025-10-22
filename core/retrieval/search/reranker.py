@@ -31,8 +31,8 @@ class Reranker:
         self._model = None
         if model_name is None:
             try:
-                from config.rag.rag_config import RAGConfig
-                model_name = RAGConfig.RERANKER_MODEL()
+                from config.settings import Config
+                model_name = Config.RAG.RERANKER_MODEL()
             except Exception:
                 model_name = "cross-encoder/ms-marco-MiniLM-L-6-v2"
         self._model_name = model_name

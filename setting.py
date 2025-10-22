@@ -8,15 +8,11 @@ load_dotenv()
 # Import centralized configuration
 from config.settings import Config
 
-# Import legacy configs for backward compatibility (will be phased out)
-from config.rag.query_expansion_config import VietnamesePreprocessingConfig
-from config.server.health_config import HealthConfig
-
 # Note: OpenAI client is now initialized per-request in the chatbot service
 # This avoids the deprecated openai.api_key global configuration
 
 # Directory validation utility
-from utils import FileManager
+from utils.file_operations.file_manager import FileManager
 
 
 def validate_config():
@@ -35,8 +31,8 @@ class LegacyConfig:
     LoggingConfig = Config.Logging
     FileConfig = Config.File
     RAGConfig = Config.RAG
-    VietnamesePreprocessingConfig = VietnamesePreprocessingConfig
+    VietnamesePreprocessingConfig = Config.RAG
     ConfidenceConfig = Config.Confidence
     URLConfig = Config.URL
-    HealthConfig = HealthConfig
+    HealthConfig = Config.Server
     ChatConfig = Config.Chat

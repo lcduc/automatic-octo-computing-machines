@@ -5,6 +5,7 @@ import logging
 import PyPDF2
 from docx import Document
 import pandas as pd
+from openpyxl import load_workbook
 
 logger = logging.getLogger(__name__)
 
@@ -119,7 +120,7 @@ class DOCLegacyTextExtractor(BaseFileExtractor):
                 UnstructuredWordDocumentLoader,
             )
             import tempfile
-            from utils.file_utils import FileUtils
+            from utils.file_operations.file_manager import FileManager as FileUtils
             import gc
 
             temp_file_path = None
@@ -275,32 +276,66 @@ class XLSXTextExtractor(BaseFileExtractor):
     ) -> list:
         try:
             excel_file = io.BytesIO(content)
-            excel_data = pd.read_excel(excel_file, sheet_name=None)
-            if not excel_data:
-                return []
+            # Use openpyxl with data_only=True so we get cached evaluated values instead of formulas
+            wb = load_workbook(excel_file, data_only=True)
             all_chunks = []
-            for sheet_name, df in excel_data.items():
-                if not df.empty:
-                    headers = " | ".join(df.columns)
-                    header = f"Sheet: {sheet_name}\nColumns: {headers}"
+            for ws in wb.worksheets:
+                sheet_name = ws.title
+                values = list(ws.iter_rows(values_only=True))
+                if not values:
+                    continue
+                # Derive headers from first non-empty row; fallback to generic names
+                header_row = None
+                for r in values:
+                    if any(cell is not None and str(cell).strip() != "" for cell in r):
+                        header_row = r
+                        break
+                if header_row is None:
+                    continue
+                headers = [
+                    (str(h).strip() if h is not None and str(h).strip() != "" else f"col_{i+1}")
+                    for i, h in enumerate(header_row)
+                ]
+                header = f"Sheet: {sheet_name}\nColumns: {' | '.join(headers)}"
 
-                    # Process rows, handling NaN values properly
-                    rows = []
-                    for _, row in df.iterrows():
-                        # Convert each cell to string, handling NaN values
-                        row_cells = []
-                        for cell in row:
-                            if pd.isna(cell):
-                                row_cells.append("nan")
+                # Build rows starting after the header row
+                rows = []
+                header_found = False
+                for r in values:
+                    if not header_found:
+                        # skip until we've passed the header_row instance
+                        if r is header_row:
+                            header_found = True
+                        continue
+                    row_cells = []
+                    empty_count = 0
+                    for cell in r[: len(headers)]:
+                        if cell is None:
+                            row_cells.append("nan")
+                            empty_count += 1
+                        else:
+                            # Format numbers to match Excel display (round to 2 decimal places)
+                            if isinstance(cell, (int, float)):
+                                if isinstance(cell, float) and cell.is_integer():
+                                    row_cells.append(str(int(cell)))
+                                else:
+                                    row_cells.append(f"{cell:.2f}")
                             else:
                                 row_cells.append(str(cell))
-                        row_str = " | ".join(row_cells)
-                        rows.append(row_str)
+                    # Skip completely empty rows
+                    if empty_count == len(headers):
+                        rows.append("nan")  # marker to allow chunk splitter to break
+                    else:
+                        rows.append(" | ".join(row_cells))
 
-                    sheet_chunks = smart_chunk_rows(
-                        rows, chunk_size=chunk_size, header=header
-                    )
-                    all_chunks.extend(sheet_chunks)
+                # Keep each sheet as one complete chunk instead of splitting by size
+                # Filter out empty rows (marked as "nan")
+                non_empty_rows = [row for row in rows if row != "nan"]
+                
+                if non_empty_rows:
+                    # Create one chunk per sheet with all its data
+                    sheet_content = "\n".join([header] + non_empty_rows)
+                    all_chunks.append(sheet_content)
             return all_chunks
         except Exception as e:
             return []
@@ -316,6 +351,6 @@ def smart_chunk_text(text, chunk_size=1000, overlap=200):
     Chunk narrative text, avoiding splitting in the middle of sentences.
     Delegates to TextUtils.chunk_text for unified chunking logic.
     """
-    from utils.text_utils import TextUtils
+    from utils.text_processing.text_utils import TextUtils
 
     return TextUtils.chunk_text(text, chunk_size=chunk_size, overlap=overlap)

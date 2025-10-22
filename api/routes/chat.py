@@ -16,8 +16,7 @@ from typing import Union
 from api.dependencies import get_chat_service
 from services import ChatService
 from models.responses import ChatResponse, StatusEnum, ChatRequest, QueryRequest
-from config.llm.llm_config import LLMConfig
-from setting import Config
+from config.settings import Config
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -41,7 +40,7 @@ async def chat(
             return
         
         # Determine history based on configuration
-        if Config.ChatConfig.ENABLE_HISTORY():
+        if Config.Chat.ENABLE_HISTORY():
             # History mode: no history for now (can be extended later)
             history = []
         else:

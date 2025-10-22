@@ -11,6 +11,10 @@ from pathlib import Path
 from config.settings import Config
 from .file_manager import FileManager
 
+# Create aliases for backward compatibility
+FileUtils = FileManager
+LoggingConfig = Config.Logging
+
 logger = logging.getLogger(__name__)
 
 

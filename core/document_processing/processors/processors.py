@@ -38,7 +38,7 @@ logger = logging.getLogger(__name__)
 class BaseProcessor(ABC):
     """Abstract base class for all document processors."""
 
-    MAX_FILE_SIZE = Config.File.MAX_FILE_SIZE
+    MAX_FILE_SIZE = Config.File.MAX_FILE_SIZE()
 
     @abstractmethod
     async def process(
@@ -63,11 +63,11 @@ class BaseProcessor(ABC):
         Hybrid chunking: group full sentences into chunks up to chunk_size, with overlap at sentence boundaries.
         Delegates to TextUtils.chunk_text for unified chunking logic.
         """
-        from utils.text_utils import TextUtils
+        from utils.text_processing.text_utils import TextUtils
         from config.settings import Config
 
         if overlap is None:
-            overlap = Config.File.CHUNK_OVERLAP
+            overlap = Config.File.CHUNK_OVERLAP()
 
         return TextUtils.chunk_text(
             text, chunk_size=chunk_size, overlap=overlap, language=language
@@ -190,14 +190,9 @@ class SpreadsheetProcessor(BaseProcessor):
             return self.chunk_text(text)
         elif file_ext in ["xlsx", "xls"]:
             sheet_texts = await self.xlsx_extractor.extract(content, filename)
-            all_chunks = []
-            for sheet_text in sheet_texts:
-                # Handle case where extractor returns a list instead of string
-                if isinstance(sheet_text, list):
-                    all_chunks.extend(sheet_text)  # Already chunked
-                else:
-                    all_chunks.extend(self.chunk_text(sheet_text))
-            return all_chunks
+            # XLSXTextExtractor already returns properly chunked content (one chunk per sheet)
+            # No need to re-chunk as it's already structured correctly
+            return sheet_texts
         else:
             raise ValueError(f"Unsupported spreadsheet format: {file_ext}")
 
@@ -216,8 +211,8 @@ class URLProcessor(BaseProcessor):
 
         # HTTP session and configuration
         self.session = None
-        self.timeout = URLConfig.CRAWL_TIMEOUT()
-        self.max_content_length = URLConfig.CRAWL_MAX_CONTENT_LENGTH()
+        self.timeout = Config.URL.CRAWL_TIMEOUT()
+        self.max_content_length = Config.URL.CRAWL_MAX_CONTENT_LENGTH()
     
     def _get_session(self):
         """Get or create a requests session with proper configuration."""

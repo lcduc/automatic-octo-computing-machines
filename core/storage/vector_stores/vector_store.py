@@ -84,7 +84,7 @@ class VectorStore:
         """
         logger.info(f"💾 [VectorStore] Saving to: {self.vector_store_path}")
         try:
-            from utils.file_utils import FileUtils
+            from utils.file_operations.file_manager import FileManager as FileUtils
             FileUtils.ensure_directory_exists(os.path.dirname(self.vector_store_path))
             with open(self.vector_store_path, "wb") as f:
                 pickle.dump(
@@ -116,8 +116,8 @@ class VectorStore:
         """
         logger.info(f"🔄 [VectorStore] Rebuilding from chunk files...")
 
-        from .document_store import DocumentStore
-        from .metadata_store import MetadataStore
+        from core.storage.metadata_stores.document_store import DocumentStore
+        from core.storage.metadata_stores.metadata_store import MetadataStore
 
         doc_store = DocumentStore()
         meta_store = MetadataStore()

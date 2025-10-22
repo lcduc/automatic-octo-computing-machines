@@ -14,7 +14,7 @@ import aiofiles
 # Local imports
 from config.settings import Config
 from utils.file_operations.file_manager import FileManager as FileUtils
-from utils.text_processing import TextUtils
+from utils.text_processing.text_utils import TextUtils
 
 logger = logging.getLogger(__name__)
 

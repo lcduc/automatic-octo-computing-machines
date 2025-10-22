@@ -37,7 +37,7 @@ class ContextRetriever:
         else:
             self.similarity_calculator = similarity_calculator
         # Only initialize reranker if enabled
-        if Config.RAG.RERANKER_ENABLED():
+        if Config.RAG.RERANKING_ENABLED():
             self.reranker = Reranker()
         else:
             self.reranker = None
@@ -361,11 +361,11 @@ class ContextRetriever:
 
             # Sort by combined score for initial ranking
             results.sort(key=lambda x: x["combined_score"], reverse=True)
-            candidate_multiplier = 4 if Config.RAG.RERANKER_ENABLED() else 1
+            candidate_multiplier = 4 if Config.RAG.RERANKING_ENABLED() else 1
             prelim_top_k = results[: max(k * candidate_multiplier, k)]
 
             top_k_results = prelim_top_k[:k]
-            if Config.RAG.RERANKER_ENABLED() and self.reranker is not None:
+            if Config.RAG.RERANKING_ENABLED() and self.reranker is not None:
                 try:
                     top_k_results = self.reranker.rerank(query, prelim_top_k, k)
                 except Exception as e:

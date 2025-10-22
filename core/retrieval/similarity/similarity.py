@@ -8,7 +8,7 @@ import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
 from typing import Tuple, Optional
 import logging
-from config.rag.rag_config import RAGConfig
+from config.settings import Config
 
 logger = logging.getLogger(__name__)
 
@@ -82,7 +82,7 @@ class SimilarityCalculator:
         Uses configuration threshold if none provided.
         """
         if threshold is None:
-            threshold = RAGConfig.SIMILARITY_THRESHOLD()
+            threshold = Config.RAG.SIMILARITY_THRESHOLD()
         return np.where(similarities >= threshold)[0]
 
     def normalize_similarities(self, similarities: np.ndarray) -> np.ndarray:

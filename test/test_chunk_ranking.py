@@ -29,8 +29,8 @@ logging.basicConfig(level=logging.WARNING)  # Reduce noise
 
 # Import project modules
 from core.retrieval.search.retriever import ContextRetriever
-from core.storage.vector_store_optimized import OptimizedVectorStore
-from config.rag.rag_config import RAGConfig
+from core.storage.vector_stores.vector_store_optimized import OptimizedVectorStore
+from config.settings import Config
 
 
 class ChunkRankingTester:
@@ -43,9 +43,9 @@ class ChunkRankingTester:
         
         print(" Initializing Chunk Ranking Tester...")
         print(f" Configuration:")
-        print(f"   - Semantic Weight: {RAGConfig.SEMANTIC_WEIGHT()}")
-        print(f"   - Similarity Threshold: {RAGConfig.SIMILARITY_THRESHOLD()}")
-        print(f"   - Retrieval Top K: {RAGConfig.RETRIEVAL_TOP_K()}")
+        print(f"   - Semantic Weight: {Config.RAG.SEMANTIC_WEIGHT()}")
+        print(f"   - Similarity Threshold: {Config.RAG.SIMILARITY_THRESHOLD()}")
+        print(f"   - Retrieval Top K: {Config.RAG.RETRIEVAL_TOP_K()}")
         print()
     
     def load_data(self):
@@ -75,13 +75,13 @@ class ChunkRankingTester:
             query=query,
             embeddings=embeddings,
             documents=documents,
-            k=RAGConfig.RETRIEVAL_TOP_K(),
-            semantic_weight=RAGConfig.SEMANTIC_WEIGHT()
+            k=Config.RAG.RETRIEVAL_TOP_K(),
+            semantic_weight=Config.RAG.SEMANTIC_WEIGHT()
         )
         
         if not search_results:
             print("  No chunks found above similarity threshold")
-            print(f"    Current threshold: {RAGConfig.SIMILARITY_THRESHOLD()}")
+            print(f"    Current threshold: {Config.RAG.SIMILARITY_THRESHOLD()}")
             return
         
         print(f" Found {len(search_results)} relevant chunks:")

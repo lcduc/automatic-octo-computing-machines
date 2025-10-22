@@ -22,7 +22,7 @@ class DocumentStore:
         Initialize document store with chunks directory from configuration.
         Sets up storage location for document chunks.
         """
-        self.chunks_dir = Path(Config.File.CHUNKS_DIR)
+        self.chunks_dir = Path(Config.File.CHUNKS_DIR())
 
     def load_documents_from_chunks(self) -> List[str]:
         """
@@ -34,7 +34,7 @@ class DocumentStore:
         if not self.chunks_dir.exists():
             return all_documents
 
-        print(f"📂 Loading chunks from {self.chunks_dir}")
+        print(f"Loading chunks from {self.chunks_dir}")
 
         # Find all chunk directories for different sources
         # Ensure deterministic ordering of sources
@@ -135,7 +135,7 @@ class DocumentStore:
         try:
             source_dir = self.chunks_dir / source_name
             if source_dir.exists():
-                from utils.file_utils import FileUtils
+                from utils.file_operations.file_manager import FileManager as FileUtils
 
                 if FileUtils.safe_delete_directory(str(source_dir)):
                     print(f" Deleted documents for source: {source_name}")
