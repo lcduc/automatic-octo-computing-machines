@@ -43,7 +43,7 @@ def stream_chat(base_url: str, query: str, history: list = None):
             yield token
 
 
-def start_backend_subprocess(host: str, port: int) -> bool:
+def start_backend_subprocess(host: str, port: int, protocol: str = "http") -> bool:
     """Start uvicorn for the FastAPI app in a background subprocess."""
     try:
         cmd = [
@@ -63,9 +63,9 @@ def start_backend_subprocess(host: str, port: int) -> bool:
         # Wait briefly for server to come up
         for _ in range(30):
             time.sleep(0.2)
-            if is_backend_healthy(f"http://{host}:{port}"):
+            if is_backend_healthy(f"{protocol}://{host}:{port}"):
                 return True
-        return is_backend_healthy(f"http://{host}:{port}")
+        return is_backend_healthy(f"{protocol}://{host}:{port}")
     except Exception:
         return False
 
@@ -267,7 +267,7 @@ class ChatApp:
 
     def _reset_session_dirs_and_state(self):
         """Interface-only reset: no filesystem operations."""
-        st.toast("Session state reset (no file operations)", icon="")
+        st.toast("Session state reset (no file operations)")
 
     def reset_all(self):
         """Reset Streamlit session state (interface only, no file operations)."""
@@ -275,9 +275,9 @@ class ChatApp:
         with st.spinner("Cleaning data folders (chunks, vectors, temp, logs)..."):
             try:
                 cleanup_data_folders()
-                st.toast("Data folders cleaned", icon="")
+                st.toast("Data folders cleaned")
             except Exception:
-                st.toast("Failed to clean data folders", icon="")
+                st.toast("Failed to clean data folders")
         st.session_state.uploaded_docs = []
         st.session_state.uploaded_urls = []
         st.session_state.vectordb = None
@@ -285,7 +285,7 @@ class ChatApp:
         st.session_state.url_inputs = [""]
         # Reset file_uploader widget by changing its key
         st.session_state["uploaded_docs_uploader_key"] = str(time.time())
-        st.toast("All session state reset", icon="")
+        st.toast("All session state reset")
         st.rerun()
 
     def _handle_url_inputs(self):
@@ -336,13 +336,13 @@ class ChatApp:
                 host = host_port[0]
                 port = int(host_port[1]) if len(host_port) > 1 else 8500
                 with st.spinner("Starting backend API..."):
-                    started = start_backend_subprocess(host, port)
+                    started = start_backend_subprocess(host, port, protocol)
                     if started:
-                        st.toast("Backend started", icon="")
+                        st.toast("Backend started")
                     else:
-                        st.toast("Could not auto-start backend. Start it manually.", icon="")
+                        st.toast("Could not auto-start backend. Start it manually.")
             except Exception:
-                st.toast("Auto-start attempt failed. Start the API manually.", icon="")
+                st.toast("Auto-start attempt failed. Start the API manually.")
 
         # Sidebar hidden by default
         show_sidebar = False
@@ -377,7 +377,7 @@ class ChatApp:
 
                 if st.button(" Process Inputs", use_container_width=True):
                     if not is_backend_healthy(api_base_url):
-                        st.toast("Backend not reachable. Start FastAPI and try again.", icon="")
+                        st.toast("Backend not reachable. Start FastAPI and try again.")
                     else:
                         # Upload files
                         if uploaded_docs:
@@ -386,11 +386,11 @@ class ChatApp:
                                 resp = requests.post(f"{api_base_url}/files/upload", files=files_payload, timeout=600, verify=False)
                                 if resp.ok:
                                     st.session_state.uploaded_docs.extend([f.name for f in uploaded_docs])
-                                    st.toast("Files uploaded", icon="")
+                                    st.toast("Files uploaded")
                                 else:
-                                    st.toast(f"Upload failed: {resp.status_code}", icon="")
+                                    st.toast(f"Upload failed: {resp.status_code}")
                             except Exception as e:
-                                st.toast(f"Upload error: {e}", icon="")
+                                st.toast(f"Upload error: {e}")
                         # Process URLs if enabled
                         if enable_urls:
                             urls = [u.strip() for u in st.session_state.url_inputs if u.strip()]
@@ -399,11 +399,11 @@ class ChatApp:
                                     resp2 = requests.post(f"{api_base_url}/files/url", json={"urls": urls}, timeout=600, verify=False)
                                     if resp2.ok:
                                         st.session_state.uploaded_urls.extend(urls)
-                                        st.toast("URLs processed", icon="")
+                                        st.toast("URLs processed")
                                     else:
-                                        st.toast(f"URL processing failed: {resp2.status_code}", icon="")
+                                        st.toast(f"URL processing failed: {resp2.status_code}")
                                 except Exception as e:
-                                    st.toast(f"URL error: {e}", icon="")
+                                    st.toast(f"URL error: {e}")
 
                 if os.getenv("ENABLE_MAINTENANCE", "true").lower() == "true":
                     st.markdown("---")
@@ -416,7 +416,7 @@ class ChatApp:
                         if st.button("Refresh Vector", use_container_width=True):
                             with st.spinner("Refreshing knowledge base..."):
                                 st.session_state.vectordb = "placeholder"
-                                st.toast("Knowledge base refreshed", icon="")
+                                st.toast("Knowledge base refreshed")
         else:
             # Sidebar hidden by configuration
             pass
@@ -429,7 +429,7 @@ class ChatApp:
         if has_any_inputs and st.session_state.vectordb is None:
             with st.spinner("Updating knowledge base..."):
                 st.session_state.vectordb = "placeholder"
-                st.toast("Knowledge base is ready", icon="")
+                st.toast("Knowledge base is ready")
 
         # Render chat history
         for msg in st.session_state.chat_history:
