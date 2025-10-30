@@ -12,7 +12,7 @@ from ...infrastructure.caching.cache_service import get_cache_service
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import httpx
 import openai
-from openai import AsyncOpenAI
+from openai import AsyncOpenAI, APIStatusError, APIConnectionError
 from httpx import Limits
 from openai.types.chat import ChatCompletionMessageParam
 
@@ -81,7 +81,11 @@ class ChatbotService:
         return self._api_available
 
     def _test_api(self) -> bool:
-        """Test OpenAI API availability and connectivity."""
+        """
+        Test OpenAI API availability.
+        Treats HTTP errors (4xx) as "reachable" to allow startup,
+        while catching genuine connection errors.
+        """
         if not Config.LLM.OPENAI_API_KEY():
             logger.warning(" OpenAI API key not configured")
             return False
@@ -92,10 +96,24 @@ class ChatbotService:
                 messages=[{"role": "user", "content": "test"}],
                 max_tokens=1
             )
-            logger.info(" OpenAI API available")
+            logger.info(" OpenAI API available and responding.")
             return True
+        except APIStatusError as e:
+            # The API is reachable but returned an error status code (e.g., 401, 429).
+            # This is treated as "available" for warm-up purposes.
+            logger.warning(
+                f" OpenAI API is reachable but returned status {e.status_code}. "
+                f"This may indicate an API key or permission issue. "
+                f"Treating as available for startup. Details: {e.message}"
+            )
+            return True
+        except APIConnectionError as e:
+            # A genuine network-level error occurred.
+            logger.error(f" OpenAI API connection failed. The service is unreachable. Details: {e.__cause__}")
+            return False
         except Exception as e:
-            logger.warning(f" OpenAI API not available: {e}")
+            # Catch any other unexpected errors.
+            logger.error(f" An unexpected error occurred while testing OpenAI API: {e}")
             return False
 
     def _create_error_response(self, query: str, error_msg: str) -> ErrorResponse:
