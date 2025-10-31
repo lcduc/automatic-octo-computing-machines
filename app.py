@@ -5,13 +5,21 @@ import time
 import subprocess
 import requests
 import re
+import base64
 import urllib3
 from utils.file_operations import cleanup_data_folders
 
 # Disable SSL warnings for self-signed certificates
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-
+def get_image_base64(image_path):
+    """Convert image to base64 for HTML embedding."""
+    try:
+        with open(image_path, "rb") as img_file:
+            return base64.b64encode(img_file.read()).decode()
+    except Exception:
+        return None
+    
 def is_backend_healthy(base_url: str) -> bool:
     try:
         # Disable SSL verification for self-signed certificates
@@ -251,7 +259,7 @@ class ChatApp:
 
     def __init__(self):
         st.set_page_config(page_title="ChatBot ", initial_sidebar_state="collapsed")
-        st.title("ChatBot ")
+        # st.title("ChatBot ")
 
         # Initialize session state variables only if they are not already set
         if "uploaded_docs" not in st.session_state:
@@ -319,6 +327,20 @@ class ChatApp:
             st.rerun()
 
     def run(self):
+        # Thêm logo và title cùng dòng, logo bo góc tròn, size nhỏ
+        logo_base64 = get_image_base64("assets/logo_tringhia.jpg")
+        if logo_base64:
+            st.markdown(
+                f"""
+                <div style="display: flex; align-items: center; justify-content: flex-start; gap: 10px; margin-top: 10px; margin-left: 10px;">
+                    <img src="data:image/jpeg;base64,{logo_base64}" style="width:50px; height:50px; border-radius:50%; object-fit:cover;">
+                    <h2 style="margin: 0;">TNT ChatBot</h2>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+        else:
+            st.header("TNT ChatBot")
         # Initialize API base URL and optionally auto-start backend regardless of sidebar visibility
         # Check if SSL certificates exist to determine protocol
         ssl_cert_file = "./SSL/fullchain.pem"
