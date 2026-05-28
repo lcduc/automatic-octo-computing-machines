@@ -162,3 +162,5 @@ cython_debug/
 # Custom ignore
 data/
 .cursor/
+/.streamlit/secrets.toml
+SSL/

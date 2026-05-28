@@ -12,6 +12,31 @@ from utils.file_operations import cleanup_data_folders
 # Disable SSL warnings for self-signed certificates
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
+# Ensure Streamlit can read secrets from environment variables when
+# `.streamlit/secrets.toml` is not present. This copies common secret
+# keys (currently `OPENAI_API_KEY`) into `st.secrets` when possible and
+# falls back to `st.session_state` if assignment is not supported.
+try:
+    _env_secret_keys = ["OPENAI_API_KEY"]
+    for _key in _env_secret_keys:
+        _val = os.getenv(_key)
+        if not _val:
+            continue
+        try:
+            # Try writing into st.secrets (works on recent Streamlit versions)
+            st.secrets[_key] = _val
+        except Exception:
+            # If st.secrets is read-only, provide a fallback in session state
+            try:
+                if hasattr(st, "session_state"):
+                    st.session_state.setdefault(_key, _val)
+            except Exception:
+                # Best-effort only; do not raise here
+                pass
+except Exception:
+    # Top-level safety: if Streamlit isn't initialised yet, skip silently
+    pass
+
 def get_image_base64(image_path):
     """Convert image to base64 for HTML embedding."""
     try:
@@ -35,20 +60,40 @@ def stream_chat(base_url: str, query: str, history: list = None):
     payload = {"query": query}
     if history:
         payload["history"] = history
-    with requests.post(url, json=payload, headers=headers, stream=True, timeout=300, verify=False) as r:
-        r.raise_for_status()
-        for line in r.iter_lines(decode_unicode=True, chunk_size=1):
-            if not line:
-                continue
-            # Handle Server-Sent Events style lines like 'data: token'
-            if line.startswith("data:"):
-                token = line[5:].lstrip()
-            else:
-                token = line
-            # Skip keep-alive pings
-            if token in ("[DONE]", ":keep-alive"):
-                continue
-            yield token
+    try:
+        with requests.post(url, json=payload, headers=headers, stream=True, timeout=300, verify=False) as r:
+            r.raise_for_status()
+            try:
+                for line in r.iter_lines(decode_unicode=True, chunk_size=1):
+                    if not line:
+                        continue
+                    # Handle Server-Sent Events style lines like 'data: token'
+                    if line.startswith("data:"):
+                        token = line[5:].lstrip()
+                    else:
+                        token = line
+                    # Skip keep-alive pings
+                    if token in ("[DONE]", ":keep-alive"):
+                        continue
+                    yield token
+            except (requests.exceptions.ChunkedEncodingError, requests.exceptions.ConnectionError, ConnectionResetError) as e:
+                # Handle incomplete chunked read errors gracefully
+                error_msg = f"[ERROR] Connection interrupted: {str(e)}"
+                yield error_msg
+                return
+            except Exception as e:
+                # Handle other streaming errors
+                error_msg = f"[ERROR] Streaming error: {str(e)}"
+                yield error_msg
+                return
+    except requests.exceptions.Timeout:
+        yield "[ERROR] Request timeout - the server took too long to respond."
+    except requests.exceptions.ConnectionError as e:
+        yield f"[ERROR] Connection error: Could not connect to the server. {str(e)}"
+    except requests.exceptions.RequestException as e:
+        yield f"[ERROR] Request failed: {str(e)}"
+    except Exception as e:
+        yield f"[ERROR] Unexpected error: {str(e)}"
 
 
 def start_backend_subprocess(host: str, port: int, protocol: str = "http") -> bool:

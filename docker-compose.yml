@@ -10,7 +10,7 @@ services:
     command: ["/app/start.sh"]
 
     environment:
-      - OPENAI_API_KEY=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
+      - OPENAI_API_KEY
       - OPENAI_MODEL
       - OPENAI_MAX_TOKENS
       - OPENAI_TEMPERATURE

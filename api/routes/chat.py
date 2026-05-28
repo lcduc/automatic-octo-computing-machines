@@ -47,7 +47,12 @@ async def chat(
             # Query-only mode: no history
             history = None
         
-        async for token in chat_service.stream_chat_with_memory(query, custom_history=history):
-            yield token
+        try:
+            async for token in chat_service.stream_chat_with_memory(query, custom_history=history):
+                yield token
+        except Exception as e:
+            # Catch any exceptions during streaming and yield error message
+            logger.error(f"Error in token_generator: {e}", exc_info=True)
+            yield f"[ERROR] {str(e)}"
 
     return StreamingResponse(token_generator(), media_type="text/event-stream")

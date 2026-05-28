@@ -12,7 +12,7 @@ from ...infrastructure.caching.cache_service import get_cache_service
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import httpx
 import openai
-from openai import AsyncOpenAI, APIStatusError, APIConnectionError
+from openai import AsyncOpenAI, APIStatusError, APIConnectionError, APITimeoutError
 from httpx import Limits
 from openai.types.chat import ChatCompletionMessageParam
 
@@ -1242,9 +1242,28 @@ class ChatbotService:
                 temperature=Config.LLM.OPENAI_TEMPERATURE(),
                 stream=True
             )
-            async for chunk in response_stream:
-                content = chunk.choices[0].delta.content
-                if content is not None:
-                    yield content
+            try:
+                async for chunk in response_stream:
+                    content = chunk.choices[0].delta.content
+                    if content is not None:
+                        yield content
+            except (APIConnectionError, ConnectionResetError, OSError) as e:
+                # Handle connection errors during streaming
+                logger.error(f"Connection error during streaming: {e}")
+                yield f"[ERROR] Connection interrupted: {str(e)}"
+            except Exception as e:
+                # Handle other streaming errors
+                logger.error(f"Streaming error: {e}")
+                yield f"[ERROR] Streaming error: {str(e)}"
+        except APITimeoutError:
+            logger.error("OpenAI API timeout during streaming")
+            yield "[ERROR] Request timeout - the AI service took too long to respond."
+        except APIStatusError as e:
+            logger.error(f"OpenAI API status error: {e}")
+            yield f"[ERROR] API error: {str(e)}"
+        except APIConnectionError as e:
+            logger.error(f"OpenAI API connection error: {e}")
+            yield f"[ERROR] Connection error: Could not connect to AI service. {str(e)}"
         except Exception as e:
+            logger.error(f"Unexpected error in stream_response_with_history: {e}")
             yield f"[ERROR] {str(e)}"
