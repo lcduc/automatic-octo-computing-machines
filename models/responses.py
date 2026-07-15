@@ -276,6 +276,10 @@ class ChatRequest(BaseModel):
     """Chat request model for context-aware responses with conversation history support."""
 
     query: str = Field(..., description="User query", min_length=1, max_length=2000)
+    id: Optional[str] = Field(
+        None,
+        description="Abbreviated field identifier mapped to a chunks subfolder, e.g. CSCE",
+    )
     history: Optional[List[Dict[str, str]]] = Field(
         default=None, 
         description="Conversation history for context-aware responses"
@@ -285,6 +289,7 @@ class ChatRequest(BaseModel):
         json_schema_extra = {
             "example": {
                 "query": "Hi?",
+                "id": "CSCE",
                 "history": [
                     {"role": "user", "content": "Hello"},
                     {"role": "assistant", "content": "Hi! How can I help you?"}
@@ -297,10 +302,15 @@ class QueryRequest(BaseModel):
     """Simple query request model for query-only mode (temporarily without history)."""
 
     query: str = Field(..., description="User query", min_length=1, max_length=2000)
+    id: Optional[str] = Field(
+        None,
+        description="Abbreviated field identifier mapped to a chunks subfolder, e.g. CSCE",
+    )
 
     class Config:
         json_schema_extra = {
             "example": {
-                "query": "Hi?"
+                "query": "Hi?",
+                "id": "CSCE"
             }
         }

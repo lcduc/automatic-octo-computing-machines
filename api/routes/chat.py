@@ -38,6 +38,7 @@ async def chat(
         if not query:
             yield "[ERROR] No query provided."
             return
+        dataset_id = request.id
         
         # Determine history based on configuration
         if Config.Chat.ENABLE_HISTORY():
@@ -48,7 +49,11 @@ async def chat(
             history = None
         
         try:
-            async for token in chat_service.stream_chat_with_memory(query, custom_history=history):
+            async for token in chat_service.stream_chat_with_memory(
+                query,
+                custom_history=history,
+                dataset_id=dataset_id,
+            ):
                 yield token
         except Exception as e:
             # Catch any exceptions during streaming and yield error message

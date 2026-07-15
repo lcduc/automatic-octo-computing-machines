@@ -4,6 +4,7 @@ Provides context-aware system prompts and custom prompt management.
 """
 
 import logging
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -14,10 +15,23 @@ class SystemPrompts:
     Provides a single, comprehensive prompt template for consistent AI responses.
     """
 
+    DEFAULT_BOT_NAME = "Đa lĩnh vực"
+
+    JOURNAL_BY_ID = {
+        "CSCE": "Công nghệ thông tin - Truyền thông (JS:CSCE)",
+        "EES": "Khoa học Trái đất và Môi trường (JS:EES)",
+        "ER": "Nghiên cứu Giáo dục (JS:ER)",
+        "LS": "Luật học (JS:LS)",
+        "MAP": "Toán học - Vật lý (JS:MAP)",
+        "MPS": "Khoa học Y Dược (JS:MPS)",
+        "NST": "Khoa học Tự nhiên và Công nghệ (JS:NST)",
+        "PAM": "Nghiên cứu Chính sách và Quản lý (JS:PAM)",
+    }
+
     # Universal prompt template in Vietnamese
     UNIVERSAL = """
-    Bạn là trợ lý ảo của tôi — chatbot hỗ trợ đọc và phân tích dữ liệu từ các tài liệu.
-
+    Bạn là VNU JS Assistant — chatbot hỗ trợ học thuật cho Tạp chí Khoa học VNU: {bot_name}, Đại học Quốc gia Hà Nội.
+    - Bạn đang phục vụ lĩnh vực: {journal_scope}
     Nguyên tắc chính:
     - Luôn trả lời chỉ sử dụng ngữ cảnh đã được truy xuất được cung cấp trong prompt và lịch sử hội thoại. Hạn chế tối đa việc dựa vào kiến thức chung của chính bạn.
     - Không bịa đặt thông tin. Nếu câu trả lời không tìm thấy trong ngữ cảnh, hãy yêu cầu người dùng cung cấp thêm chi tiết. KHÔNG khẳng định những thông tin không có trong ngữ cảnh.
@@ -65,8 +79,24 @@ class PromptManager:
         # Store custom prompts for specialized use cases
         self.custom_prompts = {}
 
+    def _resolve_journal_scope(self, dataset_id: Optional[str]) -> tuple[str, str]:
+        """Resolve dataset id to journal scope label for prompt rendering."""
+        if not dataset_id:
+            return SystemPrompts.DEFAULT_BOT_NAME, "Tổng hợp đa lĩnh vực"
+
+        normalized_id = dataset_id.strip().upper()
+        resolved_scope = SystemPrompts.JOURNAL_BY_ID.get(normalized_id)
+        if not resolved_scope:
+            return SystemPrompts.DEFAULT_BOT_NAME, f"Mã lĩnh vực {normalized_id}"
+
+        return resolved_scope, resolved_scope
+
     def get_system_prompt(
-        self, prompt_type: str = "universal", context: str = "", **kwargs
+        self,
+        prompt_type: str = "universal",
+        context: str = "",
+        dataset_id: Optional[str] = None,
+        **kwargs,
     ) -> str:
         """
         Generate system prompt with context for AI conversation.
@@ -91,13 +121,24 @@ class PromptManager:
             if not context or not context.strip():
                 context = "Hiện chưa có tài liệu nào trong cơ sở tri thức. Người dùng cần tải lên tài liệu trước khi bạn có thể cung cấp câu trả lời dựa trên thông tin. Vui lòng hướng dẫn và khuyến khích họ tải lên tài liệu."
 
-            return template.format(context=context, **kwargs)
+            resolved_bot_name, resolved_journal_scope = self._resolve_journal_scope(dataset_id)
+            return template.format(
+                context=context,
+                bot_name=kwargs.get("bot_name", resolved_bot_name),
+                journal_scope=kwargs.get("journal_scope", resolved_journal_scope),
+                **kwargs,
+            )
 
         except Exception as e:
             logger.error(f"Error formatting prompt: {e}")
             # Fallback to safe context handling
             safe_context = context if context else "No context available."
-            return SystemPrompts.UNIVERSAL.format(context=safe_context)
+            resolved_bot_name, resolved_journal_scope = self._resolve_journal_scope(dataset_id)
+            return SystemPrompts.UNIVERSAL.format(
+                context=safe_context,
+                bot_name=resolved_bot_name,
+                journal_scope=resolved_journal_scope,
+            )
 
     def add_custom_prompt(self, name: str, template: str):
         """Add custom prompt template for specialized use cases."""

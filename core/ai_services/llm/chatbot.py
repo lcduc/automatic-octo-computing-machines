@@ -587,7 +587,13 @@ class ChatbotService:
             "current_cache_size": 0
         }
 
-    def get_response_with_context(self, query: str, context: str, search_results: List[Dict[str, Any]] = None) -> Union[ChatResponse, ErrorResponse]:
+    def get_response_with_context(
+        self,
+        query: str,
+        context: str,
+        search_results: List[Dict[str, Any]] = None,
+        dataset_id: Optional[str] = None,
+    ) -> Union[ChatResponse, ErrorResponse]:
         """
         Generate AI response using pre-built context (no RAG search).
         This ensures consistency with test RAG process.
@@ -617,7 +623,13 @@ class ChatbotService:
             
             # Build OpenAI messages
             messages = [
-                {"role": "system", "content": self.prompt_manager.get_system_prompt(context=context)}
+                {
+                    "role": "system",
+                    "content": self.prompt_manager.get_system_prompt(
+                        context=context,
+                        dataset_id=dataset_id,
+                    ),
+                }
             ]
             
             # Add current query
@@ -723,7 +735,14 @@ class ChatbotService:
             logger.error(f" Error generating response: {e}")
             return self._create_error_response(query, f"An error occurred while generating the response: {str(e)}")
 
-    def get_response_with_history_and_context(self, query: str, context: str, search_results: List[Dict[str, Any]] = None, history: Optional[List[Dict[str, str]]] = None) -> Dict[str, Any]:
+    def get_response_with_history_and_context(
+        self,
+        query: str,
+        context: str,
+        search_results: List[Dict[str, Any]] = None,
+        history: Optional[List[Dict[str, str]]] = None,
+        dataset_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
         """
         Generate AI response using pre-built context with conversation history.
         This ensures consistency with test RAG process while supporting history.
@@ -755,7 +774,13 @@ class ChatbotService:
             
             # Build OpenAI messages with history
             messages = [
-                {"role": "system", "content": self.prompt_manager.get_system_prompt(context=context)}
+                {
+                    "role": "system",
+                    "content": self.prompt_manager.get_system_prompt(
+                        context=context,
+                        dataset_id=dataset_id,
+                    ),
+                }
             ]
             
             # Add conversation history if provided
@@ -1183,7 +1208,14 @@ class ChatbotService:
                 final_results.append(result)
         return final_results
 
-    async def stream_response_with_history(self, query: str, embeddings=None, documents=None, history: Optional[List[Dict[str, str]]] = None) -> AsyncGenerator[str, None]:
+    async def stream_response_with_history(
+        self,
+        query: str,
+        embeddings=None,
+        documents=None,
+        history: Optional[List[Dict[str, str]]] = None,
+        dataset_id: Optional[str] = None,
+    ) -> AsyncGenerator[str, None]:
         """
         Async generator that streams response tokens from OpenAI with conversation history.
         Uses AsyncOpenAI for better performance and async context retrieval.
@@ -1223,7 +1255,15 @@ class ChatbotService:
             
             # Build messages with proper OpenAI types
             openai_messages: List[ChatCompletionMessageParam] = [
-                {"role": "system", "content": str(self.prompt_manager.get_system_prompt(context=context))}
+                {
+                    "role": "system",
+                    "content": str(
+                        self.prompt_manager.get_system_prompt(
+                            context=context,
+                            dataset_id=dataset_id,
+                        )
+                    ),
+                }
             ]
             if history:
                 max_history_messages = min(len(history), 20)

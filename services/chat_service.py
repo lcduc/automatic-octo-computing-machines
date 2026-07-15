@@ -46,6 +46,7 @@ class ChatService:
         
         # Performance optimizations
         self._vector_store_cache = None
+        self._vector_store_metadata_cache = None
         self._vector_store_last_loaded = 0
         self._vector_store_ttl = 300  # 5 minutes cache
         
@@ -56,13 +57,15 @@ class ChatService:
         self._performance_monitor = get_performance_monitor()
 
     def _get_cached_vector_store(self):
-        """Get cached vector store or load if expired."""
+        """Get cached vector store or load if expired, including metadata."""
         # Try to get preloaded vector store first
         preloader = get_model_preloader()
+        preloaded_model = preloader.get_model("vector_store")
         preloaded_data = preloader.get_vector_store_data()
         if preloaded_data is not None:
             logger.debug("⚡ Using preloaded vector store")
-            return preloaded_data
+            metadata = getattr(preloaded_model, "document_metadata", None) if preloaded_model is not None else None
+            return (*preloaded_data, metadata)
         
         # Fallback to cached loading
         current_time = time.time()
@@ -73,12 +76,55 @@ class ChatService:
                 from core.storage.vector_stores.vector_store_optimized import OptimizedVectorStore
                 vs = OptimizedVectorStore()
                 self._vector_store_cache = vs.load_vector_store()
+                self._vector_store_metadata_cache = getattr(vs, "document_metadata", None)
                 self._vector_store_last_loaded = current_time
                 logger.debug("🔄 Vector store cache refreshed")
             except Exception as e:
                 logger.error(f" Error loading vector store: {e}")
                 return None
-        return self._vector_store_cache
+        if self._vector_store_cache is None:
+            return None
+        return (*self._vector_store_cache, self._vector_store_metadata_cache)
+
+    def _filter_vector_store_by_source_id(
+        self,
+        embeddings,
+        documents,
+        metadata,
+        source_id: Optional[str],
+    ):
+        """Filter a vector store bundle down to one source folder."""
+        if not source_id:
+            return embeddings, documents
+
+        normalized_source_id = source_id.strip().upper()
+        if not normalized_source_id:
+            return embeddings, documents
+
+        if not documents:
+            return None
+
+        if not metadata or len(metadata) != len(documents):
+            logger.warning("Vector store metadata unavailable for source filtering")
+            return None
+
+        matched_indices = []
+        for index, item in enumerate(metadata):
+            candidate = str(item.get("source_id") or item.get("source_name") or "").strip().upper()
+            if candidate == normalized_source_id:
+                matched_indices.append(index)
+
+        if not matched_indices:
+            logger.warning("No chunks matched source id '%s'", normalized_source_id)
+            return None
+
+        filtered_documents = [documents[index] for index in matched_indices]
+        if embeddings is None:
+            filtered_embeddings = np.array([])
+        else:
+            filtered_embeddings = np.asarray(embeddings)[matched_indices]
+
+        return filtered_embeddings, filtered_documents
 
     def _get_cached_search_results(self, query: str, embeddings, documents, k: int, semantic_weight: float):
         """Get cached search results using the existing smart cache service."""
@@ -110,7 +156,10 @@ class ChatService:
             return []
 
     async def chat_with_memory(
-        self, query: str, custom_history: Optional[List[Dict[str, str]]] = None
+        self,
+        query: str,
+        custom_history: Optional[List[Dict[str, str]]] = None,
+        dataset_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Unified chat method: always uses history memory, configurable length.
@@ -150,7 +199,23 @@ class ChatService:
                     start_time,
                 ).dict()
             
-            _, current_embeddings, current_documents = vector_store_result
+            _, current_embeddings, current_documents, current_metadata = vector_store_result
+            filtered_store = self._filter_vector_store_by_source_id(
+                current_embeddings,
+                current_documents,
+                current_metadata,
+                dataset_id,
+            )
+            if dataset_id and filtered_store is None:
+                return self._create_error_response(
+                    query,
+                    f"No chunks found for id '{dataset_id}'",
+                    request_id,
+                    start_time,
+                ).dict()
+
+            if filtered_store is not None:
+                current_embeddings, current_documents = filtered_store
             is_cached = False  # Initialize is_cached variable
 
             # Handle empty knowledge base gracefully with universal prompt
@@ -221,6 +286,7 @@ class ChatService:
                         context=context,
                         search_results=search_results,
                         history=history,
+                        dataset_id=dataset_id,
                     )
                 else:
                     # Query-only mode: use get_response_with_context
@@ -229,6 +295,7 @@ class ChatService:
                         query=query,
                         context=context,
                         search_results=search_results,
+                        dataset_id=dataset_id,
                     )
                 llm_time = time.time() - llm_start_time
                 logger.info(f"⏱️ LLM response time: {llm_time:.3f}s")
@@ -348,7 +415,12 @@ class ChatService:
         """
         try:
             logger.debug("Checking knowledge base status...")
-            _, current_embeddings, current_documents = vector_store.load_vector_store()
+            vector_store_result = self._get_cached_vector_store()
+            if vector_store_result is None:
+                current_embeddings = np.array([])
+                current_documents = []
+            else:
+                _, current_embeddings, current_documents, _ = vector_store_result
 
             # Calculate additional metrics
             embedding_dimensions = 0
@@ -368,7 +440,7 @@ class ChatService:
                 "embedding_dimensions": embedding_dimensions,
                 "status": "ready" if current_documents else "empty",
                 "last_updated": datetime.now().isoformat(),
-                "vector_store_path": vector_store.vector_store_path,
+                "vector_store_path": Config.Database.VECTOR_STORE_PATH(),
                 "health": "healthy" if current_documents else "no_data",
             }
 
@@ -476,6 +548,7 @@ class ChatService:
             
             # Clear local vector store cache
             self._vector_store_cache = None
+            self._vector_store_metadata_cache = None
             self._vector_store_last_loaded = 0
             
             logger.info("🧹 All caches cleared successfully")
@@ -527,7 +600,10 @@ class ChatService:
             }
 
     async def stream_chat_with_memory(
-        self, query: str, custom_history: Optional[List[Dict[str, str]]] = None
+        self,
+        query: str,
+        custom_history: Optional[List[Dict[str, str]]] = None,
+        dataset_id: Optional[str] = None,
     ) -> AsyncGenerator[str, None]:
         """
         Async generator for streaming chat responses with memory/history support.
@@ -546,7 +622,18 @@ class ChatService:
             yield "[ERROR] Knowledge base unavailable"
             return
         
-        _, current_embeddings, current_documents = vector_store_result
+        _, current_embeddings, current_documents, current_metadata = vector_store_result
+        filtered_store = self._filter_vector_store_by_source_id(
+            current_embeddings,
+            current_documents,
+            current_metadata,
+            dataset_id,
+        )
+        if dataset_id and filtered_store is None:
+            yield f"[ERROR] No chunks found for id '{dataset_id}'"
+            return
+        if filtered_store is not None:
+            current_embeddings, current_documents = filtered_store
         if not current_documents:
             current_embeddings = np.array([])
             current_documents = []
@@ -568,6 +655,7 @@ class ChatService:
             embeddings=current_embeddings,
             documents=current_documents,
             history=history,
+            dataset_id=dataset_id,
         ):
             yield token
         # Optionally update global history (not done here to avoid race conditions in streaming)

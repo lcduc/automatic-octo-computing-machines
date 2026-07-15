@@ -54,12 +54,28 @@ def is_backend_healthy(base_url: str) -> bool:
         return False
 
 
-def stream_chat(base_url: str, query: str, history: list = None):
+def get_available_dataset_ids() -> list[str]:
+    chunks_root = os.getenv("CHUNKS_DIR", "data/chunks")
+    try:
+        if not os.path.isdir(chunks_root):
+            return []
+        return sorted(
+            entry.name
+            for entry in os.scandir(chunks_root)
+            if entry.is_dir()
+        )
+    except Exception:
+        return []
+
+
+def stream_chat(base_url: str, query: str, history: list = None, dataset_id: str = None):
     url = f"{base_url}/chat/"
     headers = {"accept": "text/event-stream", "content-type": "application/json"}
     payload = {"query": query}
     if history:
         payload["history"] = history
+    if dataset_id:
+        payload["id"] = dataset_id
     try:
         with requests.post(url, json=payload, headers=headers, stream=True, timeout=300, verify=False) as r:
             r.raise_for_status()
@@ -499,6 +515,16 @@ class ChatApp:
                 st.toast("Knowledge base is ready")
 
         # Render chat history
+        dataset_ids = get_available_dataset_ids()
+        if dataset_ids:
+            selected_dataset_id = st.selectbox(
+                "Lĩnh vực dữ liệu",
+                options=[""] + dataset_ids,
+                format_func=lambda value: "Tất cả" if value == "" else value,
+                key="selected_dataset_id",
+            )
+            selected_dataset_id = selected_dataset_id or None
+
         for msg in st.session_state.chat_history:
             with st.chat_message(msg["role"]):
                 st.markdown(msg["content"], unsafe_allow_html=True)
@@ -517,7 +543,12 @@ class ChatApp:
                 try:
                     # Use api_base_url from sidebar and pass only the most recent 10 messages
                     recent_history = st.session_state.chat_history[-10:] if st.session_state.chat_history else []
-                    for token in stream_chat(api_base_url, user_input, recent_history):
+                    for token in stream_chat(
+                        api_base_url,
+                        user_input,
+                        recent_history,
+                        st.session_state.get("selected_dataset_id"),
+                    ):
                         accumulated += token
                         now = time.time()
                         # Flush on punctuation/newline or every ~50ms to reduce flicker & CPU
