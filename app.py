@@ -68,16 +68,13 @@ def get_available_dataset_ids() -> list[str]:
         return []
 
 
-def stream_chat(base_url: str, query: str, history: list = None, dataset_id: str = None):
+def stream_chat(base_url: str, query: str, dataset_id: str, history: list = None):
     url = f"{base_url}/chat/"
     headers = {"accept": "text/event-stream", "content-type": "application/json"}
     payload = {"query": query}
-    if history:
-        payload["history"] = history
-    if dataset_id:
-        payload["id"] = dataset_id
+    params = {"id": dataset_id}
     try:
-        with requests.post(url, json=payload, headers=headers, stream=True, timeout=300, verify=False) as r:
+        with requests.post(url, params=params, json=payload, headers=headers, stream=True, timeout=300, verify=False) as r:
             r.raise_for_status()
             try:
                 for line in r.iter_lines(decode_unicode=True, chunk_size=1):
@@ -546,8 +543,8 @@ class ChatApp:
                     for token in stream_chat(
                         api_base_url,
                         user_input,
-                        recent_history,
-                        st.session_state.get("selected_dataset_id"),
+                        dataset_id=st.session_state.get("selected_dataset_id"),
+                        history=recent_history,
                     ):
                         accumulated += token
                         now = time.time()

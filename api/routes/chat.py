@@ -24,13 +24,17 @@ logger = logging.getLogger(__name__)
 
 @router.post("/")
 async def chat(
-    request: QueryRequest = Body(...), 
+    request: QueryRequest = Body(...),
+    dataset_id: str = Query(..., alias="id"),
     chat_service: ChatService = Depends(get_chat_service)
 ):
     """
     Chat endpoint with configurable mode (query-only or with history).
     Streams generated responses as tokens.
     """
+    dataset_id = dataset_id.strip().upper()
+    if not dataset_id:
+        raise HTTPException(status_code=422, detail="id must not be blank")
 
     async def token_generator():
         # Extract query from request
@@ -38,8 +42,6 @@ async def chat(
         if not query:
             yield "[ERROR] No query provided."
             return
-        dataset_id = request.id
-        
         # Determine history based on configuration
         if Config.Chat.ENABLE_HISTORY():
             # History mode: no history for now (can be extended later)

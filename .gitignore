@@ -164,3 +164,5 @@ data/
 .cursor/
 /.streamlit/secrets.toml
 SSL/
+.superpowers/
+docs/
