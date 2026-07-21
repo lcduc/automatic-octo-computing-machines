@@ -36,7 +36,7 @@ class BaseProcessingService(ABC):
         self.document_service = DocumentService()
 
     async def process_items(
-        self, items: List[Union[str, Any]], item_type: str = "items"
+        self, items: List[Union[str, Any]], item_type: str = "items", **processing_options
     ) -> MultipleFileUploadResponse:
         """
         Process multiple items with validation and batch processing constraints.
@@ -69,7 +69,7 @@ class BaseProcessingService(ABC):
                 )
 
             # Process items concurrently for improved performance
-            results = await self._process_items_concurrently(valid_items)
+            results = await self._process_items_concurrently(valid_items, **processing_options)
 
             # Generate comprehensive response with statistics
             return self._generate_upload_response(results, len(valid_items), item_type)
@@ -92,7 +92,7 @@ class BaseProcessingService(ABC):
 
     @abstractmethod
     async def _process_items_concurrently(
-        self, valid_items: List[Any]
+        self, valid_items: List[Any], **processing_options
     ) -> List[Dict[str, Any]]:
         """
         Process items concurrently and return results.

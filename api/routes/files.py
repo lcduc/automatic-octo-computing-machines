@@ -7,7 +7,7 @@ import logging
 from typing import List
 
 # Third-party imports
-from fastapi import APIRouter, UploadFile, File, Depends
+from fastapi import APIRouter, UploadFile, File, Form, Depends, HTTPException
 from pydantic import BaseModel, Field, validator
 
 # Local imports
@@ -41,6 +41,7 @@ class URLProcessRequest(BaseModel):
 @router.post("/upload", response_model=MultipleFileUploadResponse)
 async def upload_files(
     files: List[UploadFile] = File(...),
+    id: str = Form(...),
     upload_service: UploadService = Depends(get_upload_service),
 ):
     """
@@ -48,7 +49,10 @@ async def upload_files(
     Supports multiple file formats: PDF, DOCX, TXT, CSV, XLSX, XLS.
     Applies file size limits and batch processing constraints.
     """
-    return await upload_service.process_file_uploads(files)
+    normalized_id = id.strip().upper()
+    if not normalized_id:
+        raise HTTPException(status_code=422, detail="id must not be blank")
+    return await upload_service.process_file_uploads(files, normalized_id)
 
 
 @router.post("/url", response_model=MultipleFileUploadResponse)

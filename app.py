@@ -433,6 +433,11 @@ class ChatApp:
                 # Startup handled above; sidebar UI only
 
                 st.subheader("Documents & URLs")
+                upload_dataset_id = st.text_input(
+                    "Mã bộ dữ liệu (ID)",
+                    help="Dùng cùng ID này khi chat để chỉ truy xuất các tài liệu vừa tải lên.",
+                    key="upload_dataset_id",
+                ).strip()
                 uploader_key = st.session_state.get("uploaded_docs_uploader_key", "uploaded_docs_uploader")
                 uploaded_docs = st.file_uploader(
                     "Upload (.pdf, .txt, .doc, .docx, .xls, .xlsx)",
@@ -461,16 +466,25 @@ class ChatApp:
                     else:
                         # Upload files
                         if uploaded_docs:
-                            files_payload = [("files", (f.name, f.getvalue(), f.type or "application/octet-stream")) for f in uploaded_docs]
-                            try:
-                                resp = requests.post(f"{api_base_url}/files/upload", files=files_payload, timeout=600, verify=False)
-                                if resp.ok:
-                                    st.session_state.uploaded_docs.extend([f.name for f in uploaded_docs])
-                                    st.toast("Files uploaded")
-                                else:
-                                    st.toast(f"Upload failed: {resp.status_code}")
-                            except Exception as e:
-                                st.toast(f"Upload error: {e}")
+                            if not upload_dataset_id:
+                                st.toast("Nhập mã bộ dữ liệu (ID) trước khi tải file lên")
+                            else:
+                                files_payload = [("files", (f.name, f.getvalue(), f.type or "application/octet-stream")) for f in uploaded_docs]
+                                try:
+                                    resp = requests.post(
+                                        f"{api_base_url}/files/upload",
+                                        data={"id": upload_dataset_id},
+                                        files=files_payload,
+                                        timeout=600,
+                                        verify=False,
+                                    )
+                                    if resp.ok:
+                                        st.session_state.uploaded_docs.extend([f.name for f in uploaded_docs])
+                                        st.toast("Files uploaded")
+                                    else:
+                                        st.toast(f"Upload failed: {resp.status_code}")
+                                except Exception as e:
+                                    st.toast(f"Upload error: {e}")
                         # Process URLs if enabled
                         if enable_urls:
                             urls = [u.strip() for u in st.session_state.url_inputs if u.strip()]

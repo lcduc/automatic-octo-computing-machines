@@ -49,6 +49,8 @@ cd automatic-octo-computing-machine
 # Create environment file
 echo "OPENAI_API_KEY=your_api_key_here" > .env
 echo "OPENAI_MODEL=gpt-4o-mini" >> .env
+echo "OPENAI_TRANSLATION_MODEL=gpt-5-mini" >> .env
+echo "OPENAI_TRANSLATION_TIMEOUT=120" >> .env
 echo "HOST=0.0.0.0" >> .env
 echo "PORT=8500" >> .env
 echo "DEBUG=False" >> .env

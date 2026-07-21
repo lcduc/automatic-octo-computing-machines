@@ -32,7 +32,13 @@ class FileManager:
         """
         # No upload directory needed - we process files directly
 
-    async def save_chunks_to_files(self, documents: List[str], filename: str) -> str:
+    async def save_chunks_to_files(
+        self,
+        documents: List[str],
+        filename: str,
+        dataset_id: str,
+        preserve_as_single_txt: bool = False,
+    ) -> str:
         """
         Save document chunks to individual files for persistence and debugging.
         Creates organized directory structure for chunk storage.
@@ -44,23 +50,26 @@ class FileManager:
         Returns:
             Path to the created chunks directory
         """
-        # Create chunks directory for this file with safe naming
-        safe_filename = FileUtils.sanitize_filename(
-            Path(filename).stem
-        )  # Remove extension and sanitize
-        chunks_dir = Path(Config.File.CHUNKS_DIR()) / safe_filename
+        safe_dataset_id = FileUtils.sanitize_filename(dataset_id.strip().upper())
+        if not safe_dataset_id:
+            raise ValueError("dataset_id must not be blank")
+        safe_filename = FileUtils.sanitize_filename(Path(filename).stem)
+        chunks_dir = Path(Config.File.CHUNKS_DIR()) / safe_dataset_id
         FileUtils.ensure_directory_exists(str(chunks_dir))
 
-        # Save each chunk as a separate file for easy access
-        chunk_idx = 1
-        for i, chunk in enumerate(documents):
+        if preserve_as_single_txt and len(documents) != 1:
+            raise ValueError("TXT uploads must contain exactly one translated document")
+
+        for chunk_idx, chunk in enumerate(documents, start=1):
             cleaned_chunk = TextUtils.clean_chunk_text(chunk)
             if not cleaned_chunk.strip():
                 continue  # Skip empty cleaned chunks
-            chunk_filename = chunks_dir / f"chunk_{chunk_idx:03d}.txt"
+            if preserve_as_single_txt:
+                chunk_filename = chunks_dir / f"chunk_{safe_filename}.txt"
+            else:
+                chunk_filename = chunks_dir / f"chunk_{safe_filename}_{chunk_idx:03d}.txt"
             async with aiofiles.open(chunk_filename, "w", encoding="utf-8") as f:
                 await f.write(cleaned_chunk)
-            chunk_idx += 1
 
         logger.info(f"💾 Saved {len(documents)} chunks to {chunks_dir}")
         return str(chunks_dir)

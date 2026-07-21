@@ -28,7 +28,7 @@ class UploadService(BaseProcessingService):
     """
 
     async def process_file_uploads(
-        self, files: List[UploadFile]
+        self, files: List[UploadFile], dataset_id: str
     ) -> MultipleFileUploadResponse:
         """
         Process multiple file uploads with validation and batch processing.
@@ -40,7 +40,7 @@ class UploadService(BaseProcessingService):
         Returns:
             MultipleFileUploadResponse with processing results and metadata
         """
-        return await self.process_items(files, "files")
+        return await self.process_items(files, "files", dataset_id=dataset_id)
 
     async def _validate_and_prepare_items(self, files: List[UploadFile]) -> List[tuple]:
         """
@@ -101,7 +101,7 @@ class UploadService(BaseProcessingService):
         return valid_files
 
     async def _process_items_concurrently(
-        self, valid_files: List[tuple]
+        self, valid_files: List[tuple], dataset_id: str
     ) -> List[Dict[str, Any]]:
         """
         Process files using batch processing for optimal performance.
@@ -114,7 +114,7 @@ class UploadService(BaseProcessingService):
 
         # Use batch processing instead of individual processing for efficiency
         batch_result = await self.document_service.process_multiple_documents(
-            file_data_list, rebuild_at_end=True  # Rebuild vector store once at the end
+            file_data_list, dataset_id=dataset_id, rebuild_at_end=True
         )
 
         # Convert batch results to individual file results using base service method

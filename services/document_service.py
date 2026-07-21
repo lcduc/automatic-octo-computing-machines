@@ -164,7 +164,7 @@ class DocumentService:
             }
 
     async def process_multiple_documents(
-        self, file_data_list: List[tuple], rebuild_at_end: bool = True
+        self, file_data_list: List[tuple], dataset_id: str, rebuild_at_end: bool = True
     ) -> Dict[str, Any]:
         """
         Process multiple documents efficiently with batch vector store update.
@@ -199,7 +199,7 @@ class DocumentService:
                 if filename.lower().endswith('.pdf'):
                     result = await self._process_with_ocr_control(file_content, filename)
                 else:
-                    result = await self.processor.process_file(file_content, filename)
+                    result = await self.processor.process_file(file_content, filename, dataset_id)
                 
                 doc_count = len(result["documents"])
                 ocr_time = result["metadata"].get("ocr_time")

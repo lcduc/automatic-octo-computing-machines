@@ -122,7 +122,7 @@ class URLService(BaseProcessingService):
         return valid_urls
 
     async def _process_items_concurrently(
-        self, valid_urls: List[str]
+        self, valid_urls: List[str], **_processing_options
     ) -> List[Dict[str, Any]]:
         """
         Process URLs using batch processing for optimal performance.

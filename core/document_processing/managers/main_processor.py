@@ -13,6 +13,7 @@ from typing import Dict, Any, List
 from config.settings import Config
 from ..processors.docling_processor import DoclingProcessor, AsyncDoclingProcessor
 from .file_manager import FileManager
+from core.ai_services.translation import AcademicTranslator
 
 
 class MainDocumentProcessor:
@@ -31,6 +32,7 @@ class MainDocumentProcessor:
         llm_client=None,
         llm_model: str = None,
         preprocessing_config: str = "ocr_optimized",
+        translator=None,
     ):
         """
         Initialize main processor with file manager and Docling processor.
@@ -45,6 +47,7 @@ class MainDocumentProcessor:
             preprocessing_config: Preprocessing configuration name ("ocr_optimized", "fast", "high_quality", "default")
         """
         self.file_manager = file_manager if file_manager is not None else FileManager()
+        self.translator = translator if translator is not None else AcademicTranslator()
         
         # Initialize Docling processor with automatic OCR for PDFs and preprocessing
         self.docling_processor = DoclingProcessor(
@@ -65,7 +68,9 @@ class MainDocumentProcessor:
         logger = __import__('logging').getLogger(__name__)
         logger.info(f"MainDocumentProcessor initialized with automatic OCR for PDFs, preprocessing config: {preprocessing_config}")
 
-    async def process_file(self, file_content: bytes, filename: str) -> Dict[str, Any]:
+    async def process_file(
+        self, file_content: bytes, filename: str, dataset_id: str
+    ) -> Dict[str, Any]:
         """
         Process file content using appropriate processor based on file type.
         Uses custom SpreadsheetProcessor for Excel files and Docling for other formats.
@@ -78,12 +83,39 @@ class MainDocumentProcessor:
             Dict containing processed documents and comprehensive metadata
         """
         file_ext = Path(filename).suffix.lower()
+        dataset_id = dataset_id.strip().upper()
+        if not dataset_id:
+            raise ValueError("dataset_id must not be blank")
 
         # Validate file extension against supported types
         if file_ext not in self.SUPPORTED_EXTENSIONS:
             raise ValueError(f"Unsupported file type: {file_ext}")
 
         try:
+            if file_ext == ".txt":
+                source_text = file_content.decode("utf-8-sig").strip()
+                translated_text = await self.translator.translate(
+                    source_text, journal_code=dataset_id
+                )
+                documents = [translated_text]
+                chunks_dir = await self.file_manager.save_chunks_to_files(
+                    documents, filename, dataset_id, preserve_as_single_txt=True
+                )
+                return {
+                    "documents": documents,
+                    "metadata": {
+                        "chunks_directory": chunks_dir,
+                        "source_id": dataset_id,
+                        "source_name": filename,
+                        "processing_timestamp": datetime.now().isoformat(),
+                        "processor_version": "academic_translation",
+                        "chunk_size": Config.File.CHUNK_SIZE(),
+                        "chunk_overlap": Config.File.CHUNK_OVERLAP(),
+                        "file_type": file_ext,
+                        "total_chunks": 1,
+                    },
+                }
+
             # Use custom SpreadsheetProcessor for Excel files to handle sheets separately
             if file_ext in ['.xlsx', '.xls', '.csv']:
                 from ..processors.processors import SpreadsheetProcessor
@@ -96,15 +128,19 @@ class MainDocumentProcessor:
                     raise ValueError(f"No content could be extracted from {filename}")
 
                 # Save chunks to files for persistence and debugging
-                chunks_dir = await self.file_manager.save_chunks_to_files(
-                    documents, filename
-                )
+                documents = [
+                    await self.translator.translate(document, journal_code=dataset_id)
+                    for document in documents
+                ]
+                chunks_dir = await self.file_manager.save_chunks_to_files(documents, filename, dataset_id)
 
                 # Return comprehensive metadata and processed documents
                 return {
                     "documents": documents,
                     "metadata": {
                         "chunks_directory": chunks_dir,
+                        "source_id": dataset_id,
+                        "source_name": filename,
                         "processing_timestamp": datetime.now().isoformat(),
                         "processor_version": "spreadsheet_processor",
                         "chunk_size": Config.File.CHUNK_SIZE(),
@@ -130,20 +166,25 @@ class MainDocumentProcessor:
                     raise ValueError(f"No content could be extracted from {filename}")
 
                 # Save chunks to files for persistence and debugging
-                chunks_dir = await self.file_manager.save_chunks_to_files(
-                    result["documents"], filename
-                )
+                documents = [
+                    await self.translator.translate(document, journal_code=dataset_id)
+                    for document in result["documents"]
+                ]
+                chunks_dir = await self.file_manager.save_chunks_to_files(documents, filename, dataset_id)
 
                 # Return comprehensive metadata and processed documents
                 return {
-                    "documents": result["documents"],
+                    "documents": documents,
                     "metadata": {
                         **result["metadata"],
                         "chunks_directory": chunks_dir,
+                        "source_id": dataset_id,
+                        "source_name": filename,
                         "processing_timestamp": datetime.now().isoformat(),
                         "processor_version": result["metadata"].get("processor_version", "docling"),
                         "chunk_size": Config.File.CHUNK_SIZE(),
                         "chunk_overlap": Config.File.CHUNK_OVERLAP(),
+                        "total_chunks": len(documents),
                     }
                 }
 
@@ -159,6 +200,10 @@ class MainDocumentProcessor:
     def is_format_supported(self, filename: str) -> bool:
         """Check if a file format is supported."""
         extension = Path(filename).suffix.lower()
+        if extension == ".txt":
+            # TXT is decoded and translated directly in process_file; it does not
+            # depend on Docling being installed or available.
+            return extension in self.SUPPORTED_EXTENSIONS
         return extension in self.SUPPORTED_EXTENSIONS and self.docling_processor.is_format_supported(filename)
 
     def is_supported_file(self, filename: str) -> bool:

@@ -46,6 +46,14 @@ class LLMConfig:
     @staticmethod
     def OPENAI_MODEL():
         return os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+
+    @staticmethod
+    def TRANSLATION_MODEL():
+        return os.getenv("OPENAI_TRANSLATION_MODEL", "gpt-5-mini")
+
+    @staticmethod
+    def TRANSLATION_TIMEOUT():
+        return int(os.getenv("OPENAI_TRANSLATION_TIMEOUT", "120"))
     
     @staticmethod
     def EMBEDDING_MODEL():

@@ -12,6 +12,8 @@ services:
     environment:
       - OPENAI_API_KEY
       - OPENAI_MODEL
+      - OPENAI_TRANSLATION_MODEL
+      - OPENAI_TRANSLATION_TIMEOUT
       - OPENAI_MAX_TOKENS
       - OPENAI_TEMPERATURE
       - OPENAI_TIMEOUT
