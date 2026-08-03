@@ -5,39 +5,33 @@ Centralized configuration management organized by domain.
 
 from .settings import Config
 
-# Legacy imports for backward compatibility
-# These map to the centralized Config object
-from .settings import Config as LegacyConfig
-
-# Create legacy aliases for backward compatibility
+# Legacy aliases retained for modules that still import the flat names.
+# Prefer `Config.<Group>.<SETTING>()` in new code.
 LLMConfig = Config.LLM
 ConfidenceConfig = Config.Confidence
 ChatConfig = Config.Chat
-DoclingConfig = Config.OCR  # OCR config for document processing
-PreprocessingConfigManager = Config.OCR
-PreprocessingSettings = Config.OCR
+DoclingConfig = Config.OCR
+OCRConfig = Config.OCR
 FileConfig = Config.File
 URLConfig = Config.URL
 RAGConfig = Config.RAG
-VietnamesePreprocessingConfig = Config.RAG
 ServerConfig = Config.Server
 LoggingConfig = Config.Logging
-HealthConfig = Config.Server  # Health config is part of Server config
+HealthConfig = Config.Health
+DatabaseConfig = Config.Database
 
 __all__ = [
     "Config",
-    # Legacy aliases for backward compatibility
     "LLMConfig",
-    "ConfidenceConfig", 
+    "ConfidenceConfig",
     "ChatConfig",
     "DoclingConfig",
-    "PreprocessingConfigManager",
-    "PreprocessingSettings",
+    "OCRConfig",
     "FileConfig",
     "URLConfig",
     "RAGConfig",
-    "VietnamesePreprocessingConfig",
     "ServerConfig",
     "LoggingConfig",
     "HealthConfig",
+    "DatabaseConfig",
 ]
