@@ -3,9 +3,10 @@ Pluggable reranker for hybrid retrieval results.
 Uses a cross-encoder if available, otherwise falls back to a lightweight heuristic reranker.
 """
 
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 import logging
 import os
+import threading
 
 # Set trust_remote_code environment variable before importing sentence_transformers
 os.environ["HF_TRUST_REMOTE_CODE"] = "True"
@@ -27,36 +28,50 @@ class Reranker:
     If a CrossEncoder model is available, use it; otherwise, rely on combined scores provided upstream.
     """
 
+    #: Last-resort fallback if the configured reranker can't load at all.
+    #: English-only, so it only kicks in as a degraded emergency path — the
+    #: configured default must stay a multilingual model for Vietnamese support.
+    _EMERGENCY_FALLBACK_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+
     def __init__(self, model_name: str = None):
         self._model = None
+        from config.settings import Config
+
         if model_name is None:
-            try:
-                from config.settings import Config
-                model_name = Config.RAG.RERANKER_MODEL()
-            except Exception:
-                model_name = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+            model_name = Config.RAG.RERANKER_MODEL()
         self._model_name = model_name
+        cache_dir = Config.Database.MODELS_DIR()
+
         if CrossEncoder is not None or TRANSFORMERS_AVAILABLE:
-            # Try configured model first, then known fallback models
-            for candidate in [model_name, "cross-encoder/ms-marco-MiniLM-L-6-v2"]:
+            candidates = list(dict.fromkeys([model_name, self._EMERGENCY_FALLBACK_MODEL]))
+            for candidate in candidates:
                 try:
                     # Special handling for jinaai models that require trust_remote_code
                     if candidate.startswith("jinaai/") and TRANSFORMERS_AVAILABLE:
-                        # Use transformers directly for jinaai models
-                        tokenizer = AutoTokenizer.from_pretrained(candidate, trust_remote_code=True)
-                        model = AutoModelForSequenceClassification.from_pretrained(candidate, trust_remote_code=True)
-                        # Create a CrossEncoder-like wrapper
+                        tokenizer = AutoTokenizer.from_pretrained(
+                            candidate, trust_remote_code=True, cache_dir=cache_dir
+                        )
+                        model = AutoModelForSequenceClassification.from_pretrained(
+                            candidate, trust_remote_code=True, cache_dir=cache_dir
+                        )
                         self._model = self._create_cross_encoder_wrapper(model, tokenizer)
-                        logger.info(f" Reranker loaded (transformers): {candidate}")
+                        logger.info("Reranker loaded (transformers): %s", candidate)
                     else:
-                        # Use sentence_transformers for other models
-                        self._model = CrossEncoder(candidate)
-                        logger.info(f" Reranker loaded (sentence_transformers): {candidate}")
-                    
+                        # CrossEncoder has no `cache_folder` param (unlike
+                        # SentenceTransformer) — the cache dir is passed through
+                        # to the underlying transformers `from_pretrained` calls
+                        # instead. Verified against sentence-transformers 2.5.1.
+                        self._model = CrossEncoder(
+                            candidate,
+                            automodel_args={"cache_dir": cache_dir},
+                            tokenizer_args={"cache_dir": cache_dir},
+                        )
+                        logger.info("Reranker loaded (sentence_transformers): %s", candidate)
+
                     self._model_name = candidate
                     break
-                except Exception as e:
-                    logger.warning(f" Failed to load reranker '{candidate}': {e}")
+                except Exception:
+                    logger.exception("Failed to load reranker '%s'", candidate)
 
     def _create_cross_encoder_wrapper(self, model, tokenizer):
         """Create a CrossEncoder-like wrapper for transformers models."""
@@ -124,3 +139,20 @@ class Reranker:
         return results[:top_k]
 
 
+_reranker: Optional[Reranker] = None
+_reranker_lock = threading.Lock()
+
+
+def get_reranker() -> Reranker:
+    """
+    Get the process-wide reranker.
+
+    Cross-encoder weights cost hundreds of megabytes and seconds to load, so the
+    model must be instantiated once per process rather than per retriever.
+    """
+    global _reranker
+    if _reranker is None:
+        with _reranker_lock:
+            if _reranker is None:
+                _reranker = Reranker()
+    return _reranker

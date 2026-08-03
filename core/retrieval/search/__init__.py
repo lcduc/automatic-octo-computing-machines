@@ -4,11 +4,12 @@ Handles document retrieval and search operations.
 """
 
 from .retriever import ContextRetriever
-from .reranker import Reranker
-from .parallel_processor import ParallelProcessor
+from .reranker import Reranker, get_reranker
+from .context_builder import ContextAssembler
 
 __all__ = [
     "ContextRetriever",
     "Reranker",
-    "ParallelProcessor",
+    "get_reranker",
+    "ContextAssembler",
 ]

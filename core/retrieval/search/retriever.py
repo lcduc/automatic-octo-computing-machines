@@ -8,9 +8,9 @@ import numpy as np
 import logging
 from rank_bm25 import BM25Okapi
 from ...ai_services.embeddings.embeddings import EmbeddingService, get_embedding_service
-from ...storage.vector_stores.vector_store_optimized import OptimizedVectorStore
+from ...storage.vector_stores.provider import get_vector_store_provider
 from ..similarity.similarity import SimilarityCalculator
-from .reranker import Reranker
+from .reranker import get_reranker
 from config.settings import Config
 import re
 from utils.text_processing import TextUtils
@@ -24,23 +24,30 @@ class ContextRetriever:
     Combines semantic embeddings and keyword search (BM25) for optimal retrieval.
     """
 
-    def __init__(self, embedding_service=None, similarity_calculator=None):
+    #: Candidate pool widths and cache bounds. Kept as class constants so they
+    #: are tunable in one place instead of scattered literals.
+    FAISS_CANDIDATE_MULTIPLIER = 20
+    FAISS_MIN_CANDIDATES = 200
+    RERANK_CANDIDATE_MULTIPLIER = 4
+    MAX_TOKENIZE_CACHE_ENTRIES = 1000
+    MAX_QUERY_CACHE_ENTRIES = 500
+
+    def __init__(self, embedding_service=None, similarity_calculator=None, vector_store_provider=None):
         # Initialize core components for search and similarity calculation
         if embedding_service is None:
             self.embedding_service = get_embedding_service()
         else:
             self.embedding_service = embedding_service
-        
-        self.vector_store = OptimizedVectorStore()  # Use optimized vector store with FAISS/HDF5
+
+        # Share the process-wide store so the FAISS index and metadata are
+        # already resident instead of being re-read per retriever instance.
+        self._vector_store_provider = vector_store_provider or get_vector_store_provider()
         if similarity_calculator is None:
             self.similarity_calculator = SimilarityCalculator()
         else:
             self.similarity_calculator = similarity_calculator
-        # Only initialize reranker if enabled
-        if Config.RAG.RERANKING_ENABLED():
-            self.reranker = Reranker()
-        else:
-            self.reranker = None
+        # Only initialize reranker if enabled (shared process-wide instance)
+        self.reranker = get_reranker() if Config.RAG.RERANKING_ENABLED() else None
 
         # Best-effort: load query adapter once at initialization
         try:
@@ -54,6 +61,17 @@ class ContextRetriever:
         self._tokenized_docs = None
         self._query_cache = {}  # Cache for BM25 query results
         self._query_preprocessing_cache = {}  # Cache for query preprocessing
+
+    @property
+    def vector_store(self):
+        """
+        The shared vector store, guaranteed to have its payload loaded.
+
+        Loading is idempotent and cached by the provider, so this is safe to
+        call on every search without paying repeated disk I/O.
+        """
+        self._vector_store_provider.get_data()
+        return self._vector_store_provider.get_store()
 
     def clear_cache(self):
         """Clear BM25 cache to ensure consistent search results."""
@@ -89,7 +107,7 @@ class ContextRetriever:
         self._query_preprocessing_cache[text] = tokens
         
         # Limit cache size
-        if len(self._query_preprocessing_cache) > 1000:
+        if len(self._query_preprocessing_cache) > self.MAX_TOKENIZE_CACHE_ENTRIES:
             # Remove oldest entries
             oldest_key = next(iter(self._query_preprocessing_cache))
             del self._query_preprocessing_cache[oldest_key]
@@ -109,10 +127,8 @@ class ContextRetriever:
         if not Config.RAG.CONTEXT_EXPANSION_ENABLED():
             return top_indices
 
-        # Get document metadata to check if chunks are from the same source
-        # Ensure vector store is loaded to get metadata
-        if not hasattr(self.vector_store, 'document_metadata') or self.vector_store.document_metadata is None:
-            self.vector_store.load_vector_store()
+        # Get document metadata to check if chunks are from the same source.
+        # The `vector_store` property guarantees the payload is loaded.
         document_metadata = self.vector_store.get_metadata()
         if not document_metadata or len(document_metadata) != total_documents:
             # Fallback: expand purely by index adjacency if metadata is missing
@@ -283,8 +299,14 @@ class ContextRetriever:
                 pass
 
             if Config.RAG.USE_FAISS_INDEX() and getattr(self.vector_store, "faiss_index", None) is not None:
-                logger.info("Using FAISS for semantic search")
-                top_similarities, top_indices = self.vector_store.fast_similarity_search(query_embedding, k)
+                logger.debug("Using FAISS for semantic search")
+                # Pull a wide candidate pool, not just k: the semantic scores are
+                # fused with BM25 and threshold-filtered afterwards, so a narrow
+                # pool would zero out documents that keyword search still needs.
+                faiss_candidates = min(len(documents), max(k * self.FAISS_CANDIDATE_MULTIPLIER, self.FAISS_MIN_CANDIDATES))
+                top_similarities, top_indices = self.vector_store.fast_similarity_search(
+                    query_embedding, faiss_candidates
+                )
                 # Expand to full-length semantic score vector aligned with documents
                 semantic_scores = np.zeros(len(documents), dtype=float)
                 # Ensure numeric type and safe assignment
@@ -320,7 +342,7 @@ class ContextRetriever:
                 self._query_cache[query_cache_key] = keyword_scores
                 
                 # Limit query cache size
-                if len(self._query_cache) > 500:
+                if len(self._query_cache) > self.MAX_QUERY_CACHE_ENTRIES:
                     # Remove oldest entries
                     oldest_key = next(iter(self._query_cache))
                     del self._query_cache[oldest_key]
@@ -361,7 +383,7 @@ class ContextRetriever:
 
             # Sort by combined score for initial ranking
             results.sort(key=lambda x: x["combined_score"], reverse=True)
-            candidate_multiplier = 4 if Config.RAG.RERANKING_ENABLED() else 1
+            candidate_multiplier = self.RERANK_CANDIDATE_MULTIPLIER if Config.RAG.RERANKING_ENABLED() else 1
             prelim_top_k = results[: max(k * candidate_multiplier, k)]
 
             top_k_results = prelim_top_k[:k]
@@ -373,8 +395,6 @@ class ContextRetriever:
 
             # Apply context expansion to include adjacent chunks
             top_indices = [result["index"] for result in top_k_results]
-            # Get document metadata for proper file boundary handling
-            document_metadata = self.vector_store.get_metadata()
             expanded_indices = self._expand_context_with_adjacent_chunks(
                 top_indices, len(documents), Config.RAG.CONTEXT_EXPANSION_RADIUS()
             )
@@ -412,111 +432,3 @@ class ContextRetriever:
         except Exception as e:
             logger.warning(f" Hybrid search failed: {e}")
             return []
-
-    def capture_user_feedback(
-        self, query: str, relevant_docs: List[str], feedback: bool
-    ):
-        """Capture user feedback for future improvements."""
-        if feedback:
-            pass
-        else:
-            pass
-
-    def debug_retrieval(
-        self, query: str, embeddings: np.ndarray, documents: List[str], k: int = 5
-    ) -> dict:
-        """Debug retrieval process. If used for API, consider using a Pydantic model."""
-        # TODO: Refactor to use a Pydantic model if this is exposed as an API response.
-        logger.info(f"Debugging retrieval for query: '{query[:50]}...'")
-
-        if len(documents) == 0:
-            return {"error": "No documents available"}
-
-        try:
-            # Get semantic scores
-            query_embedding = self._ensure_numpy(
-                self.embedding_service.encode([query], convert_to_numpy=True)
-            )
-            semantic_scores = self.similarity_calculator.cosine_similarity(
-                query_embedding, embeddings
-            )
-
-            # Get keyword scores
-            tokenized_docs = [self._tokenize(doc) for doc in documents]
-            bm25 = BM25Okapi(tokenized_docs)
-            keyword_scores = bm25.get_scores(self._tokenize(query))
-
-            # Normalize scores to [0, 1] before combining
-            norm_semantic_scores = self.similarity_calculator.normalize_similarities(
-                semantic_scores
-            )
-            norm_keyword_scores = self.similarity_calculator.normalize_similarities(
-                keyword_scores
-            )
-            # Combine normalized scores
-            combined_scores = (
-                Config.RAG.SEMANTIC_WEIGHT() * norm_semantic_scores
-                + (1 - Config.RAG.SEMANTIC_WEIGHT()) * norm_keyword_scores
-            )
-
-            # Filter by similarity threshold before sorting and selecting top K (use combined score)
-            threshold = Config.RAG.SIMILARITY_THRESHOLD()
-            filtered_indices = [
-                i for i in range(len(documents)) if combined_scores[i] >= threshold
-            ]
-
-            # Create detailed results (store both raw and normalized scores)
-            all_results = []
-            for i in filtered_indices:
-                all_results.append(
-                    {
-                        "index": i,
-                        "document_preview": documents[i][:100].replace("\n", " "),
-                        "semantic_score": float(semantic_scores[i]),
-                        "keyword_score": float(keyword_scores[i]),
-                        "norm_semantic_score": float(norm_semantic_scores[i]),
-                        "norm_keyword_score": float(norm_keyword_scores[i]),
-                        "combined_score": float(combined_scores[i]),
-                        "above_threshold": float(combined_scores[i])
-                        >= Config.RAG.SIMILARITY_THRESHOLD(),
-                    }
-                )
-
-            # Sort by combined score for ranking
-            all_results.sort(key=lambda x: x["combined_score"], reverse=True)
-            # Get top k results (or fewer if not enough above threshold)
-            top_k_results = all_results[:k]
-
-            # Apply context expansion
-            top_indices = [result["index"] for result in top_k_results]
-            if isinstance(top_indices, np.ndarray):
-                top_indices = top_indices.tolist()
-
-            expanded_indices = self._expand_context_with_adjacent_chunks(
-                top_indices, len(documents), Config.RAG.CONTEXT_EXPANSION_RADIUS()
-            )
-
-            # Get final results with expansion
-            final_results = []
-            for idx in expanded_indices:
-                result = next((r for r in all_results if r["index"] == idx), None)
-                if result:
-                    final_results.append(result)
-
-            return {
-                "query": query,
-                "total_documents": len(documents),
-                "top_k_original": k,
-                "final_chunks_retrieved": len(final_results),
-                "threshold": Config.RAG.SIMILARITY_THRESHOLD(),
-                "context_expansion_enabled": Config.RAG.CONTEXT_EXPANSION_ENABLED(),
-                "expansion_radius": Config.RAG.CONTEXT_EXPANSION_RADIUS(),
-                "all_scores": all_results,
-                "top_k_results": top_k_results,
-                "final_results": final_results,
-                "expanded_indices": expanded_indices,
-            }
-
-        except Exception as e:
-            logger.error(f" Debug retrieval failed: {e}")
-            return {"error": str(e)}
