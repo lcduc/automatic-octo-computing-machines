@@ -14,8 +14,8 @@ import time
 # Add the project root to the path so we can import modules
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from core.llm import ChatbotService
-from core.storage import vector_store
+from core.ai_services.llm.chatbot import ChatbotService
+from core.storage.vector_stores import get_vector_store_provider
 from services import ChatService
 
 
@@ -169,27 +169,21 @@ def print_comparison(raw_text: str, processed_text: str):
 async def get_real_llm_response(query: str) -> str:
     """Get a real response from the LLM using the chatbot service."""
     try:
-        # Initialize chatbot service
         chatbot_service = ChatbotService()
-        
-        # Load vector store
-        _, current_embeddings, current_documents = vector_store.load_vector_store()
-        
+
+        _, current_embeddings, current_documents = get_vector_store_provider().get_data()
+
         if current_embeddings is None:
             current_embeddings = []
-        elif isinstance(current_embeddings, list):
-            current_embeddings = current_embeddings
-        
-        # Get response from chatbot service
-        result = chatbot_service.get_response_with_history(
+
+        result = await chatbot_service.async_get_response(
             query=query,
             embeddings=current_embeddings,
             documents=current_documents,
-            history=None
         )
-        
+
         return result.get("response", "")
-        
+
     except Exception as e:
         print(f"Error getting LLM response: {e}")
         return f"Error: {str(e)}"
