@@ -3,18 +3,26 @@ Embedding service for text vectorization using sentence transformers.
 Provides GPU/CPU fallback and multiple model support for robust embedding generation.
 """
 
+# Standard library imports
+import logging
+
 # Third-party imports
 try:
     import torch
 except Exception:
     torch = None
 from sentence_transformers import SentenceTransformer
-import asyncio
-from concurrent.futures import ThreadPoolExecutor
+
+logger = logging.getLogger(__name__)
 
 # Lazy loading to avoid network issues during import
 embedder = None
 _embedding_service_instance = None
+
+#: Last-resort fallback if the configured/default multilingual model can't
+#: load at all (e.g. registry outage). Also multilingual — the service must
+#: keep working for Vietnamese queries even in this degraded path.
+_EMERGENCY_FALLBACK_MODEL = "paraphrase-multilingual-MiniLM-L12-v2"
 
 
 class EmbeddingService:
@@ -37,47 +45,41 @@ class EmbeddingService:
         Loads the best available model with device optimization.
         """
         if self.embedder is None:
-            # Check GPU availability for performance optimization
-            gpu_available = bool(torch) and torch.cuda.is_available()
-            print(f"GPU availability for embeddings: {gpu_available}")
+            from config.settings import Config
 
-            # Get model from config, with fallback to multilingual support
-            try:
-                from config.settings import Config
-                primary_model = Config.LLM.EMBEDDING_MODEL()
-            except Exception:
-                primary_model = "paraphrase-multilingual-MiniLM-L12-v2"
-            
-            # List of models to try in order of preference (respect env config first)
-            models_to_try = [
-                primary_model,  # Use configured model first
-                "paraphrase-multilingual-MiniLM-L12-v2",  # Best multilingual support
-                "all-MiniLM-L6-v2",  # Fast and efficient
-            ]
+            gpu_available = bool(torch) and torch.cuda.is_available()
+            logger.info("GPU availability for embeddings: %s", gpu_available)
+
+            primary_model = Config.LLM.EMBEDDING_MODEL()
+            cache_folder = Config.Database.MODELS_DIR()
+
+            # Both candidates are multilingual (English + Vietnamese, among
+            # others) — the fallback must not silently downgrade to an
+            # English-only model if the configured one fails to load.
+            models_to_try = list(dict.fromkeys([primary_model, _EMERGENCY_FALLBACK_MODEL]))
 
             for model_name in models_to_try:
+                if gpu_available:
+                    try:
+                        self.embedder = SentenceTransformer(
+                            model_name, device="cuda", cache_folder=cache_folder
+                        )
+                        logger.info("Embedding model '%s' loaded on GPU", model_name)
+                        break
+                    except Exception:
+                        logger.exception(
+                            "GPU load failed for embedding model '%s'; falling back to CPU",
+                            model_name,
+                        )
+
                 try:
-                    print(f" Attempting to load {model_name}...")
-
-                    # Try GPU first for better performance if available
-                    if gpu_available:
-                        try:
-                            self.embedder = SentenceTransformer(
-                                model_name, device="cuda"
-                            )
-                            print(f" {model_name} loaded successfully on GPU")
-                            break
-                        except Exception as gpu_error:
-                            print(f" GPU loading failed for {model_name}: {gpu_error}")
-                            print("🔄 Falling back to CPU...")
-
-                    # Fallback to CPU if GPU fails or unavailable
-                    self.embedder = SentenceTransformer(model_name, device="cpu")
-                    print(f" {model_name} loaded successfully on CPU")
+                    self.embedder = SentenceTransformer(
+                        model_name, device="cpu", cache_folder=cache_folder
+                    )
+                    logger.info("Embedding model '%s' loaded on CPU", model_name)
                     break
-
-                except Exception as e:
-                    print(f" Failed to load {model_name}: {e}")
+                except Exception:
+                    logger.exception("Failed to load embedding model '%s'", model_name)
                     continue
 
             if self.embedder is None:
@@ -152,10 +154,10 @@ class EmbeddingService:
             EmbeddingService._query_adapter_matrix = np.load(str(p))
             EmbeddingService._adapter_loaded_path = str(p)
             EmbeddingService._adapter_loaded_mtime = mtime
-            print(f" Loaded query adapter from {path}")
+            logger.info("Loaded query adapter from %s", path)
             return True
-        except Exception as e:
-            print(f" Failed to load query adapter: {e}")
+        except Exception:
+            logger.exception("Failed to load query adapter from %s", path)
             return False
 
     def apply_query_adapter(self, query_embedding):
@@ -180,13 +182,6 @@ class EmbeddingService:
         except Exception:
             # Fail open: return original embedding
             return query_embedding
-
-    async def async_encode(self, texts, convert_to_numpy=True):
-        loop = asyncio.get_event_loop()
-        with ThreadPoolExecutor() as pool:
-            return await loop.run_in_executor(
-                pool, self.encode, texts, convert_to_numpy
-            )
 
     def get_device_info(self):
         """
@@ -220,7 +215,7 @@ class EmbeddingService:
         if self.embedder is not None:
             # Clear the embedder to force reinitialization
             self.embedder = None
-            print("🔄 Embedder reset - will reinitialize on next use")
+            logger.info("Embedder reset - will reinitialize on next use")
 
 
 # Global functions for backward compatibility and convenience
