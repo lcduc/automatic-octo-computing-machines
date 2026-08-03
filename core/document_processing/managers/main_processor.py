@@ -11,7 +11,7 @@ from typing import Dict, Any, List
 
 # Local imports
 from config.settings import Config
-from ..processors.docling_processor import DoclingProcessor, AsyncDoclingProcessor
+from ..processors.docling_processor import DoclingProcessor
 from .file_manager import FileManager
 
 
@@ -30,40 +30,28 @@ class MainDocumentProcessor:
         enable_ocr: bool = None,  # Deprecated - OCR is now automatic for PDFs
         llm_client=None,
         llm_model: str = None,
-        preprocessing_config: str = "ocr_optimized",
     ):
         """
         Initialize main processor with file manager and Docling processor.
-        - PDFs: Automatically use OCR (like the test file)
+        - PDFs: Automatically OCR'd when they have no extractable text layer
         - Other formats: Use normal Docling extraction
-        
+
         Args:
             file_manager: File manager for handling file operations
             enable_ocr: Deprecated - OCR is now automatic for PDFs
             llm_client: OpenAI client for enhanced processing
             llm_model: LLM model to use for enhanced processing
-            preprocessing_config: Preprocessing configuration name ("ocr_optimized", "fast", "high_quality", "default")
         """
         self.file_manager = file_manager if file_manager is not None else FileManager()
-        
-        # Initialize Docling processor with automatic OCR for PDFs and preprocessing
+
         self.docling_processor = DoclingProcessor(
             enable_ocr=False,  # OCR is now automatic based on file type
             llm_client=llm_client,
             llm_model=llm_model,
-            preprocessing_config=preprocessing_config
         )
-        
-        # Create async wrapper for compatibility
-        self.async_processor = AsyncDoclingProcessor(
-            enable_ocr=False,  # OCR is now automatic based on file type
-            llm_client=llm_client,
-            llm_model=llm_model,
-            preprocessing_config=preprocessing_config
-        )
-        
+
         logger = __import__('logging').getLogger(__name__)
-        logger.info(f"MainDocumentProcessor initialized with automatic OCR for PDFs, preprocessing config: {preprocessing_config}")
+        logger.info("MainDocumentProcessor initialized with automatic OCR for PDFs")
 
     async def process_file(self, file_content: bytes, filename: str) -> Dict[str, Any]:
         """
