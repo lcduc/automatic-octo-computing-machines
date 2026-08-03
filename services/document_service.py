@@ -14,7 +14,7 @@ import time
 # Local imports
 from core.document_processing import MainDocumentProcessor, FileManager
 from core.document_processing.processors.processors import URLProcessor
-from core.storage.vector_stores import OptimizedVectorStore
+from core.storage.vector_stores import get_vector_store_provider
 from config.settings import Config
 
 logger = logging.getLogger(__name__)
@@ -27,19 +27,18 @@ class DocumentService:
     Uses Docling for basic document conversion.
     """
 
-    def __init__(self, processor=None, file_manager=None, enable_ocr: bool = None, llm_client=None, llm_model: str = None, preprocessing_config: str = "ocr_optimized"):
+    def __init__(self, processor=None, file_manager=None, enable_ocr: bool = None, llm_client=None, llm_model: str = None):
         """
         Initialize document service with processing components.
-        - PDFs: Automatically use OCR
+        - PDFs: Automatically OCR'd when they have no extractable text layer
         - Other formats: Use normal Docling extraction
-        
+
         Args:
             processor: Main document processor instance
             file_manager: File manager instance
             enable_ocr: Deprecated - OCR is now automatic for PDFs
             llm_client: OpenAI client for enhanced processing
             llm_model: LLM model to use for enhanced processing
-            preprocessing_config: Preprocessing configuration name ("ocr_optimized", "fast", "high_quality", "default")
         """
         self.file_manager = file_manager if file_manager is not None else FileManager()
         self.processor = (
@@ -50,7 +49,6 @@ class DocumentService:
                 enable_ocr=False,  # OCR is now automatic based on file type
                 llm_client=llm_client,
                 llm_model=llm_model,
-                preprocessing_config=preprocessing_config
             )
         )
         
@@ -67,8 +65,9 @@ class DocumentService:
         self._ocr_semaphore = asyncio.Semaphore(max_concurrent_files)
         logger.info(f"OCR concurrency control: max {max_concurrent_files} concurrent PDF files")
         
-        # Initialize vector store
-        self.vector_store = OptimizedVectorStore()
+        # Share the process-wide vector store so rebuilds are visible to chat
+        self._vector_store_provider = get_vector_store_provider()
+        self.vector_store = self._vector_store_provider.get_store()
 
     async def _process_with_ocr_control(self, file_content: bytes, filename: str) -> Dict[str, Any]:
         """
@@ -296,13 +295,20 @@ class DocumentService:
     ) -> bool:
         """
         Handle batch vector store updates for efficiency.
-        Updates vector store once with all successful documents to avoid repeated rebuilds.
+
+        Updates the vector store once with all successful documents, then
+        invalidates the shared cache so the chat path picks up the new corpus
+        without requiring a restart.
         """
-        if successful_documents and rebuild_at_end:
-            return self.vector_store.add_documents_batch(
-                successful_documents, rebuild_at_end=True
-            )
-        return False
+        if not (successful_documents and rebuild_at_end):
+            return False
+
+        updated = self.vector_store.add_documents_batch(
+            successful_documents, rebuild_at_end=True
+        )
+        if updated:
+            self._vector_store_provider.invalidate()
+        return updated
 
     def _create_batch_response(
         self,
