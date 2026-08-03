@@ -11,6 +11,9 @@ from typing import Optional, List, Dict, Any, Union
 # Third-party imports
 from pydantic import BaseModel, Field, PrivateAttr
 
+# Local imports
+from config.settings import Config
+
 
 class StatusEnum(str, Enum):
     """Status enumeration for API responses - standardizes response status values."""
@@ -82,30 +85,6 @@ class ChatResponse(BaseResponse):
                     "top_scores": [0.92, 0.85, 0.78],
                     "cached_response": False,
                 },
-                "timestamp": "2024-01-01T12:00:00Z",
-            }
-        }
-
-
-class FileUploadResponse(BaseResponse):
-    """File upload response model with processing results and metadata."""
-
-    filename: str = Field(..., description="Uploaded filename")
-    file_size: int = Field(..., description="File size in bytes")
-    document_count: int = Field(..., description="Number of documents extracted")
-    source_id: str = Field(..., description="Generated source ID")
-    metadata: Dict[str, Any] = Field(..., description="File metadata")
-
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "status": "success",
-                "message": "File processed successfully",
-                "filename": "document.pdf",
-                "file_size": 1024000,
-                "document_count": 15,
-                "source_id": "uuid-123",
-                "metadata": {"file_type": "pdf"},
                 "timestamp": "2024-01-01T12:00:00Z",
             }
         }
@@ -186,18 +165,6 @@ class MultipleFileUploadResponse(BaseResponse):
                 "timestamp": "2024-01-01T12:00:00Z",
             }
         }
-
-
-class URLProcessResponse(BaseResponse):
-    """URL processing response model for web content ingestion."""
-
-    url: str = Field(..., description="Processed URL")
-    document_count: int = Field(..., description="Number of documents extracted")
-    source_id: str = Field(..., description="Generated source ID")
-    linked_urls: Optional[List[str]] = Field(
-        None, description="Additional URLs processed"
-    )
-    metadata: Dict[str, Any] = Field(..., description="URL metadata")
 
 
 class URLProcessingResponse(BaseResponse):
@@ -293,14 +260,34 @@ class ChatRequest(BaseModel):
         }
 
 
-class QueryRequest(BaseModel):
-    """Simple query request model for query-only mode (temporarily without history)."""
+class BatchChatRequest(BaseModel):
+    """Batch request model: several independent questions, no shared history."""
 
-    query: str = Field(..., description="User query", min_length=1, max_length=2000)
+    queries: List[str] = Field(
+        ...,
+        min_length=1,
+        max_length=Config.LLM.CHAT_BATCH_MAX_QUERIES(),
+        description="Independent questions to answer concurrently",
+    )
 
     class Config:
         json_schema_extra = {
-            "example": {
-                "query": "Hi?"
-            }
+            "example": {"queries": ["What is the refund policy?", "How long does shipping take?"]}
         }
+
+
+class BatchChatResult(BaseModel):
+    """Outcome for a single query within a batch request."""
+
+    query: str = Field(..., description="The original query")
+    response: Optional[str] = Field(None, description="Generated answer, if successful")
+    success: bool = Field(..., description="Whether an answer was generated")
+    cached: bool = Field(False, description="Whether the answer was served from cache")
+    confidence: Optional[float] = Field(None, description="Overall confidence score, if available")
+    error: Optional[str] = Field(None, description="Failure reason, if unsuccessful")
+
+
+class BatchChatResponse(BaseModel):
+    """Response model for ``POST /chat/batch``."""
+
+    results: List[BatchChatResult] = Field(..., description="One result per input query, in order")

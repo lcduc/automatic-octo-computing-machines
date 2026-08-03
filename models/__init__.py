@@ -8,10 +8,10 @@ from .responses import (
     BaseResponse,
     HealthResponse,
     ChatResponse,
-    FileUploadResponse,
+    ChatRequest,
     FileProcessResult,
     MultipleFileUploadResponse,
-    URLProcessResponse,
+    URLProcessingResponse,
     ErrorResponse,
 )
 
