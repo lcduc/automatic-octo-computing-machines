@@ -154,12 +154,12 @@ OPENAI_API_KEY=your_openai_api_key_here
 | `/files/url`       | POST   | Process URLs and extract content   |
 
 ### Models & Maintenance
-| Endpoint           | Method | Description                        |
-|--------------------|--------|------------------------------------|
-| `/models`          | GET    | Model status and availability      |
-| `/cleanup`         | POST   | Clean up data and logs             |
-| `/cleanup/vectors/rebuild` | POST | Rebuild vector store            |
-| `/cleanup/query-adapter/update` | POST | Update query adapter         |
+| Endpoint                         | Method | Description                                          |
+|----------------------------------|--------|-------------------------------------------------------|
+| `/models`                        | GET    | Model status and availability                        |
+| `/cleanup`                       | POST   | Wipe all data & logs — disabled by default, see `DESTRUCTIVE_CLEANUP_ENABLED` |
+| `/cleanup/vectors/rebuild`       | POST   | Rebuild vector store from existing chunks (non-destructive) |
+| `/cleanup/query-adapter/update`  | POST   | Update query adapter                                 |
 
 ### Documentation
 | Endpoint           | Method | Description                        |
@@ -232,11 +232,16 @@ The application uses environment variables for configuration. Key variables incl
 ### ⚙️ **Optional Variables**
 - `HOST`: Server host (default: 0.0.0.0)
 - `PORT`: Server port (default: 8500)
-- `EMBEDDING_MODEL`: Embedding model (default: paraphrase-multilingual-MiniLM-L12-v2)
-- `RERANKER_MODEL`: Reranker model (default: cross-encoder/ms-marco-MiniLM-L6-v2)
+- `EMBEDDING_MODEL`: Embedding model, multilingual EN+VI (default: paraphrase-multilingual-MiniLM-L12-v2)
+- `RERANKER_MODEL`: Reranker model, multilingual EN+VI (default: BAAI/bge-reranker-v2-m3)
+- `MODELS_DIR`: Local cache dir for downloaded model weights (default: models)
 - `MAX_FILE_SIZE`: Maximum file size in bytes (default: 52428800)
 - `CHUNK_SIZE`: Document chunk size (default: 1000)
-- `SIMILARITY_THRESHOLD`: Search similarity threshold (default: 0.5)
+- `SIMILARITY_THRESHOLD`: Search similarity threshold (default: 0.7)
+- `MAX_HISTORY_LENGTH`: Max prior messages replayed into the prompt (default: 10)
+- `RETRIEVAL_MAX_CONCURRENCY`: Concurrent GPU-bound retrieval ops per process (default: 4)
+- `API_KEY`: Optional shared-secret header auth, empty = disabled (default: empty)
+- `DESTRUCTIVE_CLEANUP_ENABLED`: Enables `POST /cleanup` (default: False)
 
 See `.env.example` for a complete list of available configuration options.
 
