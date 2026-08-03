@@ -12,6 +12,18 @@ from utils.file_operations import cleanup_data_folders
 # Disable SSL warnings for self-signed certificates
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
+
+def _auth_headers() -> dict:
+    """
+    Build the ``X-API-Key`` header if the optional backend API key is set.
+
+    Only needed when the deployment has opted into ``API_KEY`` (see
+    ``config/settings.py``); returns an empty dict otherwise so this UI keeps
+    working unmodified for deployments that don't use it.
+    """
+    api_key = os.getenv("API_KEY", "")
+    return {"X-API-Key": api_key} if api_key else {}
+
 # Ensure Streamlit can read secrets from environment variables when
 # `.streamlit/secrets.toml` is not present. This copies common secret
 # keys (currently `OPENAI_API_KEY`) into `st.secrets` when possible and
@@ -56,7 +68,7 @@ def is_backend_healthy(base_url: str) -> bool:
 
 def stream_chat(base_url: str, query: str, history: list = None):
     url = f"{base_url}/chat/"
-    headers = {"accept": "text/event-stream", "content-type": "application/json"}
+    headers = {"accept": "text/event-stream", "content-type": "application/json", **_auth_headers()}
     payload = {"query": query}
     if history:
         payload["history"] = history
@@ -450,7 +462,7 @@ class ChatApp:
                         if uploaded_docs:
                             files_payload = [("files", (f.name, f.getvalue(), f.type or "application/octet-stream")) for f in uploaded_docs]
                             try:
-                                resp = requests.post(f"{api_base_url}/files/upload", files=files_payload, timeout=600, verify=False)
+                                resp = requests.post(f"{api_base_url}/files/upload", files=files_payload, headers=_auth_headers(), timeout=600, verify=False)
                                 if resp.ok:
                                     st.session_state.uploaded_docs.extend([f.name for f in uploaded_docs])
                                     st.toast("Files uploaded")
@@ -463,7 +475,7 @@ class ChatApp:
                             urls = [u.strip() for u in st.session_state.url_inputs if u.strip()]
                             if urls:
                                 try:
-                                    resp2 = requests.post(f"{api_base_url}/files/url", json={"urls": urls}, timeout=600, verify=False)
+                                    resp2 = requests.post(f"{api_base_url}/files/url", json={"urls": urls}, headers=_auth_headers(), timeout=600, verify=False)
                                     if resp2.ok:
                                         st.session_state.uploaded_urls.extend(urls)
                                         st.toast("URLs processed")
@@ -506,6 +518,14 @@ class ChatApp:
         # Chat input (streams from backend /chat)
         user_input = st.chat_input("Type your question…")
         if user_input:
+            # Snapshot history *before* appending this turn's question — it is
+            # sent to the backend separately as `query`, so including it here
+            # too would make the model see the same question twice.
+            # Keep this in sync with the backend's MAX_HISTORY_TURNS (one turn
+            # = one user message + one assistant reply).
+            max_history_messages = int(os.getenv("MAX_HISTORY_TURNS", "10")) * 2
+            recent_history = st.session_state.chat_history[-max_history_messages:] if st.session_state.chat_history else []
+
             st.session_state.chat_history.append({"role": "user", "content": user_input})
             with st.chat_message("user"):
                 st.markdown(user_input)
@@ -515,8 +535,6 @@ class ChatApp:
                 accumulated = ""
                 last_flush = time.time()
                 try:
-                    # Use api_base_url from sidebar and pass only the most recent 10 messages
-                    recent_history = st.session_state.chat_history[-10:] if st.session_state.chat_history else []
                     for token in stream_chat(api_base_url, user_input, recent_history):
                         accumulated += token
                         now = time.time()

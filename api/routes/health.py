@@ -3,26 +3,37 @@ Health check and system status endpoints for monitoring and diagnostics.
 """
 
 # Standard library imports
-import os
+import logging
 import time
 
 # Third-party imports
 import psutil
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter
+from pydantic import BaseModel, Field
 
 # Local imports
-from setting import Config
+from config.settings import Config
+from core.infrastructure.caching.cache_service import get_cache_service
+from core.storage.vector_stores import get_vector_store_provider
 from models.responses import HealthResponse, StatusEnum
-from pydantic import BaseModel, Field
 from utils.performance import get_performance_monitor
-from utils.performance import get_background_manager
-from utils.performance import get_model_preloader
-from api.dependencies import get_chat_service
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
+
+#: API version reported by the health endpoints.
+API_VERSION = "2.0.0"
+
+#: Filesystem root inspected for disk usage; Windows resolves this to the drive.
+DISK_USAGE_PATH = "/"
 
 # Track server start time for uptime calculation
 _start_time = time.time()
+
+
+def _uptime_seconds() -> float:
+    """Seconds elapsed since this worker started."""
+    return time.time() - _start_time
 
 
 @router.get("/", response_model=HealthResponse)
@@ -31,42 +42,45 @@ async def health_check():
     Basic health check endpoint for load balancers and monitoring.
     Returns server status, version, and uptime information.
     """
-    # Calculate uptime in human-readable format
-    uptime_seconds = time.time() - _start_time
-    uptime_str = f"{int(uptime_seconds // 3600)}h {int((uptime_seconds % 3600) // 60)}m {int(uptime_seconds % 60)}s"
-
+    uptime = _uptime_seconds()
+    uptime_str = (
+        f"{int(uptime // 3600)}h {int((uptime % 3600) // 60)}m {int(uptime % 60)}s"
+    )
     return HealthResponse(
         status=StatusEnum.SUCCESS,
         message="Enhanced RAG Chatbot API is running",
-        version="2.0.0",
+        version=API_VERSION,
         uptime=uptime_str,
     )
 
 
 class SystemStatusResponse(BaseModel):
-    status: str = Field(...)
-    version: str = Field(...)
-    uptime_seconds: int = Field(...)
-    system: dict = Field(...)
-    configuration: dict = Field(...)
+    """Resource usage and effective configuration for the running worker."""
+
+    status: str = Field(..., description="Overall status of the worker")
+    version: str = Field(..., description="API version")
+    uptime_seconds: int = Field(..., description="Seconds since worker start")
+    system: dict = Field(..., description="CPU, memory and disk usage")
+    configuration: dict = Field(..., description="Effective runtime configuration")
 
 
 @router.get("/status", response_model=SystemStatusResponse)
 async def detailed_status():
     """
     Comprehensive system status endpoint with resource usage metrics.
-    Provides CPU, memory, disk usage and configuration details.
+
+    CPU is sampled without blocking (percentage since the previous sample), so
+    this endpoint stays safe to poll from a load balancer.
     """
     try:
-        # Get system resource information
         memory = psutil.virtual_memory()
-        disk = psutil.disk_usage("/")
+        disk = psutil.disk_usage(DISK_USAGE_PATH)
         return SystemStatusResponse(
             status="healthy",
-            version="2.0.0",
-            uptime_seconds=int(time.time() - _start_time),
+            version=API_VERSION,
+            uptime_seconds=int(_uptime_seconds()),
             system={
-                "cpu_percent": psutil.cpu_percent(interval=1),
+                "cpu_percent": psutil.cpu_percent(interval=None),
                 "memory": {
                     "total": memory.total,
                     "available": memory.available,
@@ -75,25 +89,29 @@ async def detailed_status():
                 "disk": {
                     "total": disk.total,
                     "free": disk.free,
-                    "percent": (disk.used / disk.total) * 100,
+                    "percent": (disk.used / disk.total) * 100 if disk.total else 0,
                 },
             },
             configuration={
-                "host": Config.HOST(),
-                "port": Config.PORT(),
-                "debug": Config.DEBUG(),
-                "openai_model": Config.OPENAI_MODEL(),
-                "max_file_size": Config.MAX_FILE_SIZE(),
-                "chunks_dir": Config.CHUNKS_DIR(),
-                "vectors_dir": Config.VECTORS_DIR(),
-                "temp_dir": Config.TEMP_DIR(),
+                "host": Config.Server.HOST(),
+                "port": Config.Server.PORT(),
+                "debug": Config.Server.DEBUG(),
+                "openai_model": Config.LLM.OPENAI_MODEL(),
+                "embedding_model": Config.LLM.EMBEDDING_MODEL(),
+                "reranker_model": Config.RAG.RERANKER_MODEL(),
+                "max_file_size": Config.File.MAX_FILE_SIZE(),
+                "chunks_dir": Config.Database.CHUNKS_DIR(),
+                "vectors_dir": Config.Database.VECTORS_DIR(),
+                "temp_dir": Config.Database.TEMP_DIR(),
+                "knowledge_base_loaded": get_vector_store_provider().is_loaded,
             },
         )
-    except Exception as e:
+    except Exception:
+        logger.exception("Failed to collect system status")
         return SystemStatusResponse(
             status="error",
-            version="2.0.0",
-            uptime_seconds=int(time.time() - _start_time),
+            version=API_VERSION,
+            uptime_seconds=int(_uptime_seconds()),
             system={},
             configuration={},
         )
@@ -107,39 +125,37 @@ async def performance_metrics():
     """
     try:
         monitor = get_performance_monitor()
-        stats = monitor.get_performance_stats()
-        health_status = monitor.get_health_status()
-        
         return {
             "status": "success",
-            "health_status": health_status,
-            "performance_metrics": stats,
-            "timestamp": time.time()
+            "health_status": monitor.get_health_status(),
+            "performance_metrics": monitor.get_performance_stats(),
+            "timestamp": time.time(),
         }
-    except Exception as e:
-        return {
-            "status": "error",
-            "error": str(e),
-            "timestamp": time.time()
-        }
+    except Exception as exc:
+        logger.exception("Failed to collect performance metrics")
+        return {"status": "error", "error": str(exc), "timestamp": time.time()}
 
 
 @router.get("/cache-stats")
-async def cache_statistics(chat_service=Depends(get_chat_service)):
+async def cache_statistics():
     """
-    Get detailed cache statistics for all cache layers.
-    Returns information about smart cache, chatbot cache, and vector store cache.
+    Get cache statistics for the smart cache and the knowledge base.
+
+    Reads the shared singletons directly rather than depending on the chat
+    service, so monitoring never triggers model loading.
     """
     try:
-        cache_stats = chat_service.get_cache_stats()
         return {
             "status": "success",
-            "cache_statistics": cache_stats,
-            "timestamp": time.time()
+            "cache_statistics": {
+                "smart_cache": get_cache_service().get_stats(),
+                "vector_store_cache": {
+                    "loaded": get_vector_store_provider().is_loaded,
+                },
+                "performance_metrics": get_performance_monitor().get_performance_stats(),
+            },
+            "timestamp": time.time(),
         }
-    except Exception as e:
-        return {
-            "status": "error",
-            "error": str(e),
-            "timestamp": time.time()
-        }
+    except Exception as exc:
+        logger.exception("Failed to collect cache statistics")
+        return {"status": "error", "error": str(exc), "timestamp": time.time()}
