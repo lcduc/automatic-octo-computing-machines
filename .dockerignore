@@ -58,7 +58,10 @@ data/chunks/*
 data/vectors/*
 data/temp/*
 
-# Large model files (downloaded at runtime)
+# Large model files. Weights are downloaded fresh at build time by
+# `RUN python -m scripts.download_models` (see Dockerfile) — excluding the
+# local cache here means the image never ships a stale host-side copy.
 *.pkl
 *.bin
 *.safetensors
+models/

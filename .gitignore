@@ -164,3 +164,7 @@ data/
 .cursor/
 /.streamlit/secrets.toml
 SSL/
+
+# Downloaded ML model weights (fetched by scripts/download_models.py /
+# Dockerfile build step) — multi-hundred-MB, don't commit to git.
+models/
