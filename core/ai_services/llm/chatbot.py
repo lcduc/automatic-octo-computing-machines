@@ -11,6 +11,7 @@ scoring. The mechanics of each of those steps live in dedicated collaborators
 import asyncio
 import hashlib
 import logging
+import time
 from typing import Any, AsyncGenerator, Dict, List, Optional, Union
 
 # Third-party imports
@@ -19,10 +20,13 @@ from openai import APIConnectionError, APIStatusError, APITimeoutError
 
 # Local imports
 from config.settings import Config
+from core.infrastructure.audit import AuditTrailService, get_audit_trail_service
+from models.audit_entry import AuditEntry
 from models.responses import ChatResponse, ErrorResponse, StatusEnum
 from ..confidence.confidence import ConfidenceScorer
 from .openai_client import OpenAIClientProvider
 from .prompts import PromptManager
+from .query_rewriter import QueryRewriter
 from .response_cache import ResponseCache
 from .response_factory import ChatResponseFactory
 
@@ -58,6 +62,7 @@ class ChatbotService:
         context_retriever=None,
         client_provider: Optional[OpenAIClientProvider] = None,
         response_cache: Optional[ResponseCache] = None,
+        audit_trail: Optional[AuditTrailService] = None,
     ):
         """
         Args:
@@ -65,6 +70,8 @@ class ChatbotService:
                 from the default implementation when omitted.
             client_provider: Owner of the OpenAI clients.
             response_cache: Cache of previously generated answers.
+            audit_trail: Recorder for the per-turn audit log; defaults to the
+                process-wide instance.
         """
         from core.retrieval.search.context_builder import ContextAssembler
         from core.retrieval.search.retriever import ContextRetriever
@@ -75,10 +82,12 @@ class ChatbotService:
         self.context_assembler = ContextAssembler()
 
         self._client_provider = client_provider or OpenAIClientProvider()
+        self.query_rewriter = QueryRewriter(self._client_provider)
         self._cache = response_cache or ResponseCache(
             max_entries=Config.LLM.LLM_CACHE_MAX_ENTRIES(),
             ttl_seconds=Config.LLM.LLM_CACHE_TTL(),
         )
+        self._audit_trail = audit_trail or get_audit_trail_service()
         self._responses = ChatResponseFactory(self.confidence_scorer)
         self._api_available = self._client_provider.check_availability()
 
@@ -145,22 +154,36 @@ class ChatbotService:
         )
 
     def _retrieve_context(
-        self, query: str, embeddings, documents
-    ) -> tuple[str, List[Dict[str, Any]]]:
+        self,
+        query: str,
+        embeddings,
+        documents,
+        history: Optional[List[Dict[str, str]]] = None,
+    ) -> tuple[str, List[Dict[str, Any]], str]:
         """
         Run hybrid search and assemble the prompt context.
 
+        The search string is condensed from ``history`` + ``query`` when
+        history is present, so a follow-up like "còn cái kia thì sao?" is
+        searched as a standalone question instead of literally. The original
+        ``query`` is untouched — only the retrieval input changes.
+
         Returns:
-            A ``(context, search_results)`` pair; both empty when RAG is not
-            applicable or retrieval fails.
+            A ``(context, search_results, search_query)`` triple; ``context``
+            and ``search_results`` are empty when RAG is not applicable or
+            retrieval fails. ``search_query`` is what was actually searched
+            for (== ``query`` when there was no history to rewrite from), so
+            callers can record it for auditing.
         """
         if documents is None or embeddings is None or len(documents) == 0:
             logger.debug("RAG disabled: no documents or embeddings provided")
-            return "", []
+            return "", [], query
+
+        search_query = self.query_rewriter.rewrite(query, history)
 
         try:
             search_results = self.context_retriever.hybrid_search(
-                query=query,
+                query=search_query,
                 embeddings=embeddings,
                 documents=documents,
                 k=Config.RAG.RETRIEVAL_TOP_K(),
@@ -173,14 +196,18 @@ class ChatbotService:
                 len(context),
                 self._query_id(query),
             )
-            return context, search_results
+            return context, search_results, search_query
         except Exception:
             logger.exception("Context retrieval failed for query %s", self._query_id(query))
-            return "", []
+            return "", [], search_query
 
     async def _retrieve_context_async(
-        self, query: str, embeddings, documents
-    ) -> tuple[str, List[Dict[str, Any]]]:
+        self,
+        query: str,
+        embeddings,
+        documents,
+        history: Optional[List[Dict[str, str]]] = None,
+    ) -> tuple[str, List[Dict[str, Any]], str]:
         """
         Async wrapper around :meth:`_retrieve_context` for use on the event loop.
 
@@ -190,7 +217,9 @@ class ChatbotService:
         request's async I/O in the meantime.
         """
         async with self._retrieval_semaphore:
-            return await asyncio.to_thread(self._retrieve_context, query, embeddings, documents)
+            return await asyncio.to_thread(
+                self._retrieve_context, query, embeddings, documents, history
+            )
 
     def _build_messages(
         self,
@@ -265,6 +294,52 @@ class ChatbotService:
             response_text, query, context, search_results or []
         )
 
+    def _record_audit(
+        self,
+        query: str,
+        response_text: str,
+        confidence,
+        search_results: Optional[List[Dict[str, Any]]],
+        cached: bool,
+        latency_ms: float,
+        success: bool,
+        error: Optional[str] = None,
+        rewritten_query: Optional[str] = None,
+    ) -> None:
+        """
+        Record one audit trail entry for an answered (or failed) turn.
+
+        Never raises: a logging problem here must not affect the response
+        already produced for the user.
+        """
+        if not Config.Audit.ENABLED():
+            return
+        try:
+            confidence_score = confidence.overall_score if confidence is not None else 0.0
+            confidence_level = (
+                self.confidence_scorer.get_confidence_level(confidence_score)
+                if confidence is not None
+                else "Unknown"
+            )
+            entry = AuditEntry(
+                query_id=self._query_id(query),
+                query=query,
+                rewritten_query=(
+                    rewritten_query if rewritten_query and rewritten_query != query else None
+                ),
+                response=response_text,
+                confidence_score=confidence_score,
+                confidence_level=confidence_level,
+                source_count=len(search_results or []),
+                cached=cached,
+                latency_ms=latency_ms,
+                success=success,
+                error=error,
+            )
+            self._audit_trail.record(entry)
+        except Exception:
+            logger.exception("Failed to build audit entry for query %s", self._query_id(query))
+
     @staticmethod
     def _map_api_error(exc: Exception) -> str:
         """Translate an OpenAI SDK exception into user-facing text."""
@@ -298,14 +373,26 @@ class ChatbotService:
         if not self.api_available:
             return self._create_error_response(query, UNAVAILABLE_MESSAGE)
 
+        start_time = time.perf_counter()
+
         try:
             response_text, cached = self._complete(query, context)
         except Exception as exc:
             logger.exception("OpenAI call failed for query %s", self._query_id(query))
+            self._record_audit(
+                query, "", None, search_results, cached=False,
+                latency_ms=(time.perf_counter() - start_time) * 1000,
+                success=False, error=str(exc),
+            )
             return self._create_error_response(query, self._map_api_error(exc))
 
         try:
             confidence = self._score(response_text, query, context, search_results)
+            self._record_audit(
+                query, response_text, confidence, search_results, cached=cached,
+                latency_ms=(time.perf_counter() - start_time) * 1000,
+                success=True,
+            )
             return self._responses.chat_response(
                 query, response_text, confidence, search_results, cached
             )
@@ -330,7 +417,7 @@ class ChatbotService:
         if not self.api_available:
             return self._create_error_response(query, UNAVAILABLE_MESSAGE)
 
-        context, search_results = self._retrieve_context(query, embeddings, documents)
+        context, search_results, _ = self._retrieve_context(query, embeddings, documents)
         return self.get_response_with_context(query, context, search_results)
 
     # ------------------------------------------------------------------
@@ -354,7 +441,7 @@ class ChatbotService:
         if not self.api_available:
             return ChatResponseFactory.history_error_payload(UNAVAILABLE_MESSAGE)
 
-        context, search_results = await self._retrieve_context_async(query, embeddings, documents)
+        context, search_results, _ = await self._retrieve_context_async(query, embeddings, documents)
         try:
             response_text, cached = await self._complete_async(query, context)
             confidence = self._score(response_text, query, context, search_results)
@@ -437,31 +524,79 @@ class ChatbotService:
             yield "[ERROR] Chat service unavailable."
             return
 
+        start_time = time.perf_counter()
+        search_results: List[Dict[str, Any]] = []
+        search_query = query
+        chunks: List[str] = []
+
+        def record_failure(error_text: str) -> None:
+            """Audit a failed turn, capturing any partial text already streamed out."""
+            self._record_audit(
+                query,
+                "".join(chunks),
+                None,
+                search_results,
+                cached=False,
+                latency_ms=(time.perf_counter() - start_time) * 1000,
+                success=False,
+                error=error_text,
+                rewritten_query=search_query,
+            )
+
         try:
-            context, _ = await self._retrieve_context_async(query, embeddings, documents)
+            context, search_results, search_query = await self._retrieve_context_async(
+                query, embeddings, documents, history
+            )
 
             cache_key = ResponseCache.build_key(query, context, history)
             cached_text = self._cache.get(cache_key)
             if cached_text is not None:
                 logger.debug("Cache hit for query %s", self._query_id(query))
+                confidence = self._score(cached_text, query, context, search_results)
+                self._record_audit(
+                    query,
+                    cached_text,
+                    confidence,
+                    search_results,
+                    cached=True,
+                    latency_ms=(time.perf_counter() - start_time) * 1000,
+                    success=True,
+                    rewritten_query=search_query,
+                )
                 yield cached_text
                 return
 
             messages = self._build_messages(query, context, history)
-            chunks: List[str] = []
             async for delta in self._client_provider.stream(messages):
                 chunks.append(delta)
                 yield delta
-            self._cache.set(cache_key, "".join(chunks))
-        except APITimeoutError:
+            response_text = "".join(chunks)
+            self._cache.set(cache_key, response_text)
+
+            confidence = self._score(response_text, query, context, search_results)
+            self._record_audit(
+                query,
+                response_text,
+                confidence,
+                search_results,
+                cached=False,
+                latency_ms=(time.perf_counter() - start_time) * 1000,
+                success=True,
+                rewritten_query=search_query,
+            )
+        except APITimeoutError as exc:
             logger.exception("OpenAI API timeout during streaming")
+            record_failure(str(exc))
             yield "[ERROR] Request timeout - the AI service took too long to respond."
         except APIStatusError as exc:
             logger.exception("OpenAI API status error during streaming")
+            record_failure(str(exc))
             yield f"[ERROR] API error: {exc}"
         except (APIConnectionError, ConnectionResetError, OSError) as exc:
             logger.exception("Connection error during streaming")
+            record_failure(str(exc))
             yield f"[ERROR] Connection error: Could not reach the AI service. {exc}"
         except Exception as exc:
             logger.exception("Unexpected error in stream_response_with_history")
+            record_failure(str(exc))
             yield f"[ERROR] {exc}"

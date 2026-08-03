@@ -146,6 +146,37 @@ class OpenAIClientProvider:
         content = response.choices[0].message.content
         return content.strip() if content else ""
 
+    async def complete_with_tools_async(
+        self, messages: List[Dict[str, Any]], tools: Optional[List[Dict[str, Any]]] = None
+    ) -> Any:
+        """
+        Run a non-streaming chat completion, optionally offering tools to call.
+
+        Unlike :meth:`complete_async`, this returns the raw assistant message
+        instead of just its text, so the caller can inspect ``tool_calls``
+        before deciding whether to execute anything. ``tools`` is omitted
+        from the request entirely when empty, rather than sent as ``[]``.
+
+        Args:
+            messages: OpenAI-format message list.
+            tools: Tool schemas (``{"type": "function", "function": {...}}``),
+                or ``None``/empty to make a plain completion.
+
+        Returns:
+            The assistant ``message`` object (``.content``, ``.tool_calls``).
+        """
+        kwargs: Dict[str, Any] = dict(
+            model=Config.LLM.OPENAI_MODEL(),
+            messages=messages,
+            max_tokens=Config.LLM.OPENAI_MAX_TOKENS(),
+            temperature=Config.LLM.OPENAI_TEMPERATURE(),
+        )
+        if tools:
+            kwargs["tools"] = tools
+            kwargs["tool_choice"] = "auto"
+        response = await self.async_client.chat.completions.create(**kwargs)
+        return response.choices[0].message
+
     async def stream(self, messages: List[Dict[str, Any]]) -> AsyncIterator[str]:
         """
         Stream a chat completion, yielding text deltas as they arrive.

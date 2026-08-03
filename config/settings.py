@@ -553,6 +553,20 @@ class HealthConfig:
         return env_int("SERVICE_MIN_REQUESTS_FOR_HEALTH", 10)
 
 
+class AuditConfig:
+    """Durable per-turn chat audit trail (query, response, confidence, sources)."""
+
+    @staticmethod
+    def ENABLED() -> bool:
+        """Record one audit entry per answered chat turn."""
+        return env_bool("AUDIT_TRAIL_ENABLED", True)
+
+    @staticmethod
+    def LOG_PATH() -> str:
+        """JSON-Lines file the audit trail is appended to."""
+        return env_str("AUDIT_TRAIL_PATH", os.path.join(DatabaseConfig.LOG_DIR(), "audit_trail.jsonl"))
+
+
 class Config:
     """Namespaced access point for every configuration group."""
 
@@ -567,6 +581,7 @@ class Config:
     URL = URLConfig
     Confidence = ConfidenceConfig
     Health = HealthConfig
+    Audit = AuditConfig
 
     @staticmethod
     def validate() -> bool:
