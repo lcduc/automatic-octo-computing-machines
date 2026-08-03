@@ -128,8 +128,10 @@ class LogManager:
                         except:
                             pass
 
-                    # Collect errors
-                    if "error" in line_lower or "" in line:
+                    # Collect errors. NOTE: the previous condition included
+                    # `"" in line`, which is always True and tagged every line
+                    # as an error.
+                    if "error" in line_lower or "exception" in line_lower:
                         rag_info["errors"].append(line.strip())
 
         except Exception as e:

@@ -77,7 +77,7 @@ class ModelPreloader:
             logger.info(f"Embedding model loaded in {load_time:.2f}s")
             
         except Exception as e:
-            logger.error(f"Failed to preload embedding model: {e}")
+            logger.exception("Failed to preload embedding model")
             self.loading_errors["embedding"] = str(e)
             self.loaded_models["embedding"] = {"status": "failed", "error": str(e)}
     
@@ -87,9 +87,9 @@ class ModelPreloader:
             logger.info("🔄 Preloading reranker model...")
             start_time = time.time()
             
-            from core.retrieval.search.reranker import Reranker
-            reranker = Reranker()
-            
+            from core.retrieval.search.reranker import get_reranker
+            reranker = get_reranker()
+
             # Only warm up if reranker is available
             if reranker.available():
                 # Warm up with a test rerank
@@ -109,31 +109,30 @@ class ModelPreloader:
             logger.info(f"Reranker model loaded in {load_time:.2f}s")
             
         except Exception as e:
-            logger.error(f"Failed to preload reranker model: {e}")
+            logger.exception("Failed to preload reranker model")
             self.loading_errors["reranker"] = str(e)
             self.loaded_models["reranker"] = {"status": "failed", "error": str(e)}
     
     async def _preload_vector_store(self):
-        """Preload vector store."""
+        """Warm the shared vector store provider so the first query is not cold."""
         try:
             logger.info("🔄 Preloading vector store...")
             start_time = time.time()
-            
-            from core.storage.vector_stores.vector_store_optimized import OptimizedVectorStore
-            vs = OptimizedVectorStore()
-            vector_store_data = vs.load_vector_store()
-            
+
+            from core.storage.vector_stores.provider import get_vector_store_provider
+            provider = get_vector_store_provider()
+            provider.get_data()
+
             load_time = time.time() - start_time
             self.loaded_models["vector_store"] = {
-                "model": vs,
-                "data": vector_store_data,
+                "model": provider.get_store(),
                 "load_time": load_time,
                 "status": "success"
             }
             logger.info(f"Vector store loaded in {load_time:.2f}s")
-            
+
         except Exception as e:
-            logger.error(f"Failed to preload vector store: {e}")
+            logger.exception("Failed to preload vector store")
             self.loading_errors["vector_store"] = str(e)
             self.loaded_models["vector_store"] = {"status": "failed", "error": str(e)}
     
@@ -143,14 +142,6 @@ class ModelPreloader:
             model_data = self.loaded_models[model_name]
             if model_data["status"] == "success":
                 return model_data["model"]
-        return None
-    
-    def get_vector_store_data(self):
-        """Get preloaded vector store data."""
-        if "vector_store" in self.loaded_models:
-            model_data = self.loaded_models["vector_store"]
-            if model_data["status"] == "success":
-                return model_data["data"]
         return None
     
     def _log_model_status(self):

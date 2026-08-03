@@ -37,11 +37,17 @@ class PerformanceMonitor:
                 self.cache_misses += 1
                 
     def record_system_metrics(self):
-        """Record current system metrics."""
+        """
+        Sample CPU/memory usage into the rolling history.
+
+        Uses a non-blocking CPU reading (percentage since the previous call), so
+        this must never be invoked from a request handler — the background task
+        manager samples it on a fixed interval instead.
+        """
         try:
             memory_percent = psutil.virtual_memory().percent
-            cpu_percent = psutil.cpu_percent(interval=1)
-            
+            cpu_percent = psutil.cpu_percent(interval=None)
+
             with self._lock:
                 self.memory_usage_history.append({
                     'timestamp': time.time(),

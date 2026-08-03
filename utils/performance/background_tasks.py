@@ -19,84 +19,81 @@ class BackgroundTaskManager:
     Handles cache warming, cleanup, and maintenance.
     """
     
+    #: Loop intervals in seconds.
+    METRICS_SAMPLE_INTERVAL = 30
+    MEMORY_CLEANUP_INTERVAL = 600
+
     def __init__(self, max_workers: int = 2):
         """Initialize the background task manager."""
         self.max_workers = max_workers
         self.executor = ThreadPoolExecutor(max_workers=max_workers)
         self.tasks = {}
         self.running = False
-        
+        self._loops: list = []
+
     async def start(self):
         """Start background task processing."""
+        if self.running:
+            logger.debug("Background task manager already running")
+            return
         self.running = True
         logger.info("Background task manager started")
-        
-        # Start cache warming task
-        asyncio.create_task(self._cache_warming_loop())
-        
-        # Start cleanup task
-        asyncio.create_task(self._cleanup_loop())
-        
+
+        self._loops = [
+            asyncio.create_task(self._metrics_sampling_loop()),
+            asyncio.create_task(self._cleanup_loop()),
+        ]
+
     async def stop(self):
-        """Stop background task processing."""
+        """Stop background task processing and cancel running loops."""
         self.running = False
+        for task in self._loops:
+            task.cancel()
+        self._loops = []
         self.executor.shutdown(wait=True)
         logger.info("Background task manager stopped")
-        
-    async def _cache_warming_loop(self):
-        """Periodically warm up caches for better performance."""
+
+    async def _metrics_sampling_loop(self):
+        """
+        Periodically sample CPU/memory into the performance monitor.
+
+        Sampling lives here rather than in the request path so that the
+        non-blocking psutil reading has a stable interval to measure against.
+        """
+        from .monitor import get_performance_monitor
+
+        monitor = get_performance_monitor()
         while self.running:
             try:
-                await asyncio.sleep(300)  # Every 5 minutes
+                await asyncio.sleep(self.METRICS_SAMPLE_INTERVAL)
                 if self.running:
-                    await self._warm_caches()
-            except Exception as e:
-                logger.error(f"Error in cache warming loop: {e}")
-                
+                    monitor.record_system_metrics()
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception("Error in metrics sampling loop")
+
     async def _cleanup_loop(self):
         """Periodically clean up memory and caches."""
         while self.running:
             try:
-                await asyncio.sleep(600)  # Every 10 minutes
+                await asyncio.sleep(self.MEMORY_CLEANUP_INTERVAL)
                 if self.running:
                     await self._cleanup_memory()
-            except Exception as e:
-                logger.error(f"Error in cleanup loop: {e}")
-                
-    async def _warm_caches(self):
-        """Warm up various caches for better performance."""
-        try:
-            logger.debug("Warming up caches...")
-            
-            # Warm up embedding cache with common queries
-            common_queries = [
-                "hello", "help", "what is", "how to", "explain",
-                "xin chào", "giúp đỡ", "là gì", "làm thế nào", "giải thích"
-            ]
-            
-            # This would be implemented based on your specific cache services
-            # For now, just log the warming attempt
-            logger.debug(f"Warmed up caches for {len(common_queries)} common queries")
-            
-        except Exception as e:
-            logger.error(f"Error warming caches: {e}")
-            
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception("Error in cleanup loop")
+
     async def _cleanup_memory(self):
         """Clean up memory and optimize caches."""
         try:
-            logger.debug("Cleaning up memory...")
-            
-            # Force garbage collection
             collected = gc.collect()
-            logger.debug(f"Garbage collection freed {collected} objects")
-            
-            # This would be implemented based on your specific cache services
-            # For now, just log the cleanup attempt
-            logger.debug("Memory cleanup completed")
-            
-        except Exception as e:
-            logger.error(f"Error during memory cleanup: {e}")
-            
+            logger.debug("Garbage collection freed %d objects", collected)
+        except Exception:
+            logger.exception("Error during memory cleanup")
+
+
     def submit_task(self, task_name: str, func, *args, **kwargs):
         """Submit a background task for execution."""
         if task_name in self.tasks:
