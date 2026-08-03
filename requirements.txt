@@ -1,29 +1,72 @@
-# RAG Chatbot Dependencies
-# Domain-driven architecture with clear separation of concerns
-sentence-transformers==2.5.1
-beautifulsoup4==4.12.3
+# RAG Chatbot dependencies
+# Domain-driven architecture with clear separation of concerns.
+#
+# torch/torchvision/torchaudio and paddlepaddle are installed separately (see
+# Dockerfile) since both need a hardware-specific index URL (CPU vs CUDA
+# build). For a local venv:
+#   pip install torch --index-url https://download.pytorch.org/whl/cpu
+#   pip install paddlepaddle==3.2.0 -i https://www.paddlepaddle.org.cn/packages/stable/cpu/
+# Pin paddlepaddle to 3.2.0, not 3.3.x — 3.3.0's oneDNN/PIR CPU executor is
+# broken for text detection (confirmed by running real OCR inference against
+# this repo's code; upstream bug PaddlePaddle/Paddle#77340).
+#
+# Entries marked "direct import, previously transitive" are imported by our own
+# code but were only being pulled in as a side effect of another package. They
+# are declared unpinned so the resolver can keep them compatible with docling /
+# sentence-transformers; run a clean install and `pip freeze` to pin them.
+# See docs/PRODUCTION_READINESS_REVIEW.md (V-6).
+
+# --- Web API ---
 fastapi==0.115.6
-numpy==1.26.4
-openai==1.57.0
-python-dotenv==1.0.1
-requests==2.32.3
 uvicorn[standard]==0.32.1
 python-multipart==0.0.20
-aiofiles==24.1.0
-psutil==6.1.0
-rank-bm25==0.2.2
-nltk==3.8.1
-docling==2.54.0
-pydantic-settings==2.11.0
-pandas==2.2.3
-openpyxl==3.1.5
-python-docx==1.1.2
-scikit-learn==1.5.2
 httpx==0.27.0
-faiss-cpu==1.8.0
-h5py==3.10.0
-redis==5.0.1
-PyPDF2==3.0.1
-streamlit==1.37.1
+aiofiles==24.1.0
+
+# --- LLM ---
+openai==1.57.0
+
+# --- Retrieval / embeddings ---
+sentence-transformers==2.5.1
 huggingface_hub[hf_xet]==0.33.1
+rank-bm25==0.2.2
+faiss-cpu==1.8.0
+numpy==1.26.4
+scikit-learn==1.5.2
+h5py==3.10.0
+transformers            # direct import, previously transitive (reranker.py)
+
+# --- Document processing ---
+docling==2.54.0
 pypdfium2==4.30.0
+PyPDF2==3.0.1
+python-docx==1.1.2
+openpyxl==3.1.5
+beautifulsoup4==4.12.3
+requests==2.32.3
+nltk==3.8.1
+pandas==2.2.3
+PyMuPDF                 # direct import `fitz`, previously transitive
+
+# --- OCR (scanned/image-only PDFs) ---
+# paddlepaddle itself is installed separately in the Dockerfile (CPU/GPU
+# hardware-specific index — see comment at the top of this file).
+# IMPORTANT: install bare `paddleocr`, NOT the `[doc-parser]` extra — that
+# extra pulls in paddlex's "genai-client" dependency group, which forces
+# openai>=1.63 and breaks the openai==1.57.0 pin our chatbot code is written
+# against. Bare paddleocr>=3.7.0 still exposes both PaddleOCR (PP-OCRv6) and
+# PaddleOCRVL — the extra is only needed for an OpenAI-compatible remote
+# serving mode this project doesn't use. Verified against an actual install;
+# see docs/PRODUCTION_READINESS_REVIEW.md.
+paddleocr==3.7.0        # PP-OCRv6 (CPU) + PaddleOCR-VL (GPU)
+
+# --- Frontend ---
+streamlit==1.37.1
+
+# --- Runtime / config ---
+python-dotenv==1.0.1
+psutil==6.1.0
+
+# --- Testing ---
+pytest==8.3.3
+pytest-asyncio==0.24.0
