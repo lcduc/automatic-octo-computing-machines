@@ -142,13 +142,20 @@ def main() -> None:
 
     uvicorn_config = get_uvicorn_config()
     uvicorn_config.update(get_uvicorn_ssl_config())
+    reload = Config.Server.DEBUG()
+
+    # A string import target ("main:app") is only required when Uvicorn spawns
+    # subprocesses (reload or multiple workers), since those need to re-import
+    # the module by name. Passing the app object directly otherwise avoids
+    # re-executing this module's top-level code (and re-running setup_middleware).
+    target = "main:app" if (reload or workers > 1) else app
 
     try:
         uvicorn.run(
-            "main:app",
+            target,
             host=host,
             port=port,
-            reload=Config.Server.DEBUG(),
+            reload=reload,
             workers=workers,
             **uvicorn_config,
         )
