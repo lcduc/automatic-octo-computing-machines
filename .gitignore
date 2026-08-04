@@ -167,4 +167,7 @@ SSL/
 
 # Downloaded ML model weights (fetched by scripts/download_models.py /
 # Dockerfile build step) — multi-hundred-MB, don't commit to git.
-models/
+# Named distinctly from the models/ Python package (see MODELS_DIR in
+# config/settings.py) so this rule can't accidentally swallow new source
+# files added to that package.
+model_weights/

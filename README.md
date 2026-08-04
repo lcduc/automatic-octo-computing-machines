@@ -234,7 +234,7 @@ The application uses environment variables for configuration. Key variables incl
 - `PORT`: Server port (default: 8500)
 - `EMBEDDING_MODEL`: Embedding model, multilingual EN+VI (default: paraphrase-multilingual-MiniLM-L12-v2)
 - `RERANKER_MODEL`: Reranker model, multilingual EN+VI (default: BAAI/bge-reranker-v2-m3)
-- `MODELS_DIR`: Local cache dir for downloaded model weights (default: models)
+- `MODELS_DIR`: Local cache dir for downloaded model weights (default: model_weights)
 - `MAX_FILE_SIZE`: Maximum file size in bytes (default: 52428800)
 - `CHUNK_SIZE`: Document chunk size (default: 1000)
 - `SIMILARITY_THRESHOLD`: Search similarity threshold (default: 0.7)

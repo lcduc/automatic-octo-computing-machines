@@ -65,14 +65,14 @@
   RUN chmod 0755 /usr/local/bin/start.sh
   
   # Data dirs & permissions
-  RUN mkdir -p data/chunks data/vectors data/temp logs scripts models \
-   && chown -R app:app data logs scripts models
+  RUN mkdir -p data/chunks data/vectors data/temp logs scripts model_weights \
+   && chown -R app:app data logs scripts model_weights
 
   USER app
 
-  # Bake the embedding + reranker weights into the image under ./models so:
+  # Bake the embedding + reranker weights into the image under ./model_weights so:
   # (a) first request in production isn't a multi-hundred-MB cold download,
-  # (b) the weights are reviewable on disk (`docker exec ... ls models/`).
+  # (b) the weights are reviewable on disk (`docker exec ... ls model_weights/`).
   # Requires network access at build time. If you override EMBEDDING_MODEL or
   # RERANKER_MODEL at runtime to something not baked in here, that model is
   # fetched on first use instead — see docs/PRODUCTION_READINESS_REVIEW.md.

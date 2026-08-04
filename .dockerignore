@@ -64,4 +64,4 @@ data/temp/*
 *.pkl
 *.bin
 *.safetensors
-models/
+model_weights/

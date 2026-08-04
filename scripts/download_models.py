@@ -2,8 +2,8 @@
 Pre-download the embedding, reranker and OCR models into the local model cache.
 
 Run once (locally, or as a Dockerfile build step) so the weights are baked in
-and reviewable on disk under ``MODELS_DIR`` (default: ``models/``) instead of
-being fetched from Hugging Face on first request in production.
+and reviewable on disk under ``MODELS_DIR`` (default: ``model_weights/``)
+instead of being fetched from Hugging Face on first request in production.
 
 The OCR download is best-effort and only warms PP-OCRv6 (the CPU engine):
 PaddleOCR-VL (the GPU engine) is left to download on first real GPU request,

@@ -97,9 +97,13 @@ class DatabaseConfig:
 
         Kept inside the project root (rather than the user/OS-wide Hugging Face
         cache) so the weights baked into a deployment are visible and reviewable
-        on disk, e.g. `docker exec ... ls /app/models`.
+        on disk, e.g. `docker exec ... ls /app/model_weights`.
+
+        Named distinctly from the ``models/`` Python package (data classes)
+        so this cache directory's contents can be gitignored wholesale
+        without also swallowing new files added to that package.
         """
-        return env_str("MODELS_DIR", "models")
+        return env_str("MODELS_DIR", "model_weights")
 
 
 class LLMConfig:
