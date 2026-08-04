@@ -12,6 +12,10 @@ from utils.file_operations import cleanup_data_folders
 # Disable SSL warnings for self-signed certificates
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
+#: session_state when pre-filling a voice transcript for review.
+CHAT_INPUT_KEY = "chat_input"
+_PENDING_CHAT_PREFILL_KEY = "_pending_chat_prefill"
+
 
 def _auth_headers() -> dict:
     """
@@ -104,6 +108,19 @@ def stream_chat(base_url: str, query: str, history: list = None):
         yield f"[ERROR] Request failed: {str(e)}"
     except Exception as e:
         yield f"[ERROR] Unexpected error: {str(e)}"
+
+
+def transcribe_audio(base_url: str, audio_bytes: bytes) -> str:
+    """Send a recorded voice query to the backend and return the transcribed text."""
+    url = f"{base_url}/chat/transcribe"
+    files = {"audio": ("recording.wav", audio_bytes, "audio/wav")}
+    try:
+        r = requests.post(url, files=files, headers=_auth_headers(), timeout=60, verify=False)
+        r.raise_for_status()
+        return r.json().get("text", "")
+    except requests.exceptions.RequestException as e:
+        st.toast(f"Transcription failed: {e}")
+        return ""
 
 
 def start_backend_subprocess(host: str, port: int, protocol: str = "http") -> bool:
@@ -376,8 +393,24 @@ class ChatApp:
             with st.chat_message(msg["role"]):
                 st.markdown(msg["content"])
 
-        # Chat input (streams from backend /chat)
-        user_input = st.chat_input("Type your question…")
+        if st.session_state.get(_PENDING_CHAT_PREFILL_KEY):
+            st.session_state[CHAT_INPUT_KEY] = st.session_state.pop(_PENDING_CHAT_PREFILL_KEY)
+
+        prompt = st.chat_input(
+            "Type your question, or record a voice message…",
+            accept_audio=True,
+            key=CHAT_INPUT_KEY,
+        )
+
+        user_input = None
+        if prompt and prompt.audio:
+            with st.spinner("Transcribing…"):
+                transcribed = transcribe_audio(api_base_url, prompt.audio.getvalue())
+            if transcribed:
+                st.session_state[_PENDING_CHAT_PREFILL_KEY] = transcribed
+                st.rerun()
+        elif prompt and prompt.text:
+            user_input = prompt.text
 
         if user_input:
             # Snapshot history *before* appending this turn's question — it is

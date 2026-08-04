@@ -9,12 +9,6 @@
 # Pin paddlepaddle to 3.2.0, not 3.3.x — 3.3.0's oneDNN/PIR CPU executor is
 # broken for text detection (confirmed by running real OCR inference against
 # this repo's code; upstream bug PaddlePaddle/Paddle#77340).
-#
-# Entries marked "direct import, previously transitive" are imported by our own
-# code but were only being pulled in as a side effect of another package. They
-# are declared unpinned so the resolver can keep them compatible with docling /
-# sentence-transformers; run a clean install and `pip freeze` to pin them.
-# See docs/PRODUCTION_READINESS_REVIEW.md (V-6).
 
 # --- Web API ---
 fastapi==0.115.6
@@ -44,6 +38,7 @@ python-docx==1.1.2
 openpyxl==3.1.5
 beautifulsoup4==4.12.3
 requests==2.32.3
+chardet<6.0.0
 nltk==3.8.1
 pandas==2.2.3
 PyMuPDF                 # direct import `fitz`, previously transitive
@@ -61,7 +56,7 @@ PyMuPDF                 # direct import `fitz`, previously transitive
 paddleocr==3.7.0        # PP-OCRv6 (CPU) + PaddleOCR-VL (GPU)
 
 # --- Frontend ---
-streamlit==1.37.1
+streamlit==1.52.0
 
 # --- Runtime / config ---
 python-dotenv==1.0.1
