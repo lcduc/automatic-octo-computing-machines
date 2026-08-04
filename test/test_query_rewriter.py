@@ -11,7 +11,7 @@ class _StubClientProvider:
         self.raise_error = raise_error
         self.calls = []
 
-    def complete(self, messages):
+    def complete(self, messages, model=None):
         self.calls.append(messages)
         if self.raise_error:
             raise RuntimeError("simulated API failure")

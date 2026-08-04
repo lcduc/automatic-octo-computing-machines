@@ -105,26 +105,57 @@ class OpenAIClientProvider:
             logger.exception("Unexpected error while probing the OpenAI API")
             return False
 
-    def complete(self, messages: List[Dict[str, Any]]) -> str:
+    @staticmethod
+    def _completion_kwargs(model: str, max_tokens: int, temperature: float) -> Dict[str, Any]:
+        """
+        Build the model/token-limit/temperature kwargs for a completion call.
+
+        ``gpt-5*`` models reject the legacy ``max_tokens`` parameter (they need
+        ``max_completion_tokens`` instead) and only support the default
+        ``temperature`` of 1, so both are adapted per model family here rather
+        than at each call site.
+
+        Args:
+            model: Model name to resolve the parameter set for.
+            max_tokens: Completion token cap.
+            temperature: Sampling temperature; dropped for ``gpt-5*`` models.
+
+        Returns:
+            Kwargs ready to splat into ``chat.completions.create``.
+        """
+        kwargs: Dict[str, Any] = {"model": model}
+        if model.startswith("gpt-5"):
+            kwargs["max_completion_tokens"] = max_tokens
+        else:
+            kwargs["max_tokens"] = max_tokens
+            kwargs["temperature"] = temperature
+        return kwargs
+
+    def complete(self, messages: List[Dict[str, Any]], model: Optional[str] = None) -> str:
         """
         Run a blocking chat completion and return the assistant text.
 
         Args:
             messages: OpenAI-format message list.
+            model: Model override; defaults to ``Config.LLM.OPENAI_MODEL()``.
 
         Returns:
             The assistant message content, stripped (empty string if none).
         """
         response = self.sync_client.chat.completions.create(
-            model=Config.LLM.OPENAI_MODEL(),
             messages=messages,  # type: ignore[arg-type]
-            max_tokens=Config.LLM.OPENAI_MAX_TOKENS(),
-            temperature=Config.LLM.OPENAI_TEMPERATURE(),
+            **self._completion_kwargs(
+                model or Config.LLM.OPENAI_MODEL(),
+                Config.LLM.OPENAI_MAX_TOKENS(),
+                Config.LLM.OPENAI_TEMPERATURE(),
+            ),
         )
         content = response.choices[0].message.content
         return content.strip() if content else ""
 
-    async def complete_async(self, messages: List[Dict[str, Any]]) -> str:
+    async def complete_async(
+        self, messages: List[Dict[str, Any]], model: Optional[str] = None
+    ) -> str:
         """
         Run a non-blocking chat completion and return the assistant text.
 
@@ -133,15 +164,18 @@ class OpenAIClientProvider:
 
         Args:
             messages: OpenAI-format message list.
+            model: Model override; defaults to ``Config.LLM.OPENAI_MODEL()``.
 
         Returns:
             The assistant message content, stripped (empty string if none).
         """
         response = await self.async_client.chat.completions.create(
-            model=Config.LLM.OPENAI_MODEL(),
             messages=messages,  # type: ignore[arg-type]
-            max_tokens=Config.LLM.OPENAI_MAX_TOKENS(),
-            temperature=Config.LLM.OPENAI_TEMPERATURE(),
+            **self._completion_kwargs(
+                model or Config.LLM.OPENAI_MODEL(),
+                Config.LLM.OPENAI_MAX_TOKENS(),
+                Config.LLM.OPENAI_TEMPERATURE(),
+            ),
         )
         content = response.choices[0].message.content
         return content.strip() if content else ""
@@ -182,7 +216,10 @@ class OpenAIClientProvider:
         return text.strip() if text else ""
 
     async def complete_with_tools_async(
-        self, messages: List[Dict[str, Any]], tools: Optional[List[Dict[str, Any]]] = None
+        self,
+        messages: List[Dict[str, Any]],
+        tools: Optional[List[Dict[str, Any]]] = None,
+        model: Optional[str] = None,
     ) -> Any:
         """
         Run a non-streaming chat completion, optionally offering tools to call.
@@ -196,15 +233,18 @@ class OpenAIClientProvider:
             messages: OpenAI-format message list.
             tools: Tool schemas (``{"type": "function", "function": {...}}``),
                 or ``None``/empty to make a plain completion.
+            model: Model override; defaults to ``Config.LLM.OPENAI_MODEL()``.
 
         Returns:
             The assistant ``message`` object (``.content``, ``.tool_calls``).
         """
         kwargs: Dict[str, Any] = dict(
-            model=Config.LLM.OPENAI_MODEL(),
             messages=messages,
-            max_tokens=Config.LLM.OPENAI_MAX_TOKENS(),
-            temperature=Config.LLM.OPENAI_TEMPERATURE(),
+            **self._completion_kwargs(
+                model or Config.LLM.OPENAI_MODEL(),
+                Config.LLM.OPENAI_MAX_TOKENS(),
+                Config.LLM.OPENAI_TEMPERATURE(),
+            ),
         )
         if tools:
             kwargs["tools"] = tools
@@ -212,22 +252,27 @@ class OpenAIClientProvider:
         response = await self.async_client.chat.completions.create(**kwargs)
         return response.choices[0].message
 
-    async def stream(self, messages: List[Dict[str, Any]]) -> AsyncIterator[str]:
+    async def stream(
+        self, messages: List[Dict[str, Any]], model: Optional[str] = None
+    ) -> AsyncIterator[str]:
         """
         Stream a chat completion, yielding text deltas as they arrive.
 
         Args:
             messages: OpenAI-format message list.
+            model: Model override; defaults to ``Config.LLM.OPENAI_MODEL()``.
 
         Yields:
             Non-empty content deltas.
         """
         response_stream = await self.async_client.chat.completions.create(
-            model=Config.LLM.OPENAI_MODEL(),
             messages=messages,  # type: ignore[arg-type]
-            max_tokens=Config.LLM.OPENAI_MAX_TOKENS(),
-            temperature=Config.LLM.OPENAI_TEMPERATURE(),
             stream=True,
+            **self._completion_kwargs(
+                model or Config.LLM.OPENAI_MODEL(),
+                Config.LLM.OPENAI_MAX_TOKENS(),
+                Config.LLM.OPENAI_TEMPERATURE(),
+            ),
         )
         async for chunk in response_stream:
             if not chunk.choices:

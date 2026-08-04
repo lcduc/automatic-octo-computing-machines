@@ -11,6 +11,7 @@ import logging
 from typing import Dict, List, Optional
 
 # Local imports
+from config.settings import Config
 from .openai_client import OpenAIClientProvider
 
 logger = logging.getLogger(__name__)
@@ -71,7 +72,8 @@ class QueryRewriter:
 
         try:
             rewritten = self._client_provider.complete(
-                self._build_messages(query, history)
+                self._build_messages(query, history),
+                model=Config.LLM.OPENAI_LIGHT_MODEL(),
             )
         except Exception:
             logger.exception("Query rewrite failed; falling back to original query")

@@ -56,7 +56,8 @@ def setup_environment():
 
 # OpenAI Configuration
 OPENAI_API_KEY=your_openai_api_key_here
-OPENAI_MODEL=gpt-4o-mini
+OPENAI_MODEL=gpt-5-mini
+OPENAI_LIGHT_MODEL=gpt-4o-mini
 
 # Server Configuration
 HOST=0.0.0.0

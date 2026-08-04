@@ -113,7 +113,12 @@ class LLMConfig:
     @staticmethod
     def OPENAI_MODEL() -> str:
         """Chat completion model used for answer generation."""
-        return env_str("OPENAI_MODEL", "gpt-4o-mini")
+        return env_str("OPENAI_MODEL", "gpt-5-mini")
+
+    @staticmethod
+    def OPENAI_LIGHT_MODEL() -> str:
+        """Cheaper model for lightweight judgment calls (query rewriting, intent classification)."""
+        return env_str("OPENAI_LIGHT_MODEL", "gpt-4o-mini")
 
     @staticmethod
     def EMBEDDING_MODEL() -> str:
@@ -132,7 +137,12 @@ class LLMConfig:
 
     @staticmethod
     def OPENAI_TEMPERATURE() -> float:
-        """Sampling temperature for answer generation."""
+        """
+        Sampling temperature for answer generation.
+
+        Ignored for ``gpt-5*`` models, which only support the default
+        temperature of 1 - see ``OpenAIClientProvider._completion_kwargs``.
+        """
         return env_float("OPENAI_TEMPERATURE", 0.1)
 
     @staticmethod
