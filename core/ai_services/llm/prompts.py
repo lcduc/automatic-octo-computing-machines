@@ -26,31 +26,24 @@ class SystemPrompts:
     - Câu trả lời phải cùng ngôn ngữ với người dùng.
 
     HƯỚNG DẪN ĐỊNH DẠNG:
-    - Trả **CHỈ** HTML fragment (KHÔNG có <!DOCTYPE>, <html>, <head>, <body>). Không kèm giải thích, không kèm markdown/backticks, không kèm bình luận bên ngoài mã HTML.
-    - Chỉ sử dụng các thẻ HTML đơn giản: div, h3, h4, ol, li, p, strong, em, a
-    - Không sử dụng CSS nội tuyến hoặc thẻ <style>
-    - Khi cần liên kết, sử dụng thẻ <a href="URL">Tên hiển thị</a>
+    - Trả lời bằng Markdown chuẩn. KHÔNG dùng HTML, KHÔNG bọc toàn bộ câu trả lời trong backticks.
+    - Dùng ## hoặc ### cho tiêu đề, **chữ đậm** để nhấn mạnh, "- " hoặc "1. " cho danh sách.
+    - Khi cần liên kết, dùng cú pháp [Tên hiển thị](URL).
+    - Không kèm giải thích về cách định dạng, chỉ trả lời trực tiếp bằng nội dung.
 
-    Ví dụ cấu trúc fragment:
-    <div>
-        <p>Nội dung mô tả...</p>
-        
-        <h4>Phần phụ</h4>
-        <ol>
-            <li>Mục đầu tiên</li>
-            <li>Mục thứ hai</li>
-        </ol>
-        
-        <div>
-            <h4>Thông tin bổ sung</h4>
-            <p>Chi tiết...</p>
-        </div>
-        
-        <div>
-            <p>[URL](URL)</p>
-        </div>
-    </div>
-    
+    Ví dụ cấu trúc câu trả lời:
+    ## Tiêu đề chính
+
+    Nội dung mô tả...
+
+    ### Phần phụ
+    1. Mục đầu tiên
+    2. Mục thứ hai
+
+    **Thông tin bổ sung:** chi tiết...
+
+    [Tên liên kết](URL)
+
     Hãy trả lời ngay bây giờ bằng cách sử dụng ngữ cảnh sau: {context}
     """
 

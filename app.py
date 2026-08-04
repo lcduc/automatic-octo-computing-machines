@@ -76,18 +76,16 @@ def stream_chat(base_url: str, query: str, history: list = None):
         with requests.post(url, json=payload, headers=headers, stream=True, timeout=300, verify=False) as r:
             r.raise_for_status()
             try:
-                for line in r.iter_lines(decode_unicode=True, chunk_size=1):
-                    if not line:
-                        continue
-                    # Handle Server-Sent Events style lines like 'data: token'
-                    if line.startswith("data:"):
-                        token = line[5:].lstrip()
-                    else:
-                        token = line
-                    # Skip keep-alive pings
-                    if token in ("[DONE]", ":keep-alive"):
-                        continue
-                    yield token
+                # The backend streams raw text deltas with no line framing (it
+                # is not real data:-prefixed SSE), so splitting on newlines is
+                # the wrong parser: a token that IS just "\n" (e.g. between
+                # list items) would look like a blank line and get dropped.
+                # iter_content preserves every byte, including bare newlines,
+                # and decode_unicode=True decodes incrementally so multi-byte
+                # UTF-8 characters split across chunk boundaries stay intact.
+                for chunk in r.iter_content(chunk_size=None, decode_unicode=True):
+                    if chunk:
+                        yield chunk
             except (requests.exceptions.ChunkedEncodingError, requests.exceptions.ConnectionError, ConnectionResetError) as e:
                 # Handle incomplete chunked read errors gracefully
                 error_msg = f"[ERROR] Connection interrupted: {str(e)}"
@@ -135,177 +133,40 @@ def start_backend_subprocess(host: str, port: int, protocol: str = "http") -> bo
         return False
 
 
+def format_urls(text: str) -> str:
+    """Make bare URLs clickable Markdown links, without double-wrapping ones already linked."""
+
+    text = re.sub(r"(?<!\[)(https?://[^\s\)]+)(?!\])", r"[\1](\1)", text)
+
+    # Fix malformed links like "[text]url" -> "[text](url)"
+    text = re.sub(r'\[([^\]]+)\](https?://[^\s\)]+)', r'[\1](\2)', text)
+
+    return text
+
+
 def format_markdown_response(text: str) -> str:
-    """Universal text formatter that intelligently structures any text response.
-    
-    This is a general solution that:
-    - Works with any text format (raw markdown, plain text, mixed, HTML)
-    - Automatically detects and formats common patterns
-    - Improves readability without changing content
-    - Handles edge cases and dense text
-    - Detects HTML responses and returns them as-is for Streamlit rendering
     """
-    if not text:
-        return text
-    
-    # Check if the response is HTML (starts with < and contains HTML tags)
-    if text.strip().startswith('<') and ('<' in text and '>' in text):
-        # This is an HTML response, return as-is for Streamlit to render
-        return text.strip()
-    
-    # Step 1: Basic cleaning and escape sequence handling
-    text = text.strip()
-    text = text.replace('\\n\\n', '\n\n')
-    text = text.replace('\\n', '\n')
-    
-    # Step 2: Preserve Markdown hard line breaks (two+ spaces at end of line)
-    text = re.sub(r'[ \t]{2,}(?=\n|$)', '\n', text)
+    Sanitize Markdown streamed from the model for safe Streamlit rendering.
 
-    # Step 3: Universal pattern detection and formatting
-    text = detect_and_format_patterns(text)
-    
-    # Step 4: URL formatting
-    text = format_urls(text)
-    
-    # Step 5: Structure improvement
-    text = improve_structure(text)
-    
-    # Step 6: Final cleanup
-    text = re.sub(r"\n{3,}", "\n\n", text)
-    return text.strip()
-
-
-def format_markdown_response_streaming(text: str) -> str:
-    """Lightweight, streaming-safe formatter for partial LLM outputs.
-
-    - Only applies idempotent, low-risk transforms suitable for partial tokens
-    - Converts escaped newlines to actual newlines
-    - Makes bare URLs clickable without restructuring surrounding text
-    - Collapses excessive newlines
-    - Does NOT try to insert headers/lists or bold markers to avoid flicker
-    - Detects HTML responses and returns them as-is for Streamlit rendering
+    The model is prompted to emit valid Markdown directly (see
+    ``SystemPrompts.UNIVERSAL``), so this only normalizes escape sequences and
+    linkifies bare URLs - it does not infer or rewrite structure. Safe to call
+    on partial (mid-stream) text as well as the final response: every
+    transform here is idempotent.
     """
     if not text:
         return text
 
-    # Check if the response is HTML (starts with < and contains HTML tags)
-    if text.strip().startswith('<') and ('<' in text and '>' in text):
-        # This is an HTML response, return as-is for Streamlit to render
-        return text.strip()
-
-    # Convert escape sequences emitted by models
     text = text.replace('\\n\\n', '\n\n')
     text = text.replace('\\n', '\n')
 
     # Preserve Markdown hard line breaks (two+ spaces at end of line)
     text = re.sub(r'[ \t]{2,}(?=\n|$)', '\n', text)
 
-    # Merge split digits during streaming: "1 0" -> "10" (idempotent)
-    text = re.sub(r'(?<=\d)\s+(?=\d)', '', text)
+    text = format_urls(text)
 
-    # Ensure a newline after a colon if it immediately starts a numbered list (e.g., ":1. …")
-    # Keeps it idempotent by normalizing to exactly one newline
-    text = re.sub(r':\s*(?=(\d+)\.\s)', '::NEWLINE_PLACEHOLDER::', text)
-    text = text.replace('::NEWLINE_PLACEHOLDER::', ':\n')
-
-    # Ensure a newline after a colon if followed by a URL or markdown link
-    text = re.sub(r':\s*(?=(https?://|\[))', ':\n', text)
-
-    # Ensure a newline after a colon if glued to a capitalized heading token (e.g., ":Tempate …")
-    text = re.sub(r':(?=[A-ZÀ-Ỹ])', ':\n', text)
-
-    # Make bare URLs clickable (idempotent)
-    text = re.sub(r"(?<!\[)(https?://[^\s\)]+)(?!\])", r"[\1](\1)", text)
-
-    # Clean up excessive newlines during streaming
     text = re.sub(r"\n{3,}", "\n\n", text)
-
     return text.strip()
-
-
-def detect_and_format_patterns(text: str) -> str:
-    """Universal text structure formatter that intelligently detects and formats patterns."""
-    
-    # Fix cases where digits get split: "1 0" -> "10"
-    text = re.sub(r'(?<=\d)\s+(?=\d)', '', text)
-
-    # Step 1: Detect and format step patterns
-    text = re.sub(r'(Bước \d+:)', r'**\1**', text)  # Vietnamese steps
-    text = re.sub(r'(Step \d+:)', r'**\1**', text)  # English steps
-    
-    # Step 2: Detect and format section headers (lines ending with colon)
-    text = re.sub(r'^([A-Za-zÀ-ỹ\s]+:)$', r'**\1**', text, flags=re.MULTILINE)
-    
-    # Step 3: Universal list detection and formatting
-    # This handles any list pattern: bullet, numbered, dash, asterisk
-    list_patterns = [
-        (r'(?<!\n)(•\s)', r'\n\1'),      # Bullet points
-        (r'(?<!\n)(–\s)', r'\n\1'),      # En dash list items
-        # Numbered lists (ensure not preceded by a digit to avoid splitting "...4801" from "10.")
-        (r'(?<!\n)(?<!\d)(\d+\.\s)', r'\n\1'),
-        (r'(?<!\n)(-\s)', r'\n\1'),      # Dash lists
-        (r'(?<!\n)(\*\s)', r'\n\1'),     # Asterisk lists
-    ]
-    
-    for pattern, replacement in list_patterns:
-        text = re.sub(pattern, replacement, text)
-    
-    # Step 4: Universal paragraph breaking
-    # Break on sentence boundaries followed by capital letters or special characters
-    # Require a space after the period to avoid breaking decimals/DOIs like "10.25073"
-    paragraph_breaks = [
-        (r'\.(\s+)(?=[A-ZÀ-Ỹ])', '.\n\n'),  # Period + space(s) + capital
-        (r'\.(\s+)(?=–)', '.\n\n'),          # Period + space(s) + dash
-        (r'\.(\s+)(?=•)', '.\n\n'),          # Period + space(s) + bullet
-        # Period + space(s) + numbered list, but not when the number is preceded by a digit (e.g., "4801 10.")
-        (r'\.(\s+)(?=(?<!\d)\d+\.)', '.\n\n'),
-    ]
-
-    for pattern, replacement in paragraph_breaks:
-        text = re.sub(pattern, replacement, text)
-    
-    # Step 5: Handle dense text with no structure
-    # If text is very long without breaks, add strategic breaks
-    if len(text) > 500 and '\n' not in text:
-        # Break on common sentence endings followed by common list starters
-        text = re.sub(r'(\.)(\s*)([A-ZÀ-Ỹ])', r'\1\n\n\3', text)
-    
-    return text
-
-
-def format_urls(text: str) -> str:
-    """Format URLs to be clickable markdown links."""
-    
-    # Make URLs clickable (basic pattern) - only if not already formatted
-    text = re.sub(r"(?<!\[)(https?://[^\s\)]+)(?!\])", r"[\1](\1)", text)
-    
-    # Fix double URL formatting issue
-    text = re.sub(r"\[([^\]]+)\]\(\[([^\]]+)\]\([^)]+\)\)", r"[\1](\2)", text)
-    
-    # Fix malformed links like "[text]url" -> "[text](url)"
-    text = re.sub(r'\[([^\]]+)\](https?://[^\s\)]+)', r'[\1](\2)', text)
-    
-    return text
-
-
-def improve_structure(text: str) -> str:
-    """Improve overall text structure and spacing."""
-    
-    # Ensure proper spacing around **Bước X:** patterns
-    text = re.sub(r'(\*\*Bước \d+:\*\*)', r'\n\n\1\n', text)
-    
-    # Ensure proper spacing around other bold section headers
-    text = re.sub(r'(\*\*[^:]+:\*\*)', r'\n\n\1\n', text)
-    
-    # Ensure proper spacing around ## headers
-    text = re.sub(r'(## [^\n]+)', r'\n\n\1\n', text)
-    
-    # Ensure list items have proper spacing
-    text = re.sub(r'(?<!\n)(- [^\n]+)', r'\n\1', text)
-    # Numbered list spacing: avoid triggering when preceded by a digit (e.g., DOI tails)
-    text = re.sub(r'(?<!\n)(?<!\d)(\d+\. [^\n]+)', r'\n\1', text)
-    
-    return text
 
 
 class ChatApp:
@@ -513,10 +374,11 @@ class ChatApp:
         # Render chat history
         for msg in st.session_state.chat_history:
             with st.chat_message(msg["role"]):
-                st.markdown(msg["content"], unsafe_allow_html=True)
+                st.markdown(msg["content"])
 
         # Chat input (streams from backend /chat)
         user_input = st.chat_input("Type your question…")
+
         if user_input:
             # Snapshot history *before* appending this turn's question — it is
             # sent to the backend separately as `query`, so including it here
@@ -540,12 +402,11 @@ class ChatApp:
                         now = time.time()
                         # Flush on punctuation/newline or every ~50ms to reduce flicker & CPU
                         if token.endswith((" ", "\n", ".", ",", ":", ";", "!", "?")) or (now - last_flush) > 0.05:
-                            # Use streaming-safe formatter to avoid flicker during partial updates
-                            placeholder.markdown(format_markdown_response_streaming(accumulated), unsafe_allow_html=True)
+                            placeholder.markdown(format_markdown_response(accumulated))
                             last_flush = now
                     # After full completion, apply full formatter and update the UI immediately
                     final_text = format_markdown_response(accumulated)
-                    placeholder.markdown(final_text, unsafe_allow_html=True)
+                    placeholder.markdown(final_text)
                     st.session_state.chat_history.append({"role": "assistant", "content": final_text})
                 except Exception as e:
                     error_msg = f"Chat failed: {e}"
