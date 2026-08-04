@@ -291,3 +291,18 @@ class BatchChatResponse(BaseModel):
     """Response model for ``POST /chat/batch``."""
 
     results: List[BatchChatResult] = Field(..., description="One result per input query, in order")
+
+
+class TranscriptionResponse(BaseResponse):
+    """Response model for ``POST /chat/transcribe``."""
+
+    text: str = Field(..., description="Transcribed text from the audio recording")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "status": "success",
+                "text": "What is the refund policy?",
+                "timestamp": "2024-01-01T12:00:00Z",
+            }
+        }

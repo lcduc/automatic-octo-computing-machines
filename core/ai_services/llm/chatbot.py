@@ -136,6 +136,43 @@ class ChatbotService:
         logger.info("ChatbotService cleanup completed")
 
     # ------------------------------------------------------------------
+    # Speech-to-text
+    # ------------------------------------------------------------------
+
+    async def transcribe_audio(
+        self,
+        audio_bytes: bytes,
+        filename: str,
+        content_type: str = "audio/wav",
+    ) -> str:
+        """
+        Transcribe a recorded/uploaded audio clip so it can be used as a query.
+
+        Runs the OpenAI SDK's blocking call in a worker thread via
+        ``asyncio.to_thread`` so it does not stall the event loop for the
+        duration of the upload and transcription.
+
+        Args:
+            audio_bytes: Raw audio file content.
+            filename: Original filename; its extension hints the audio
+                format to the API.
+            content_type: MIME type reported by the client.
+
+        Returns:
+            The transcribed text.
+
+        Raises:
+            openai.APITimeoutError, openai.RateLimitError, Exception: propagated
+                from the API call so callers can map them to user-facing text.
+        """
+        logger.info("Transcribing audio upload %s (%d bytes)", filename, len(audio_bytes))
+        text = await asyncio.to_thread(
+            self._client_provider.transcribe, audio_bytes, filename, content_type
+        )
+        logger.debug("Transcription complete: %d chars", len(text))
+        return text
+
+    # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
 

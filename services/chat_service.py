@@ -387,3 +387,26 @@ class ChatService:
         if successful:
             self._update_average_response_time(processing_time / len(queries))
         return results
+
+    async def transcribe_audio(
+        self, audio_bytes: bytes, filename: str, content_type: str = "audio/wav"
+    ) -> str:
+        """
+        Transcribe a recorded/uploaded voice query to text.
+
+        Args:
+            audio_bytes: Raw audio file content.
+            filename: Original filename; its extension hints the audio
+                format to the transcription API.
+            content_type: MIME type reported by the client.
+
+        Returns:
+            The transcribed text.
+
+        Raises:
+            RuntimeError: The chat service is currently unavailable.
+            Exception: Propagated from the transcription API on failure.
+        """
+        if not self.chatbot_service.api_available:
+            raise RuntimeError("Chat service is currently unavailable")
+        return await self.chatbot_service.transcribe_audio(audio_bytes, filename, content_type)

@@ -141,6 +141,19 @@ class LLMConfig:
         return env_int("OPENAI_TIMEOUT", 30)
 
     @staticmethod
+    def TRANSCRIPTION_MODEL() -> str:
+        """Speech-to-text model used to transcribe voice queries."""
+        return env_str("TRANSCRIPTION_MODEL", "gpt-4o-transcribe")
+
+    @staticmethod
+    def TRANSCRIPTION_LANGUAGE() -> str:
+        """
+        ISO-639-1 language hint for voice queries; empty string lets the
+        model auto-detect instead.
+        """
+        return env_str("TRANSCRIPTION_LANGUAGE", "vi")
+
+    @staticmethod
     def LLM_CACHE_TTL() -> int:
         """Lifetime of a cached answer, in seconds."""
         return env_int("LLM_CACHE_TTL", 3600)
@@ -189,6 +202,11 @@ class FileConfig:
     def MAX_TOTAL_BATCH_SIZE() -> int:
         """Combined byte size limit across one upload batch."""
         return env_int("MAX_TOTAL_BATCH_SIZE", 209_715_200)
+
+    @staticmethod
+    def MAX_AUDIO_FILE_SIZE() -> int:
+        """Largest accepted voice-query recording, in bytes (OpenAI's own cap is 25MB)."""
+        return env_int("MAX_AUDIO_FILE_SIZE", 26_214_400)
 
     @staticmethod
     def CHUNK_SIZE() -> int:

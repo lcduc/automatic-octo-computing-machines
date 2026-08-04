@@ -146,6 +146,41 @@ class OpenAIClientProvider:
         content = response.choices[0].message.content
         return content.strip() if content else ""
 
+    def transcribe(
+        self,
+        audio_bytes: bytes,
+        filename: str,
+        content_type: str = "audio/wav",
+        language: Optional[str] = None,
+    ) -> str:
+        """
+        Transcribe a recorded audio clip to text via the speech-to-text endpoint.
+
+        Args:
+            audio_bytes: Raw audio file content (wav/mp3/m4a/webm/...).
+            filename: Original filename; its extension hints the audio format
+                to the API, which does not otherwise inspect the bytes.
+            content_type: MIME type reported by the client.
+            language: ISO-639-1 language hint; defaults to
+                ``Config.LLM.TRANSCRIPTION_LANGUAGE()`` when omitted. Pass
+                ``""`` explicitly to let the model auto-detect instead.
+
+        Returns:
+            The transcribed text, stripped.
+        """
+        kwargs: Dict[str, Any] = dict(
+            model=Config.LLM.TRANSCRIPTION_MODEL(),
+            file=(filename, audio_bytes, content_type),
+            response_format="text",
+        )
+        resolved_language = (
+            language if language is not None else Config.LLM.TRANSCRIPTION_LANGUAGE()
+        )
+        if resolved_language:
+            kwargs["language"] = resolved_language
+        text = self.sync_client.audio.transcriptions.create(**kwargs)
+        return text.strip() if text else ""
+
     async def complete_with_tools_async(
         self, messages: List[Dict[str, Any]], tools: Optional[List[Dict[str, Any]]] = None
     ) -> Any:

@@ -7,13 +7,19 @@ import logging
 from typing import AsyncGenerator, Dict, List, Optional
 
 # Third-party imports
-from fastapi import APIRouter, Body, Depends
+from fastapi import APIRouter, Body, Depends, File, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 
 # Local imports
 from api.dependencies import get_chat_service
 from config.settings import Config
-from models.responses import BatchChatRequest, BatchChatResponse, ChatRequest
+from models.responses import (
+    BatchChatRequest,
+    BatchChatResponse,
+    ChatRequest,
+    StatusEnum,
+    TranscriptionResponse,
+)
 from services import ChatService
 
 router = APIRouter()
@@ -106,3 +112,46 @@ async def chat_batch(
     """
     results = await chat_service.batch_chat(request.queries)
     return BatchChatResponse(results=results)
+
+
+@router.post("/transcribe", response_model=TranscriptionResponse)
+async def transcribe(
+    audio: UploadFile = File(...),
+    chat_service: ChatService = Depends(get_chat_service),
+) -> TranscriptionResponse:
+    """
+    Transcribe a recorded audio clip to text so it can be sent as a chat query.
+
+    Args:
+        audio: Recorded voice query (wav/mp3/m4a/webm/...), capped at
+            ``MAX_AUDIO_FILE_SIZE``.
+        chat_service: Injected RAG chat service.
+
+    Returns:
+        The transcribed text, wrapped in the standard response envelope.
+    """
+    audio_bytes = await audio.read()
+    if not audio_bytes:
+        raise HTTPException(status_code=400, detail="Empty audio upload.")
+    if len(audio_bytes) > Config.File.MAX_AUDIO_FILE_SIZE():
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Audio file too large. Maximum "
+                f"{Config.File.MAX_AUDIO_FILE_SIZE() / (1024 * 1024):.1f}MB allowed."
+            ),
+        )
+
+    try:
+        text = await chat_service.transcribe_audio(
+            audio_bytes,
+            audio.filename or "recording.wav",
+            audio.content_type or "audio/wav",
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    except Exception as exc:
+        logger.exception("Audio transcription failed")
+        raise HTTPException(status_code=500, detail=f"Transcription failed: {exc}")
+
+    return TranscriptionResponse(status=StatusEnum.SUCCESS, text=text)
