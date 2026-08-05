@@ -117,12 +117,12 @@ class LLMConfig:
     @staticmethod
     def OPENAI_MODEL() -> str:
         """Chat completion model used for answer generation."""
-        return env_str("OPENAI_MODEL", "gpt-5-mini")
+        return env_str("OPENAI_MODEL", "gpt-5.6-luna")
 
     @staticmethod
     def OPENAI_LIGHT_MODEL() -> str:
         """Cheaper model for lightweight judgment calls (query rewriting, intent classification)."""
-        return env_str("OPENAI_LIGHT_MODEL", "gpt-4o-mini")
+        return env_str("OPENAI_LIGHT_MODEL", "gpt-4.1-nano")
 
     @staticmethod
     def EMBEDDING_MODEL() -> str:
@@ -150,6 +150,17 @@ class LLMConfig:
         return env_float("OPENAI_TEMPERATURE", 0.1)
 
     @staticmethod
+    def OPENAI_REASONING_EFFORT() -> str:
+        """
+        Reasoning depth for ``gpt-5*`` models.
+
+        One of ``none/minimal/low/medium/high/xhigh/max`` (model-dependent).
+        Ignored for non-reasoning models like the light model - see
+        ``OpenAIClientProvider._completion_kwargs``.
+        """
+        return env_str("OPENAI_REASONING_EFFORT", "low")
+
+    @staticmethod
     def OPENAI_TIMEOUT() -> int:
         """Per-request timeout in seconds."""
         return env_int("OPENAI_TIMEOUT", 30)
@@ -166,6 +177,16 @@ class LLMConfig:
         model auto-detect instead.
         """
         return env_str("TRANSCRIPTION_LANGUAGE", "vi")
+
+    @staticmethod
+    def TRANSCRIPTION_PROMPT() -> str:
+        """
+        Style/vocabulary prompt for voice queries; empty string sends none.
+        """
+        return env_str(
+            "TRANSCRIPTION_PROMPT",
+            "Đây là câu hỏi bằng tiếng Việt, được hỏi trong một cuộc trò chuyện với chatbot hỗ trợ tra cứu tài liệu.",
+        )
 
     @staticmethod
     def LLM_CACHE_TTL() -> int:
@@ -364,7 +385,7 @@ class RAGConfig:
         ms-marco-MiniLM) because the corpus and queries are a mix of English
         and Vietnamese.
         """
-        return env_str("RERANKER_MODEL", "BAAI/bge-reranker-v2-m3")
+        return env_str("RERANKER_MODEL", "jinaai/jina-reranker-v2-base-multilingual")
 
     @staticmethod
     def RETRIEVAL_MAX_CONCURRENCY() -> int:

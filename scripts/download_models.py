@@ -48,26 +48,20 @@ class ModelDownloader:
         model_name = Config.RAG.RERANKER_MODEL()
         logger.info("Downloading reranker model '%s' to %s", model_name, self._models_dir)
 
-        if model_name.startswith("jinaai/"):
-            from transformers import AutoModelForSequenceClassification, AutoTokenizer
+        from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
-            AutoTokenizer.from_pretrained(
-                model_name, trust_remote_code=True, cache_dir=self._models_dir
-            )
-            AutoModelForSequenceClassification.from_pretrained(
-                model_name, trust_remote_code=True, cache_dir=self._models_dir
-            )
-        else:
-            from sentence_transformers import CrossEncoder
-
-            # CrossEncoder has no `cache_folder` param (unlike
-            # SentenceTransformer) — pass the cache dir through to the
-            # underlying transformers `from_pretrained` calls instead.
-            CrossEncoder(
-                model_name,
-                automodel_args={"cache_dir": self._models_dir},
-                tokenizer_args={"cache_dir": self._models_dir},
-            )
+        # Loaded directly via `transformers` (not CrossEncoder) for every
+        # model — see core/retrieval/search/reranker.py for why.
+        trust_remote_code = model_name.startswith("jinaai/")
+        AutoTokenizer.from_pretrained(
+            model_name, trust_remote_code=trust_remote_code, cache_dir=self._models_dir
+        )
+        AutoModelForSequenceClassification.from_pretrained(
+            model_name,
+            trust_remote_code=trust_remote_code,
+            cache_dir=self._models_dir,
+            low_cpu_mem_usage=False,
+        )
         return model_name
 
     def download_ocr_model(self) -> None:

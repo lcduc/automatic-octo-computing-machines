@@ -14,11 +14,9 @@ os.environ["HF_TRUST_REMOTE_CODE"] = "True"
 logger = logging.getLogger(__name__)
 
 try:
-    from sentence_transformers import CrossEncoder  # type: ignore
     from transformers import AutoModelForSequenceClassification, AutoTokenizer  # type: ignore
     TRANSFORMERS_AVAILABLE = True
 except Exception:
-    CrossEncoder = None  # type: ignore
     TRANSFORMERS_AVAILABLE = False
 
 
@@ -42,31 +40,32 @@ class Reranker:
         self._model_name = model_name
         cache_dir = Config.Database.MODELS_DIR()
 
-        if CrossEncoder is not None or TRANSFORMERS_AVAILABLE:
+        if TRANSFORMERS_AVAILABLE:
             candidates = list(dict.fromkeys([model_name, self._EMERGENCY_FALLBACK_MODEL]))
             for candidate in candidates:
                 try:
-                    # Special handling for jinaai models that require trust_remote_code
-                    if candidate.startswith("jinaai/") and TRANSFORMERS_AVAILABLE:
-                        tokenizer = AutoTokenizer.from_pretrained(
-                            candidate, trust_remote_code=True, cache_dir=cache_dir
-                        )
-                        model = AutoModelForSequenceClassification.from_pretrained(
-                            candidate, trust_remote_code=True, cache_dir=cache_dir
-                        )
-                        self._model = self._create_cross_encoder_wrapper(model, tokenizer)
-                        logger.info("Reranker loaded (transformers): %s", candidate)
-                    else:
-                        # CrossEncoder has no `cache_folder` param (unlike
-                        # SentenceTransformer) — the cache dir is passed through
-                        # to the underlying transformers `from_pretrained` calls
-                        # instead. Verified against sentence-transformers 2.5.1.
-                        self._model = CrossEncoder(
-                            candidate,
-                            automodel_args={"cache_dir": cache_dir},
-                            tokenizer_args={"cache_dir": cache_dir},
-                        )
-                        logger.info("Reranker loaded (sentence_transformers): %s", candidate)
+                    # Loaded directly via `transformers` (not
+                    # sentence_transformers.CrossEncoder) for every model,
+                    # jinaai or not: CrossEncoder's own loading wrapper
+                    # segfaults (access violation in torch/transformers
+                    # native code, uncatchable from Python) with this
+                    # project's torch/transformers/accelerate combo on
+                    # Windows, even when passed the same
+                    # low_cpu_mem_usage=False that avoids the crash when
+                    # calling `from_pretrained` directly. Verified against
+                    # transformers 4.53.3 / torch 2.13.0+cu126.
+                    trust_remote_code = candidate.startswith("jinaai/")
+                    tokenizer = AutoTokenizer.from_pretrained(
+                        candidate, trust_remote_code=trust_remote_code, cache_dir=cache_dir
+                    )
+                    model = AutoModelForSequenceClassification.from_pretrained(
+                        candidate,
+                        trust_remote_code=trust_remote_code,
+                        cache_dir=cache_dir,
+                        low_cpu_mem_usage=False,
+                    )
+                    self._model = self._create_cross_encoder_wrapper(model, tokenizer)
+                    logger.info("Reranker loaded (transformers): %s", candidate)
 
                     self._model_name = candidate
                     break
@@ -74,39 +73,42 @@ class Reranker:
                     logger.exception("Failed to load reranker '%s'", candidate)
 
     def _create_cross_encoder_wrapper(self, model, tokenizer):
-        """Create a CrossEncoder-like wrapper for transformers models."""
+        """Create a CrossEncoder-like wrapper around a raw transformers model/tokenizer pair."""
         class CrossEncoderWrapper:
             def __init__(self, model, tokenizer):
-                self.model = model
+                import torch
+
+                self.device = "cuda" if torch.cuda.is_available() else "cpu"
+                self.model = model.to(self.device)
                 self.tokenizer = tokenizer
                 self.model.eval()
-            
+
             def predict(self, pairs):
                 """Predict scores for query-document pairs."""
                 import torch
                 import numpy as np
-                
+
                 scores = []
                 for query, document in pairs:
                     # Tokenize the pair
                     inputs = self.tokenizer(
-                        query, 
-                        document, 
-                        return_tensors="pt", 
-                        truncation=True, 
+                        query,
+                        document,
+                        return_tensors="pt",
+                        truncation=True,
                         max_length=512,
-                        padding=True
-                    )
-                    
+                        padding=True,
+                    ).to(self.device)
+
                     # Get prediction
                     with torch.no_grad():
                         outputs = self.model(**inputs)
                         # Get the score (logits) for the positive class
                         score = torch.sigmoid(outputs.logits).item()
                         scores.append(score)
-                
+
                 return np.array(scores)
-        
+
         return CrossEncoderWrapper(model, tokenizer)
 
     def available(self) -> bool:

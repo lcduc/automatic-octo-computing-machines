@@ -111,9 +111,10 @@ class OpenAIClientProvider:
         Build the model/token-limit/temperature kwargs for a completion call.
 
         ``gpt-5*`` models reject the legacy ``max_tokens`` parameter (they need
-        ``max_completion_tokens`` instead) and only support the default
-        ``temperature`` of 1, so both are adapted per model family here rather
-        than at each call site.
+        ``max_completion_tokens`` instead), only support the default
+        ``temperature`` of 1, and take a ``reasoning_effort`` knob instead -
+        so all three are adapted per model family here rather than at each
+        call site.
 
         Args:
             model: Model name to resolve the parameter set for.
@@ -126,6 +127,7 @@ class OpenAIClientProvider:
         kwargs: Dict[str, Any] = {"model": model}
         if model.startswith("gpt-5"):
             kwargs["max_completion_tokens"] = max_tokens
+            kwargs["reasoning_effort"] = Config.LLM.OPENAI_REASONING_EFFORT()
         else:
             kwargs["max_tokens"] = max_tokens
             kwargs["temperature"] = temperature
@@ -186,6 +188,7 @@ class OpenAIClientProvider:
         filename: str,
         content_type: str = "audio/wav",
         language: Optional[str] = None,
+        prompt: Optional[str] = None,
     ) -> str:
         """
         Transcribe a recorded audio clip to text via the speech-to-text endpoint.
@@ -198,6 +201,10 @@ class OpenAIClientProvider:
             language: ISO-639-1 language hint; defaults to
                 ``Config.LLM.TRANSCRIPTION_LANGUAGE()`` when omitted. Pass
                 ``""`` explicitly to let the model auto-detect instead.
+            prompt: Style/vocabulary hint that also steers the output
+                language on ambiguous audio; defaults to
+                ``Config.LLM.TRANSCRIPTION_PROMPT()`` when omitted. Pass
+                ``""`` explicitly to send none.
 
         Returns:
             The transcribed text, stripped.
@@ -212,6 +219,9 @@ class OpenAIClientProvider:
         )
         if resolved_language:
             kwargs["language"] = resolved_language
+        resolved_prompt = prompt if prompt is not None else Config.LLM.TRANSCRIPTION_PROMPT()
+        if resolved_prompt:
+            kwargs["prompt"] = resolved_prompt
         text = self.sync_client.audio.transcriptions.create(**kwargs)
         return text.strip() if text else ""
 

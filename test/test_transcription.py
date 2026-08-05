@@ -79,6 +79,34 @@ def test_transcribe_empty_string_language_opts_out_of_default():
     assert "language" not in transcriptions.calls[0]
 
 
+def test_transcribe_defaults_to_configured_prompt_when_omitted():
+    transcriptions = _FakeTranscriptions(response="xin chào")
+    provider = _provider_with_fake_transcriptions(transcriptions)
+
+    provider.transcribe(b"raw", "clip.wav", "audio/wav")
+
+    assert "prompt" in transcriptions.calls[0]
+    assert transcriptions.calls[0]["prompt"]
+
+
+def test_transcribe_passes_prompt_override_when_given():
+    transcriptions = _FakeTranscriptions(response="xin chào")
+    provider = _provider_with_fake_transcriptions(transcriptions)
+
+    provider.transcribe(b"raw", "clip.wav", "audio/wav", prompt="custom vocabulary hint")
+
+    assert transcriptions.calls[0]["prompt"] == "custom vocabulary hint"
+
+
+def test_transcribe_empty_string_prompt_opts_out_of_default():
+    transcriptions = _FakeTranscriptions(response="hello")
+    provider = _provider_with_fake_transcriptions(transcriptions)
+
+    provider.transcribe(b"raw", "clip.wav", "audio/wav", prompt="")
+
+    assert "prompt" not in transcriptions.calls[0]
+
+
 def test_transcribe_returns_empty_string_for_empty_response():
     transcriptions = _FakeTranscriptions(response="")
     provider = _provider_with_fake_transcriptions(transcriptions)

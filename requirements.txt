@@ -3,7 +3,13 @@
 #
 # torch/torchvision/torchaudio and paddlepaddle are installed separately (see
 # Dockerfile) since both need a hardware-specific index URL (CPU vs CUDA
-# build). For a local venv:
+# build). ALWAYS pin the exact version — an unpinned `pip install torch ...`
+# grabs whatever's newest that day, which can silently drift out of step with
+# the rest of the pinned stack (transformers/accelerate/faiss-cpu above) and
+# reintroduce native-level crashes those pins were verified against. This is
+# not hypothetical: it happened on this project (torch got reinstalled 4 days
+# after transformers/accelerate, landing on an untested-together combo that
+# segfaulted on load — see core/retrieval/search/reranker.py).
 #   pip install torch --index-url https://download.pytorch.org/whl/cpu
 #   pip install paddlepaddle==3.2.0 -i https://www.paddlepaddle.org.cn/packages/stable/cpu/
 # Pin paddlepaddle to 3.2.0, not 3.3.x — 3.3.0's oneDNN/PIR CPU executor is
@@ -21,14 +27,25 @@ aiofiles==24.1.0
 openai==1.57.0
 
 # --- Retrieval / embeddings ---
-sentence-transformers==2.5.1
+# faiss-cpu 1.8.0 (2024) conflicts with this project's torch 2.13.0+cu126 at
+# the native-library level on Windows: merely `import faiss` anywhere in the
+# process, before any torch/transformers model is loaded, corrupts state that
+# later makes transformers' weight-loading segfault (access violation inside
+# torch/transformers native code, uncatchable from Python) — reproduced with
+# a bare `import faiss` + `AutoModelForSequenceClassification.from_pretrained`,
+# no sentence-transformers involved. Confirmed fixed by upgrading faiss-cpu;
+# do not downgrade without re-verifying against the installed torch build.
+faiss-cpu==1.15.0
+# sentence-transformers/transformers/accelerate pinned together as a known-
+# compatible set (previously transformers/accelerate floated unpinned).
+sentence-transformers==5.6.1
+transformers==4.53.3    # direct import, previously transitive (reranker.py)
+accelerate==1.14.0       # pulled in by transformers' from_pretrained meta-loading path
 huggingface_hub[hf_xet]==0.33.1
 rank-bm25==0.2.2
-faiss-cpu==1.8.0
 numpy==1.26.4
 scikit-learn==1.5.2
 h5py==3.10.0
-transformers            # direct import, previously transitive (reranker.py)
 
 # --- Document processing ---
 docling==2.54.0
