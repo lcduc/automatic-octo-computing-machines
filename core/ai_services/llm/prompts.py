@@ -14,7 +14,15 @@ class SystemPrompts:
     Provides a single, comprehensive prompt template for consistent AI responses.
     """
 
-    # Universal prompt template in Vietnamese
+    # Universal prompt template in Vietnamese.
+    #
+    # Deliberately free of any per-request substitution (no `{context}` or
+    # similar): this string is sent byte-identical on every single request,
+    # which is what makes it eligible for OpenAI's prompt caching (a stable,
+    # >=1024-token prefix gets served from cache at a steep discount instead
+    # of being reprocessed). Retrieved context is injected separately via
+    # `PromptManager.build_context_block` and appended to the user turn
+    # instead, so it never breaks this prefix.
     UNIVERSAL = """
     Bạn là trợ lý ảo của tôi — chatbot hỗ trợ đọc và phân tích dữ liệu từ các tài liệu.
 
@@ -44,8 +52,19 @@ class SystemPrompts:
 
     [Tên liên kết](URL)
 
-    Hãy trả lời ngay bây giờ bằng cách sử dụng ngữ cảnh sau: {context}
+    Bạn sẽ nhận được ngữ cảnh liên quan (nếu có) ngay trong tin nhắn của người dùng, ngay trước câu hỏi. Hãy sử dụng ngữ cảnh đó để trả lời.
     """
+
+    #: Shown to the user in place of retrieved context when the knowledge
+    #: base has no documents yet.
+    NO_CONTEXT_FALLBACK = (
+        "Hiện chưa có tài liệu nào trong cơ sở tri thức. Người dùng cần tải lên tài liệu "
+        "trước khi bạn có thể cung cấp câu trả lời dựa trên thông tin. Vui lòng hướng dẫn "
+        "và khuyến khích họ tải lên tài liệu."
+    )
+
+    #: Wraps retrieved context so it reads clearly inside the user turn.
+    CONTEXT_BLOCK = "Ngữ cảnh:\n{context}\n\nCâu hỏi: {query}"
 
 
 class PromptManager:
@@ -58,39 +77,49 @@ class PromptManager:
         # Store custom prompts for specialized use cases
         self.custom_prompts = {}
 
-    def get_system_prompt(
-        self, prompt_type: str = "universal", context: str = "", **kwargs
-    ) -> str:
+    def get_system_prompt(self, prompt_type: str = "universal", **kwargs) -> str:
         """
-        Generate system prompt with context for AI conversation.
+        Return the static system instructions for the AI conversation.
+
+        The result is identical on every call for a given ``prompt_type``
+        (no retrieved context or other per-request data is mixed in here),
+        so it forms a stable prefix OpenAI's prompt caching can serve from
+        cache at a discount instead of reprocessing. Use
+        :meth:`build_context_block` to attach retrieved context to the user
+        turn instead.
 
         Args:
             prompt_type: Type of prompt to use (defaults to universal)
-            context: Document context for RAG responses
-            **kwargs: Additional formatting parameters
+            **kwargs: Formatting parameters for custom prompt templates
 
         Returns:
-            Formatted system prompt ready for AI use
+            The system prompt text ready for AI use
         """
         try:
-            # Use custom prompt if available, otherwise fall back to universal
-            if prompt_type in self.custom_prompts:
-                template = self.custom_prompts[prompt_type]
-            else:
-                # Use universal prompt for all scenarios
-                template = SystemPrompts.UNIVERSAL
-
-            # Handle empty context gracefully with helpful guidance
-            if not context or not context.strip():
-                context = "Hiện chưa có tài liệu nào trong cơ sở tri thức. Người dùng cần tải lên tài liệu trước khi bạn có thể cung cấp câu trả lời dựa trên thông tin. Vui lòng hướng dẫn và khuyến khích họ tải lên tài liệu."
-
-            return template.format(context=context, **kwargs)
-
+            template = self.custom_prompts.get(prompt_type, SystemPrompts.UNIVERSAL)
+            return template.format(**kwargs) if kwargs else template
         except Exception as e:
             logger.error(f"Error formatting prompt: {e}")
-            # Fallback to safe context handling
-            safe_context = context if context else "No context available."
-            return SystemPrompts.UNIVERSAL.format(context=safe_context)
+            return SystemPrompts.UNIVERSAL
+
+    def build_context_block(self, query: str, context: str) -> str:
+        """
+        Format retrieved context and the user's question for the user turn.
+
+        Kept out of the system message on purpose: the system message must
+        stay byte-identical across requests to remain a cacheable prefix,
+        so anything that varies per-request (retrieved context, the
+        question itself) belongs in the user message instead.
+
+        Args:
+            query: The user's question.
+            context: Retrieved RAG context, empty when none was found.
+
+        Returns:
+            Combined "context + question" text for the user message.
+        """
+        resolved_context = context if context and context.strip() else SystemPrompts.NO_CONTEXT_FALLBACK
+        return SystemPrompts.CONTEXT_BLOCK.format(context=resolved_context, query=query)
 
     def add_custom_prompt(self, name: str, template: str):
         """Add custom prompt template for specialized use cases."""

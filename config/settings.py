@@ -117,7 +117,7 @@ class LLMConfig:
     @staticmethod
     def OPENAI_MODEL() -> str:
         """Chat completion model used for answer generation."""
-        return env_str("OPENAI_MODEL", "gpt-5.6-luna")
+        return env_str("OPENAI_MODEL", "gpt-5-mini")
 
     @staticmethod
     def OPENAI_LIGHT_MODEL() -> str:
@@ -168,7 +168,7 @@ class LLMConfig:
     @staticmethod
     def TRANSCRIPTION_MODEL() -> str:
         """Speech-to-text model used to transcribe voice queries."""
-        return env_str("TRANSCRIPTION_MODEL", "gpt-4o-transcribe")
+        return env_str("TRANSCRIPTION_MODEL", "gpt-transcribe")
 
     @staticmethod
     def TRANSCRIPTION_LANGUAGE() -> str:

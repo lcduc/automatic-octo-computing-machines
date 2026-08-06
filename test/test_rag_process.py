@@ -176,14 +176,15 @@ class RAGProcessTester:
         # Step 5: Generate system prompt
         print("5️⃣ Generating system prompt...")
         prompt_start = time.time()
-        
-        system_prompt = self.prompt_manager.get_system_prompt(context=context)
+
+        system_prompt = self.prompt_manager.get_system_prompt()
+        user_message = self.prompt_manager.build_context_block(query, context)
         prompt_time = time.time() - prompt_start
-        
+
         print(f"    System prompt generated in {prompt_time:.3f}s")
         print(f"   📏 System prompt length: {len(system_prompt)} characters")
         print()
-        
+
         # Step 6: Display complete prompt
         print("6️⃣ Complete Prompt Assembly:")
         print("=" * 80)
@@ -194,7 +195,7 @@ class RAGProcessTester:
         print()
         print("👤 USER MESSAGE:")
         print("-" * 40)
-        print(query)
+        print(user_message)
         print("-" * 40)
         print()
         
@@ -216,9 +217,6 @@ class RAGProcessTester:
             if len(context) > max_context_length:
                 context = context[:max_context_length]
                 print(f"     Context truncated to {max_context_length} characters")
-            
-            # Generate system prompt using the same context
-            system_prompt = self.prompt_manager.get_system_prompt(context=context)
             
             # Generate response using the chatbot service with the same context
             response = self.chatbot_service.get_response_with_context(

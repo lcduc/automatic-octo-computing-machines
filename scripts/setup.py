@@ -56,7 +56,7 @@ def setup_environment():
 
 # OpenAI Configuration
 OPENAI_API_KEY=your_openai_api_key_here
-OPENAI_MODEL=gpt-5.6-luna
+OPENAI_MODEL=gpt-5-mini
 OPENAI_LIGHT_MODEL=gpt-4.1-nano
 
 # Server Configuration

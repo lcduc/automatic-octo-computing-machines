@@ -264,11 +264,18 @@ class ChatbotService:
         context: str,
         history: Optional[List[Dict[str, str]]] = None,
     ) -> List[Dict[str, str]]:
-        """Assemble the OpenAI message list: system prompt, history, user turn."""
+        """
+        Assemble the OpenAI message list: system prompt, history, user turn.
+
+        The system message is static (see :class:`SystemPrompts`), so it is
+        a stable, cacheable prefix; retrieved context is appended to the
+        user turn instead of the system message so it never invalidates
+        that prefix.
+        """
         messages: List[Dict[str, str]] = [
             {
                 "role": "system",
-                "content": str(self.prompt_manager.get_system_prompt(context=context)),
+                "content": self.prompt_manager.get_system_prompt(),
             }
         ]
         if history:
@@ -277,7 +284,9 @@ class ChatbotService:
                     messages.append(
                         {"role": str(message["role"]), "content": str(message["content"])}
                     )
-        messages.append({"role": "user", "content": str(query)})
+        messages.append(
+            {"role": "user", "content": self.prompt_manager.build_context_block(str(query), context)}
+        )
         return messages
 
     def _complete(
