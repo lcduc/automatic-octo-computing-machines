@@ -17,16 +17,20 @@ from openai import AsyncOpenAI, OpenAI, APIConnectionError, APIStatusError
 
 # Local imports
 from config.settings import Config
+from .base_llm_provider import BaseLLMProvider
 
 logger = logging.getLogger(__name__)
 
 
-class OpenAIClientProvider:
+class OpenAIClientProvider(BaseLLMProvider):
     """
     Lazily builds and reuses the sync/async OpenAI clients.
 
     All chat completion traffic goes through :meth:`complete` and
     :meth:`stream` so retry, timeout and model settings are configured once.
+    Also owns tool-calling (:meth:`complete_with_tools_async`) and
+    speech-to-text (:meth:`transcribe`) — capabilities specific to this
+    provider and not part of :class:`BaseLLMProvider`.
     """
 
     #: Retries performed by the SDK before an error is surfaced.

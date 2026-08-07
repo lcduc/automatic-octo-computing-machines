@@ -10,7 +10,7 @@ there is no risk of two accessors disagreeing on a default.
 # Standard library imports
 import logging
 import os
-from typing import List
+from typing import List, Optional
 
 # Third-party imports
 from dotenv import load_dotenv
@@ -107,7 +107,42 @@ class DatabaseConfig:
 
 
 class LLMConfig:
-    """OpenAI credentials, model selection and answer-cache tuning."""
+    """LLM provider selection, credentials, model selection and answer-cache tuning."""
+
+    @staticmethod
+    def LLM_PROVIDER() -> str:
+        """Which chat-completion backend to use: ``openai``, ``anthropic`` or ``gemini``."""
+        return env_str("LLM_PROVIDER", "openai")
+
+    @staticmethod
+    def ACTIVE_MODEL() -> str:
+        """Main answer-generation model for whichever provider is active."""
+        provider = LLMConfig.LLM_PROVIDER().strip().lower()
+        if provider == "anthropic":
+            return LLMConfig.ANTHROPIC_MODEL()
+        if provider == "gemini":
+            return LLMConfig.GEMINI_MODEL()
+        return LLMConfig.OPENAI_MODEL()
+
+    @staticmethod
+    def ACTIVE_LIGHT_MODEL() -> str:
+        """Cheap/fast model (query rewriting, intent classification) for the active provider."""
+        provider = LLMConfig.LLM_PROVIDER().strip().lower()
+        if provider == "anthropic":
+            return LLMConfig.ANTHROPIC_LIGHT_MODEL()
+        if provider == "gemini":
+            return LLMConfig.GEMINI_LIGHT_MODEL()
+        return LLMConfig.OPENAI_LIGHT_MODEL()
+
+    @staticmethod
+    def ACTIVE_API_KEY() -> Optional[str]:
+        """API key for whichever provider ``LLM_PROVIDER`` selects."""
+        provider = LLMConfig.LLM_PROVIDER().strip().lower()
+        if provider == "anthropic":
+            return LLMConfig.ANTHROPIC_API_KEY()
+        if provider == "gemini":
+            return LLMConfig.GEMINI_API_KEY()
+        return LLMConfig.OPENAI_API_KEY()
 
     @staticmethod
     def OPENAI_API_KEY():
@@ -187,6 +222,56 @@ class LLMConfig:
             "TRANSCRIPTION_PROMPT",
             "Đây là câu hỏi bằng tiếng Việt, được hỏi trong một cuộc trò chuyện với chatbot hỗ trợ tra cứu tài liệu.",
         )
+
+    @staticmethod
+    def ANTHROPIC_API_KEY() -> Optional[str]:
+        """API key; ``None`` when unset so callers can degrade gracefully."""
+        return os.getenv("ANTHROPIC_API_KEY")
+
+    @staticmethod
+    def ANTHROPIC_MODEL() -> str:
+        """Chat completion model used for answer generation."""
+        return env_str("ANTHROPIC_MODEL", "claude-sonnet-5")
+
+    @staticmethod
+    def ANTHROPIC_LIGHT_MODEL() -> str:
+        """Cheaper model for lightweight judgment calls (query rewriting, intent classification)."""
+        return env_str("ANTHROPIC_LIGHT_MODEL", "claude-haiku-4-5")
+
+    @staticmethod
+    def ANTHROPIC_MAX_TOKENS() -> int:
+        """Completion token cap per request."""
+        return env_int("ANTHROPIC_MAX_TOKENS", 4000)
+
+    @staticmethod
+    def ANTHROPIC_TIMEOUT() -> int:
+        """Per-request timeout in seconds."""
+        return env_int("ANTHROPIC_TIMEOUT", 30)
+
+    @staticmethod
+    def GEMINI_API_KEY() -> Optional[str]:
+        """API key; ``None`` when unset so callers can degrade gracefully."""
+        return os.getenv("GEMINI_API_KEY")
+
+    @staticmethod
+    def GEMINI_MODEL() -> str:
+        """Chat completion model used for answer generation."""
+        return env_str("GEMINI_MODEL", "gemini-3.6-flash")
+
+    @staticmethod
+    def GEMINI_LIGHT_MODEL() -> str:
+        """Cheaper model for lightweight judgment calls (query rewriting, intent classification)."""
+        return env_str("GEMINI_LIGHT_MODEL", "gemini-3.5-flash-lite")
+
+    @staticmethod
+    def GEMINI_MAX_TOKENS() -> int:
+        """Completion token cap per request."""
+        return env_int("GEMINI_MAX_TOKENS", 4000)
+
+    @staticmethod
+    def GEMINI_TIMEOUT() -> int:
+        """Per-request timeout in seconds."""
+        return env_int("GEMINI_TIMEOUT", 30)
 
     @staticmethod
     def LLM_CACHE_TTL() -> int:
@@ -657,7 +742,10 @@ class Config:
             if directory:
                 FileManager.ensure_directory_exists(directory)
 
-        if not LLMConfig.OPENAI_API_KEY():
-            logger.warning("OPENAI_API_KEY is not set; chat functionality will not work.")
+        if not LLMConfig.ACTIVE_API_KEY():
+            logger.warning(
+                "No API key set for the active LLM_PROVIDER=%r; chat functionality will not work.",
+                LLMConfig.LLM_PROVIDER(),
+            )
             return False
         return True

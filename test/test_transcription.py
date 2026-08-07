@@ -138,7 +138,7 @@ class _StubClientProvider:
 @pytest.mark.asyncio
 async def test_chatbot_service_transcribe_audio_delegates_to_client_provider():
     client = _StubClientProvider(response="what is the refund policy")
-    service = ChatbotService(context_retriever=object(), client_provider=client)
+    service = ChatbotService(context_retriever=object(), llm_provider=client)
 
     result = await service.transcribe_audio(b"raw-bytes", "voice.wav", "audio/wav")
 

@@ -19,7 +19,7 @@ from typing import Any, Dict, List, Optional
 # Local imports
 from config.settings import Config
 from models.intent import IntentType
-from .openai_client import OpenAIClientProvider
+from .base_llm_provider import BaseLLMProvider
 
 logger = logging.getLogger(__name__)
 
@@ -43,10 +43,10 @@ _HISTORY_WINDOW = 6
 class IntentRouter:
     """Decides whether a turn should go to the RAG engine or the action engine."""
 
-    def __init__(self, client_provider: OpenAIClientProvider):
+    def __init__(self, client_provider: BaseLLMProvider):
         """
         Args:
-            client_provider: Shared OpenAI client owner used for the classify call.
+            client_provider: Shared LLM provider used for the classify call.
         """
         self._client_provider = client_provider
 
@@ -83,7 +83,7 @@ class IntentRouter:
         try:
             raw = await self._client_provider.complete_async(
                 self._build_messages(query, history),
-                model=Config.LLM.OPENAI_LIGHT_MODEL(),
+                model=Config.LLM.ACTIVE_LIGHT_MODEL(),
             )
         except Exception:
             logger.exception("Intent classification failed; defaulting to RAG")
