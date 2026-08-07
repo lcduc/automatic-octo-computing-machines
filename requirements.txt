@@ -20,11 +20,16 @@
 fastapi==0.115.6
 uvicorn[standard]==0.32.1
 python-multipart==0.0.20
-httpx==0.27.0
+# Pinned to 0.28.1, not 0.27.0: anthropic==0.120.2/google-genai==2.17.0 below
+# require httpx>=0.28 and pip's resolver upgrades it regardless, so the pin
+# is bumped to match what's actually installed rather than drifting silently.
+httpx==0.28.1
 aiofiles==24.1.0
 
-# --- LLM ---
+# --- LLM providers --- (select via LLM_PROVIDER=openai|anthropic|gemini)
 openai==1.57.0
+anthropic==0.120.2
+google-genai==2.17.0
 
 # --- Retrieval / embeddings ---
 # faiss-cpu 1.8.0 (2024) conflicts with this project's torch 2.13.0+cu126 at

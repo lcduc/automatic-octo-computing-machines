@@ -12,7 +12,7 @@ from typing import Dict, List, Optional
 
 # Local imports
 from config.settings import Config
-from .openai_client import OpenAIClientProvider
+from .base_llm_provider import BaseLLMProvider
 
 logger = logging.getLogger(__name__)
 
@@ -31,10 +31,10 @@ _HISTORY_WINDOW = 6
 class QueryRewriter:
     """Condenses a follow-up question into a standalone query using history."""
 
-    def __init__(self, client_provider: OpenAIClientProvider):
+    def __init__(self, client_provider: BaseLLMProvider):
         """
         Args:
-            client_provider: Shared OpenAI client owner used for the rewrite call.
+            client_provider: Shared LLM provider used for the rewrite call.
         """
         self._client_provider = client_provider
 
@@ -73,7 +73,7 @@ class QueryRewriter:
         try:
             rewritten = self._client_provider.complete(
                 self._build_messages(query, history),
-                model=Config.LLM.OPENAI_LIGHT_MODEL(),
+                model=Config.LLM.ACTIVE_LIGHT_MODEL(),
             )
         except Exception:
             logger.exception("Query rewrite failed; falling back to original query")

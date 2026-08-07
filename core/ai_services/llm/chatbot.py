@@ -3,7 +3,7 @@ RAG-powered conversation engine.
 
 Orchestrates retrieval, prompt assembly, caching, LLM invocation and confidence
 scoring. The mechanics of each of those steps live in dedicated collaborators
-(:mod:`response_cache`, :mod:`openai_client`, :mod:`response_factory` and
+(:mod:`response_cache`, :mod:`base_llm_provider`, :mod:`response_factory` and
 ``ContextAssembler``) so this class stays an orchestrator.
 """
 
@@ -14,17 +14,15 @@ import logging
 import time
 from typing import Any, AsyncGenerator, Dict, List, Optional, Union
 
-# Third-party imports
-import openai
-from openai import APIConnectionError, APIStatusError, APITimeoutError
-
 # Local imports
 from config.settings import Config
 from core.infrastructure.audit import AuditTrailService, get_audit_trail_service
 from models.audit_entry import AuditEntry
 from models.responses import ChatResponse, ErrorResponse, StatusEnum
 from ..confidence.confidence import ConfidenceScorer
+from .base_llm_provider import BaseLLMProvider
 from .openai_client import OpenAIClientProvider
+from .provider_factory import LLMProviderFactory
 from .prompts import PromptManager
 from .query_rewriter import QueryRewriter
 from .response_cache import ResponseCache
@@ -53,14 +51,15 @@ class ChatbotService:
     """
     RAG chatbot facade: retrieval, caching, generation and confidence scoring.
 
-    A single instance is intended to be shared process-wide; it owns pooled
-    OpenAI clients and a response cache that must not be rebuilt per request.
+    A single instance is intended to be shared process-wide; it owns the
+    active LLM provider's pooled clients and a response cache that must not
+    be rebuilt per request.
     """
 
     def __init__(
         self,
         context_retriever=None,
-        client_provider: Optional[OpenAIClientProvider] = None,
+        llm_provider: Optional[BaseLLMProvider] = None,
         response_cache: Optional[ResponseCache] = None,
         audit_trail: Optional[AuditTrailService] = None,
     ):
@@ -68,7 +67,9 @@ class ChatbotService:
         Args:
             context_retriever: Retriever used for hybrid search; created lazily
                 from the default implementation when omitted.
-            client_provider: Owner of the OpenAI clients.
+            llm_provider: Owner of the chat-completion backend; built from
+                ``Config.LLM.LLM_PROVIDER()`` via :class:`LLMProviderFactory`
+                when omitted.
             response_cache: Cache of previously generated answers.
             audit_trail: Recorder for the per-turn audit log; defaults to the
                 process-wide instance.
@@ -81,15 +82,20 @@ class ChatbotService:
         self.confidence_scorer = ConfidenceScorer()
         self.context_assembler = ContextAssembler()
 
-        self._client_provider = client_provider or OpenAIClientProvider()
-        self.query_rewriter = QueryRewriter(self._client_provider)
+        self._llm_provider = llm_provider or LLMProviderFactory.create()
+        # Voice transcription only exists on OpenAI's API; reuse the active
+        # provider's client when it already is one, otherwise a dedicated
+        # instance is built lazily (see `_transcription_provider`) so a
+        # non-OpenAI LLM_PROVIDER doesn't force an unrelated OpenAI client.
+        self._dedicated_transcription_provider: Optional[OpenAIClientProvider] = None
+        self.query_rewriter = QueryRewriter(self._llm_provider)
         self._cache = response_cache or ResponseCache(
             max_entries=Config.LLM.LLM_CACHE_MAX_ENTRIES(),
             ttl_seconds=Config.LLM.LLM_CACHE_TTL(),
         )
         self._audit_trail = audit_trail or get_audit_trail_service()
         self._responses = ChatResponseFactory(self.confidence_scorer)
-        self._api_available = self._client_provider.check_availability()
+        self._api_available = self._llm_provider.check_availability()
 
         # Retrieval (embedding + BM25 + cross-encoder rerank) is CPU/GPU-bound
         # and synchronous; the async paths below run it in a worker thread so
@@ -104,7 +110,7 @@ class ChatbotService:
 
     @property
     def api_available(self) -> bool:
-        """Whether the OpenAI API was reachable at start-up."""
+        """Whether the active provider's API was reachable at start-up."""
         return self._api_available
 
     def get_service_status(self) -> Dict[str, Any]:
@@ -112,7 +118,8 @@ class ChatbotService:
         cache_stats = self._cache.get_stats()
         return {
             "service_available": self.api_available,
-            "model": Config.LLM.OPENAI_MODEL(),
+            "provider": Config.LLM.LLM_PROVIDER(),
+            "model": Config.LLM.ACTIVE_MODEL(),
             "max_tokens": Config.LLM.OPENAI_MAX_TOKENS(),
             "cache_size": cache_stats["size"],
             "cache_hits": cache_stats["hits"],
@@ -131,13 +138,37 @@ class ChatbotService:
         }
 
     def cleanup(self) -> None:
-        """Release pooled HTTP connections held by the OpenAI clients."""
-        self._client_provider.close()
+        """Release pooled HTTP connections held by the LLM clients."""
+        self._llm_provider.close()
+        if self._dedicated_transcription_provider is not None:
+            self._dedicated_transcription_provider.close()
         logger.info("ChatbotService cleanup completed")
 
     # ------------------------------------------------------------------
     # Speech-to-text
     # ------------------------------------------------------------------
+
+    def _transcription_provider(self) -> OpenAIClientProvider:
+        """
+        Return an OpenAI provider for transcription, regardless of ``LLM_PROVIDER``.
+
+        Voice transcription only exists on OpenAI's API. When the active
+        chat provider already is an ``OpenAIClientProvider`` it is reused
+        directly; otherwise a dedicated instance is built lazily so choosing
+        Anthropic or Gemini for chat doesn't require an unrelated OpenAI
+        client to also be constructed up front.
+
+        Raises:
+            RuntimeError: ``OPENAI_API_KEY`` is not configured, so
+                transcription cannot work under any provider choice.
+        """
+        if hasattr(self._llm_provider, "transcribe"):
+            return self._llm_provider
+        if self._dedicated_transcription_provider is None:
+            self._dedicated_transcription_provider = OpenAIClientProvider()
+        if not self._dedicated_transcription_provider.is_configured:
+            raise RuntimeError("Transcription requires OPENAI_API_KEY to be configured.")
+        return self._dedicated_transcription_provider
 
     async def transcribe_audio(
         self,
@@ -150,7 +181,9 @@ class ChatbotService:
 
         Runs the OpenAI SDK's blocking call in a worker thread via
         ``asyncio.to_thread`` so it does not stall the event loop for the
-        duration of the upload and transcription.
+        duration of the upload and transcription. Always uses OpenAI's
+        speech-to-text API regardless of the active chat ``LLM_PROVIDER``
+        (see :meth:`_transcription_provider`).
 
         Args:
             audio_bytes: Raw audio file content.
@@ -162,13 +195,13 @@ class ChatbotService:
             The transcribed text.
 
         Raises:
+            RuntimeError: ``OPENAI_API_KEY`` is not configured.
             openai.APITimeoutError, openai.RateLimitError, Exception: propagated
                 from the API call so callers can map them to user-facing text.
         """
+        provider = self._transcription_provider()
         logger.info("Transcribing audio upload %s (%d bytes)", filename, len(audio_bytes))
-        text = await asyncio.to_thread(
-            self._client_provider.transcribe, audio_bytes, filename, content_type
-        )
+        text = await asyncio.to_thread(provider.transcribe, audio_bytes, filename, content_type)
         logger.debug("Transcription complete: %d chars", len(text))
         return text
 
@@ -302,8 +335,8 @@ class ChatbotService:
             A ``(response_text, was_cached)`` pair.
 
         Raises:
-            openai.APITimeoutError, openai.RateLimitError, Exception: propagated
-                from the API call so callers can map them to user-facing text.
+            Exception: propagated from the active provider's API call so
+                callers can map it to user-facing text via :meth:`_map_api_error`.
         """
         cache_key = ResponseCache.build_key(query, context, history)
         cached = self._cache.get(cache_key)
@@ -312,7 +345,7 @@ class ChatbotService:
             return cached, True
 
         messages = self._build_messages(query, context, history)
-        response_text = self._client_provider.complete(messages)
+        response_text = self._llm_provider.complete(messages)
         self._cache.set(cache_key, response_text)
         return response_text, False
 
@@ -330,7 +363,7 @@ class ChatbotService:
             return cached, True
 
         messages = self._build_messages(query, context, history)
-        response_text = await self._client_provider.complete_async(messages)
+        response_text = await self._llm_provider.complete_async(messages)
         self._cache.set(cache_key, response_text)
         return response_text, False
 
@@ -387,11 +420,37 @@ class ChatbotService:
             logger.exception("Failed to build audit entry for query %s", self._query_id(query))
 
     @staticmethod
+    def _classify_error(exc: Exception) -> str:
+        """
+        Categorize a provider SDK exception without depending on any one
+        SDK's exception hierarchy, so OpenAI, Anthropic and Gemini errors
+        are all mapped to the same set of user-facing categories.
+
+        Returns:
+            One of ``"timeout"``, ``"rate_limit"``, ``"connection"``,
+            ``"status"`` or ``"generic"``.
+        """
+        if isinstance(exc, (ConnectionResetError, OSError)):
+            return "connection"
+        exc_name = type(exc).__name__
+        status_code = getattr(exc, "status_code", None) or getattr(exc, "code", None)
+        if "Timeout" in exc_name:
+            return "timeout"
+        if "RateLimit" in exc_name or status_code == 429:
+            return "rate_limit"
+        if "Connection" in exc_name:
+            return "connection"
+        if status_code is not None:
+            return "status"
+        return "generic"
+
+    @staticmethod
     def _map_api_error(exc: Exception) -> str:
-        """Translate an OpenAI SDK exception into user-facing text."""
-        if isinstance(exc, openai.APITimeoutError):
+        """Translate a provider SDK exception into user-facing text."""
+        category = ChatbotService._classify_error(exc)
+        if category == "timeout":
             return TIMEOUT_MESSAGE
-        if isinstance(exc, openai.RateLimitError):
+        if category == "rate_limit":
             return RATE_LIMIT_MESSAGE
         return f"AI service error: {exc}"
 
@@ -613,7 +672,7 @@ class ChatbotService:
                 return
 
             messages = self._build_messages(query, context, history)
-            async for delta in self._client_provider.stream(messages):
+            async for delta in self._llm_provider.stream(messages):
                 chunks.append(delta)
                 yield delta
             response_text = "".join(chunks)
@@ -630,19 +689,15 @@ class ChatbotService:
                 success=True,
                 rewritten_query=search_query,
             )
-        except APITimeoutError as exc:
-            logger.exception("OpenAI API timeout during streaming")
-            record_failure(str(exc))
-            yield "[ERROR] Request timeout - the AI service took too long to respond."
-        except APIStatusError as exc:
-            logger.exception("OpenAI API status error during streaming")
-            record_failure(str(exc))
-            yield f"[ERROR] API error: {exc}"
-        except (APIConnectionError, ConnectionResetError, OSError) as exc:
-            logger.exception("Connection error during streaming")
-            record_failure(str(exc))
-            yield f"[ERROR] Connection error: Could not reach the AI service. {exc}"
         except Exception as exc:
-            logger.exception("Unexpected error in stream_response_with_history")
+            logger.exception("Error during streaming")
             record_failure(str(exc))
-            yield f"[ERROR] {exc}"
+            category = self._classify_error(exc)
+            if category == "timeout":
+                yield "[ERROR] Request timeout - the AI service took too long to respond."
+            elif category == "connection":
+                yield f"[ERROR] Connection error: Could not reach the AI service. {exc}"
+            elif category in ("status", "rate_limit"):
+                yield f"[ERROR] API error: {exc}"
+            else:
+                yield f"[ERROR] {exc}"
