@@ -62,7 +62,7 @@ requests==2.34.2
 chardet<6.0.0
 nltk==3.10.3
 pandas==2.2.3
-PyMuPDF==1.28.0         # direct import `fitz`, previously transitive
+PyMuPDF==1.28.2         # direct import `fitz`, previously transitive
 
 # --- OCR (scanned/image-only PDFs) ---
 # paddlepaddle itself is installed separately in the Dockerfile (CPU/GPU
