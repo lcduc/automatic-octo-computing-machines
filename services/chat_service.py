@@ -9,11 +9,11 @@ import numpy as np
 
 # Local imports
 from config.settings import Config
-from core.ai_services import ChatbotService
-from core.infrastructure.caching.cache_service import get_cache_service
-from core.retrieval.search.context_builder import ContextAssembler
-from core.storage.vector_stores import get_vector_store_provider
-from utils.performance import get_performance_monitor
+from core.agent import ChatbotService
+from core.infrastructure.cache_service import get_cache_service
+from core.retrieval.context_builder import ContextAssembler
+from core.storage import get_vector_store_provider
+from utils.monitor import get_performance_monitor
 
 logger = logging.getLogger(__name__)
 
@@ -211,7 +211,7 @@ class ChatService:
         try:
             # Clear chatbot service cache
             chatbot_result = self.chatbot_service.clear_cache()
-            
+
             # Clear smart cache
             self._smart_cache.clear()
             smart_cache_stats = self._smart_cache.get_stats()
@@ -241,10 +241,10 @@ class ChatService:
         try:
             # Get smart cache stats
             smart_cache_stats = self._smart_cache.get_stats()
-            
+
             # Get chatbot cache stats
             chatbot_status = self.chatbot_service.get_service_status()
-            
+
             return {
                 "smart_cache": smart_cache_stats,
                 "chatbot_cache": {

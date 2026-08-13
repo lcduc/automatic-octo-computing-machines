@@ -17,8 +17,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Local imports
 from app import format_markdown_response
-from core.ai_services.llm.chatbot import ChatbotService
-from core.storage.vector_stores import get_vector_store_provider
+from core.agent.chatbot import ChatbotService
+from core.storage import get_vector_store_provider
 
 
 def print_separator(title: str) -> None:

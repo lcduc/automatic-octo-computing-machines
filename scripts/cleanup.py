@@ -7,13 +7,12 @@ Removes temporary files, logs, and data directories.
 import os
 import shutil
 import argparse
-from pathlib import Path
 
 
 def cleanup_data_directories():
     """Clean up data directories."""
     data_dirs = ["data/chunks", "data/vectors", "data/temp", "data/logs"]
-    
+
     for directory in data_dirs:
         if os.path.exists(directory):
             print(f"🧹 Cleaning {directory}...")
@@ -44,7 +43,7 @@ def cleanup_logs():
 def cleanup_temp_files():
     """Clean up temporary files."""
     temp_dirs = ["data/temp", "__pycache__"]
-    
+
     for directory in temp_dirs:
         if os.path.exists(directory):
             print(f"🧹 Cleaning {directory}...")
@@ -70,25 +69,25 @@ def main():
     parser.add_argument("--logs", action="store_true", help="Clean logs only")
     parser.add_argument("--temp", action="store_true", help="Clean temp files only")
     parser.add_argument("--cache", action="store_true", help="Clean Python cache only")
-    
+
     args = parser.parse_args()
-    
+
     if not any([args.all, args.logs, args.temp, args.cache]):
         args.all = True
-    
+
     print("🧹 Starting cleanup...")
     print("=" * 40)
-    
+
     if args.all or args.temp:
         cleanup_data_directories()
         cleanup_temp_files()
-    
+
     if args.all or args.logs:
         cleanup_logs()
-    
+
     if args.all or args.cache:
         cleanup_pycache()
-    
+
     print("=" * 40)
     print(" Cleanup completed!")
 

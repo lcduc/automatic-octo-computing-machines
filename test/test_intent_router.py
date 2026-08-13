@@ -2,7 +2,7 @@
 
 import pytest
 
-from core.ai_services.llm.intent_router import IntentRouter
+from core.agent.intent_router import IntentRouter
 from models.intent import IntentType
 
 

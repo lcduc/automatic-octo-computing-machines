@@ -6,10 +6,10 @@ Defines response schemas for chat, file uploads, health checks, and error handli
 # Standard library imports
 from datetime import datetime
 from enum import Enum
-from typing import Optional, List, Dict, Any, Union
+from typing import Optional, List, Dict, Any
 
 # Third-party imports
-from pydantic import BaseModel, Field, PrivateAttr
+from pydantic import BaseModel, Field
 
 # Local imports
 from config.settings import Config
@@ -167,32 +167,6 @@ class MultipleFileUploadResponse(BaseResponse):
         }
 
 
-class URLProcessingResponse(BaseResponse):
-    """URL processing response model for single URL processing."""
-
-    url: str = Field(..., description="Processed URL")
-    document_count: int = Field(..., description="Number of documents extracted")
-    source_id: str = Field(..., description="Generated source ID")
-    metadata: Dict[str, Any] = Field(..., description="URL metadata")
-    processing_info: Optional[Dict[str, Any]] = Field(
-        None, description="Processing information and statistics"
-    )
-
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "status": "success",
-                "message": "URL processed successfully",
-                "url": "https://example.com",
-                "document_count": 5,
-                "source_id": "url_example_com_20240101_120000",
-                "metadata": {"content_type": "webpage", "language": "en"},
-                "processing_info": {"processing_time": "2.5s", "method": "docling"},
-                "timestamp": "2024-01-01T12:00:00Z",
-            }
-        }
-
-
 class ErrorResponse(BaseResponse):
     """Error response model for standardized error handling across the API."""
 
@@ -244,7 +218,7 @@ class ChatRequest(BaseModel):
 
     query: str = Field(..., description="User query", min_length=1, max_length=2000)
     history: Optional[List[Dict[str, str]]] = Field(
-        default=None, 
+        default=None,
         description="Conversation history for context-aware responses"
     )
 

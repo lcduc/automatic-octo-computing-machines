@@ -13,9 +13,9 @@ import threading
 from typing import Optional
 
 # Local imports
-from core.ai_services import ChatbotService
+from core.agent import ChatbotService
 from core.retrieval import ContextRetriever
-from services import ChatService, DocumentService, UploadService, URLService
+from services import ChatService, DocumentService, UploadService
 
 logger = logging.getLogger(__name__)
 
@@ -98,8 +98,3 @@ def get_chat_service() -> ChatService:
 def get_upload_service() -> UploadService:
     """Get upload service instance for file upload and processing."""
     return UploadService()
-
-
-def get_url_service() -> URLService:
-    """Get URL service instance for web content extraction and processing."""
-    return URLService()

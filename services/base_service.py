@@ -1,6 +1,6 @@
 """
 Base service for handling batch processing with validation and concurrent operations.
-Provides common functionality for file upload, URL processing, and document management.
+Provides common functionality for file upload and document management.
 """
 
 # Standard library imports
@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 class BaseProcessingService(ABC):
     """
     Abstract base service for handling batch processing with validation and concurrent operations.
-    Provides common functionality for file uploads, URL processing, and document management.
+    Provides common functionality for file uploads and document management.
     """
 
     def __init__(self):
@@ -42,7 +42,7 @@ class BaseProcessingService(ABC):
         Process multiple items with validation and batch processing constraints.
 
         Args:
-            items: List of items to process (files, URLs, etc.)
+            items: List of items to process
             item_type: Type of items for error messages and validation
 
         Returns:
@@ -108,7 +108,7 @@ class BaseProcessingService(ABC):
     ) -> List[Dict[str, Any]]:
         """
         Convert batch processing results to individual file results for consistent response format.
-        Handles different item types (files, URLs) with appropriate metadata extraction.
+        Handles different item types with appropriate metadata extraction.
         """
         results = []
 
@@ -119,7 +119,7 @@ class BaseProcessingService(ABC):
 
                 # Extract and normalize metadata
                 raw_metadata = item_result.get("metadata", {}) if item_result["success"] else {}
-                
+
                 # Normalize metadata to ensure consistent structure
                 if raw_metadata and item_result["success"]:
                     try:
@@ -135,7 +135,7 @@ class BaseProcessingService(ABC):
                         metadata_dict = raw_metadata
                 else:
                     metadata_dict = raw_metadata
-                
+
                 results.append(
                     {
                         "success": item_result["success"],
@@ -216,15 +216,11 @@ class BaseProcessingService(ABC):
     def _get_item_size(self, item: Any, item_type: str) -> int:
         """
         Get size of an item based on its type for accurate reporting.
-        Handles files, URLs, and other item types appropriately.
         """
         if item_type == "files":
             # For files, item is (file, file_content) tuple
             _, file_content = item
             return len(file_content)
-        elif item_type == "URLs":
-            # For URLs, use a reasonable estimate since we don't have actual content size
-            return len(str(item)) if item else 0
         else:
             return 0
 
@@ -236,8 +232,6 @@ class BaseProcessingService(ABC):
         if item_type == "files" and item:
             file, _ = item
             return file.filename if file else f"file_{index}"
-        elif item_type == "URLs" and item:
-            return str(item)
         else:
             return f"{item_type.lower()}_{index}"
 

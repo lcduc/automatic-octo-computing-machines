@@ -1,0 +1,53 @@
+name: Docker build
+
+# Build verification only — this proves the image still assembles; it does not
+# push or deploy anywhere.
+#
+# Deliberately NOT run on pull requests: the build installs torch + paddlepaddle
+# + the full ML stack and then bakes the embedding and reranker weights into the
+# image via `python -m scripts.download_models`, which is a multi-GB, network-
+# bound operation. Running that per-PR would dominate CI time for no extra
+# signal, since the lint/test jobs in ci.yml already cover code changes.
+on:
+  push:
+    branches: [main]
+    # Skip the build when a push cannot affect the image contents.
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - ".github/workflows/ci.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: docker-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build image
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      # Frees ~10-14 GB by dropping preinstalled toolchains this build does not
+      # use. The ML wheels plus baked model weights can otherwise exhaust the
+      # runner's disk.
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+          df -h /
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          load: false
+          # GitHub Actions layer cache: the expensive pip/model layers are
+          # reused across runs whenever requirements.txt and the Dockerfile
+          # are unchanged.
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

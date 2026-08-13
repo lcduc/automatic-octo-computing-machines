@@ -1,6 +1,8 @@
 # RAG Chatbot
 
-A modular Retrieval-Augmented Generation (RAG) chatbot for intelligent Q&A over your documents and URLs. Upload files, process web content, and chat with your data using AI. **Now powered by Docling with embedded EasyOCR for superior document conversion to Markdown format.**
+[![CI](https://github.com/lcduc/automatic-octo-computing-machines/actions/workflows/ci.yml/badge.svg)](https://github.com/lcduc/automatic-octo-computing-machines/actions/workflows/ci.yml)
+
+A modular Retrieval-Augmented Generation (RAG) chatbot for intelligent Q&A over your documents. Upload files and chat with your data using AI. **Now powered by Docling with embedded EasyOCR for superior document conversion to Markdown format.**
 
 ## Architecture
 
@@ -8,11 +10,11 @@ This project follows a **domain-driven design** approach with clear separation o
 
 ### 🏗️ **Domain Organization**
 
-- **AI Services Domain**: LLM integration, embeddings, confidence scoring
-- **Document Processing Domain**: File handling, format conversion, text extraction
-- **Retrieval Domain**: Search, RAG operations, query processing
-- **Storage Domain**: Vector storage, document metadata, caching
-- **Infrastructure Domain**: Caching, performance monitoring
+- **Agent Domain** (`core/agent`): LLM integration, prompts, tool calling, confidence scoring
+- **Document Processing Domain** (`core/document_processing`): File handling, format conversion, text extraction, OCR
+- **Retrieval Domain** (`core/retrieval`): Search, reranking, embeddings, query expansion
+- **Storage Domain** (`core/storage`): Vector storage, document metadata
+- **Infrastructure Domain** (`core/infrastructure`): Audit trail, caching, lifecycle
 
 ### 🔧 **Key Benefits**
 
@@ -26,10 +28,9 @@ This project follows a **domain-driven design** approach with clear separation o
 
 ## Features
 
-- **Multi-format Support:** PDF, DOCX, DOC, TXT, CSV, XLSX, XLS, PPTX, PPT, Images, Audio, EPUB, ZIP
+- **Multi-format Support:** PDF, DOCX, TXT, CSV, XLSX
 - **Docling Integration:** Superior document conversion to LLM-friendly Markdown format with embedded EasyOCR
 - **Embedded OCR:** Docling's built-in EasyOCR for seamless text extraction
-- **URL Content Extraction:** Process and extract web content
 - **RAG-Powered Chat:** Context-aware answers from your knowledge base
 - **Hybrid Search:** Combines semantic and keyword search
 - **Query Expansion:** Improves retrieval with automatic query variations
@@ -67,15 +68,19 @@ docker-compose up --build
 
 **Option B: Local Installation**
 
-**Automated Setup (Windows):**
+**Automated Setup:**
 ```bash
-# Run the automated setup script
-scripts\setup_venv.bat
+# Create the venv first, then bootstrap directories, .env and dependencies
+python -m venv venv
+venv\Scripts\activate          # Linux/Mac: source venv/bin/activate
+python scripts/setup.py
 
-# Activate environment and run
-venv\Scripts\activate
 python main.py
 ```
+
+Note: `scripts/setup.py` installs everything in `requirements.txt`, but **not**
+PyTorch — that needs a hardware-specific index URL, so install it separately as
+shown under Manual Installation below.
 
 **Manual Installation:**
 ```bash
@@ -132,6 +137,47 @@ OPENAI_API_KEY=your_openai_api_key_here
 
 ---
 
+## Testing & Linting
+
+Both run in CI on every push and pull request (see `.github/workflows/ci.yml`).
+
+```bash
+# Run the automated test suite
+pytest
+
+# Lint
+ruff check .
+```
+
+`pytest` needs no API keys or network access: every setting in
+`config/settings.py` falls back to a safe default and the suites stub out their
+LLM clients.
+
+Configuration for both tools lives in `pyproject.toml`. Note that
+`test/test_chunk_ranking.py`, `test/test_model_response.py` and
+`test/test_rag_process.py` are **manual CLI diagnostics**, not automated tests —
+they need a populated vector store and downloaded models, so they are excluded
+from collection. Run one directly when you want it:
+
+```bash
+python -m test.test_model_response "your query here"
+```
+
+---
+
+## Security
+
+See [docs/SECURITY_REVIEW.md](docs/SECURITY_REVIEW.md) for the security review,
+including the deployment checklist. Two settings matter most before exposing
+this service:
+
+- **`API_KEY`** — unset by default, and while unset there is **no authentication
+  on any endpoint**. Set it unless the service is on a trusted private network.
+- **`DESTRUCTIVE_CLEANUP_ENABLED`** — keep `false` outside maintenance windows;
+  it gates the endpoints that wipe or overwrite the knowledge base.
+
+---
+
 ## API Endpoints
 
 ### Health & Status
@@ -151,7 +197,6 @@ OPENAI_API_KEY=your_openai_api_key_here
 | Endpoint           | Method | Description                        |
 |--------------------|--------|------------------------------------|
 | `/files/upload`    | POST   | Upload files for processing        |
-| `/files/url`       | POST   | Process URLs and extract content   |
 
 ### Models & Maintenance
 | Endpoint                         | Method | Description                                          |
@@ -175,36 +220,22 @@ OPENAI_API_KEY=your_openai_api_key_here
 automatic-octo-computing-machine/
 ├── api/                            # FastAPI routes and middleware
 │   └── routes/                     # API endpoints (chat, files, health)
-├── core/                           # Core functionality modules (domain-organized)
-│   ├── ai_services/                # AI and ML services
-│   │   ├── llm/                    # Language model integration
-│   │   ├── embeddings/             # Text embedding generation
-│   │   └── confidence/             # Response confidence scoring
-│   ├── document_processing/        # Document handling
-│   │   ├── processors/             # Format processors (Docling-based)
-│   │   ├── extractors/             # Content extractors
-│   │   └── managers/               # Processing orchestration
-│   ├── retrieval/                  # Search and RAG
-│   │   ├── search/                 # Document retrieval
-│   │   ├── similarity/             # Similarity calculations
-│   │   └── query_expansion/        # Query enhancement
-│   ├── storage/                    # Data persistence
-│   │   ├── vector_stores/          # Vector storage
-│   │   └── metadata_stores/        # Document metadata
-│   └── infrastructure/             # System infrastructure
-│       └── caching/                # Performance caching
+├── core/                           # Core functionality modules (domain-organized, flat within each domain)
+│   ├── llm/                        # LLM integration, prompts, and response confidence scoring
+│   │   └── tools/                  # Tool-calling agent tools
+│   ├── document_processing/        # Document handling: extraction, format processors (Docling-based), OCR engines
+│   ├── retrieval/                  # Search, reranking, RAG context assembly, embeddings, and query expansion
+│   ├── storage/                    # Vector and document/metadata persistence
+│   └── infrastructure/             # System infrastructure (audit, caching, lifecycle)
 ├── config/                         # Configuration management (domain-organized)
 │   ├── settings.py                 # Centralized configuration
-│   ├── llm/                        # AI services config
+│   ├── llm/                        # LLM config
 │   ├── document_processing/        # Document processing config
 │   ├── file/                       # File handling config
 │   ├── rag/                        # RAG config
 │   └── server/                     # Server config
 ├── services/                       # Business logic layer
-├── utils/                          # Shared utilities (domain-organized)
-│   ├── file_operations/            # File management utilities
-│   ├── text_processing/            # Text processing utilities
-│   └── performance/                # Performance monitoring
+├── utils/                          # Shared utilities (file management, text processing, performance, system/asyncio)
 ├── models/                         # Data models and schemas
 ├── scripts/                        # Utility scripts
 ├── data/                           # Runtime data storage

@@ -3,8 +3,8 @@ ChatbotService and ChatService layers."""
 
 import pytest
 
-from core.ai_services.llm.chatbot import ChatbotService
-from core.ai_services.llm.openai_client import OpenAIClientProvider
+from core.agent.chatbot import ChatbotService
+from core.agent.openai_client import OpenAIClientProvider
 from services.chat_service import ChatService
 
 

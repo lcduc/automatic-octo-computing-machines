@@ -148,10 +148,16 @@ async def transcribe(
             audio.filename or "recording.wav",
             audio.content_type or "audio/wav",
         )
-    except RuntimeError as exc:
-        raise HTTPException(status_code=503, detail=str(exc))
-    except Exception as exc:
+    except RuntimeError:
+        logger.exception("Audio transcription unavailable")
+        raise HTTPException(
+            status_code=503, detail="Chat service is currently unavailable"
+        )
+    except Exception:
         logger.exception("Audio transcription failed")
-        raise HTTPException(status_code=500, detail=f"Transcription failed: {exc}")
+        raise HTTPException(
+            status_code=500,
+            detail="Transcription failed. See server logs for details.",
+        )
 
     return TranscriptionResponse(status=StatusEnum.SUCCESS, text=text)

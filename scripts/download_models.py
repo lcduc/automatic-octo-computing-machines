@@ -8,7 +8,7 @@ instead of being fetched from Hugging Face on first request in production.
 The OCR download is best-effort and only warms PP-OCRv6 (the CPU engine):
 PaddleOCR-VL (the GPU engine) is left to download on first real GPU request,
 since a Docker build step typically has no GPU attached to reliably warm it
-against — see docs/PRODUCTION_READINESS_REVIEW.md.
+against.
 
 Usage:
     python -m scripts.download_models
@@ -51,7 +51,7 @@ class ModelDownloader:
         from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
         # Loaded directly via `transformers` (not CrossEncoder) for every
-        # model — see core/retrieval/search/reranker.py for why.
+        # model — see core/retrieval/reranker.py for why.
         trust_remote_code = model_name.startswith("jinaai/")
         AutoTokenizer.from_pretrained(
             model_name, trust_remote_code=trust_remote_code, cache_dir=self._models_dir

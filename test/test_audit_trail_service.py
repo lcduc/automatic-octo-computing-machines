@@ -3,7 +3,7 @@
 import json
 import os
 
-from core.infrastructure.audit.audit_trail_service import AuditTrailService
+from core.infrastructure.audit_trail_service import AuditTrailService
 from models.audit_entry import AuditEntry
 
 

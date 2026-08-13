@@ -4,10 +4,8 @@ Setup script for the RAG chatbot application.
 Handles environment setup, dependency installation, and initial configuration.
 """
 
-import os
 import sys
 import subprocess
-import platform
 from pathlib import Path
 
 
@@ -35,12 +33,12 @@ def create_directories():
     print("Creating directories...")
     directories = [
         "data/chunks",
-        "data/vectors", 
+        "data/vectors",
         "data/temp",
         "data/logs",
         "SSL"
     ]
-    
+
     for directory in directories:
         Path(directory).mkdir(parents=True, exist_ok=True)
         print(f"Created directory: {directory}")
@@ -66,7 +64,7 @@ DEBUG=False
 
 # File Processing
 MAX_FILE_SIZE=52428800
-ALLOWED_EXTENSIONS=.txt,.pdf,.docx,.doc,.csv,.xlsx,.xls
+ALLOWED_EXTENSIONS=.txt,.pdf,.docx,.csv,.xlsx
 
 # RAG Configuration
 TOP_K_RESULTS=5
@@ -86,12 +84,12 @@ def main():
     """Main setup function."""
     print("Setting up RAG Chatbot...")
     print("=" * 50)
-    
+
     check_python_version()
     create_directories()
     setup_environment()
     install_dependencies()
-    
+
     print("=" * 50)
     print("Setup completed successfully!")
     print("Don't forget to:")

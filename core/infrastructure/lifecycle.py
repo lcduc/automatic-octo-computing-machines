@@ -9,7 +9,6 @@ out lives here.
 # Standard library imports
 import logging
 import os
-from typing import Optional
 
 # Third-party imports
 import httpx
@@ -79,7 +78,7 @@ class ApplicationLifecycle:
     async def _preload_models(self) -> None:
         """Load embedding, reranker and vector store into memory."""
         try:
-            from utils.performance import preload_all_models
+            from utils.model_preloader import preload_all_models
 
             logger.info("Preloading all ML models...")
             await preload_all_models()
@@ -90,7 +89,7 @@ class ApplicationLifecycle:
     async def _start_background_tasks(self) -> None:
         """Start the periodic metrics/cleanup workers."""
         try:
-            from utils.performance import start_background_tasks
+            from utils.background_tasks import start_background_tasks
 
             await start_background_tasks()
             logger.info("Background tasks started")
@@ -100,7 +99,7 @@ class ApplicationLifecycle:
     def _warm_embeddings(self) -> None:
         """Run a tiny encode so the model's execution graph is initialized."""
         try:
-            from core.ai_services.embeddings.embeddings import get_embedding_service
+            from core.retrieval.embeddings import get_embedding_service
 
             embedder = get_embedding_service().get_embedder()
             embedder.encode(["warmup"], convert_to_numpy=True, show_progress_bar=False)
@@ -111,7 +110,7 @@ class ApplicationLifecycle:
     def _warm_vector_store(self) -> None:
         """Ensure the shared vector store payload is resident before traffic."""
         try:
-            from core.storage.vector_stores import get_vector_store_provider
+            from core.storage import get_vector_store_provider
 
             if get_vector_store_provider().get_data() is not None:
                 logger.info("Vector store loaded successfully")
@@ -162,7 +161,7 @@ class ApplicationLifecycle:
     async def _stop_background_tasks(self) -> None:
         """Stop the periodic workers started during start-up."""
         try:
-            from utils.performance import stop_background_tasks
+            from utils.background_tasks import stop_background_tasks
 
             await stop_background_tasks()
             logger.info("Background tasks stopped")
@@ -172,7 +171,7 @@ class ApplicationLifecycle:
     def _persist_cache(self) -> None:
         """Flush the smart cache to disk so warm answers survive a restart."""
         try:
-            from core.infrastructure.caching.cache_service import get_cache_service
+            from core.infrastructure.cache_service import get_cache_service
 
             get_cache_service().cleanup_on_shutdown()
         except Exception:

@@ -7,7 +7,7 @@ import requests
 import re
 import base64
 import urllib3
-from utils.file_operations import cleanup_data_folders
+from utils.cleanup import cleanup_data_folders
 
 # Disable SSL warnings for self-signed certificates
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -60,7 +60,7 @@ def get_image_base64(image_path):
             return base64.b64encode(img_file.read()).decode()
     except Exception:
         return None
-    
+
 def is_backend_healthy(base_url: str) -> bool:
     try:
         # Disable SSL verification for self-signed certificates
@@ -199,14 +199,10 @@ class ChatApp:
         # Initialize session state variables only if they are not already set
         if "uploaded_docs" not in st.session_state:
             st.session_state.uploaded_docs = []
-        if "uploaded_urls" not in st.session_state:
-            st.session_state.uploaded_urls = []
         if "vectordb" not in st.session_state:
             st.session_state.vectordb = None
         if "chat_history" not in st.session_state:
             st.session_state.chat_history = []
-        if "url_inputs" not in st.session_state:
-            st.session_state.url_inputs = [""]
 
     def _reset_session_dirs_and_state(self):
         """Interface-only reset: no filesystem operations."""
@@ -222,44 +218,12 @@ class ChatApp:
             except Exception:
                 st.toast("Failed to clean data folders")
         st.session_state.uploaded_docs = []
-        st.session_state.uploaded_urls = []
         st.session_state.vectordb = None
         st.session_state.chat_history = []
-        st.session_state.url_inputs = [""]
         # Reset file_uploader widget by changing its key
         st.session_state["uploaded_docs_uploader_key"] = str(time.time())
         st.toast("All session state reset")
         st.rerun()
-
-    def _handle_url_inputs(self):
-        """Render and manage the dynamic URL input fields in the sidebar."""
-        if st.button("Add another URL"):
-            st.session_state.url_inputs.append("")
-            st.rerun()
-
-        new_url_inputs = []
-        should_rerun = False
-
-        for i, url in enumerate(st.session_state.url_inputs):
-            col1, col2 = st.columns([10, 1])
-            with col1:
-                new_url = st.text_input(
-                    f"URL #{i+1}",
-                    value=url,
-                    key=f"url_{i}"
-                )
-                new_url_inputs.append(new_url)
-            with col2:
-                if st.button("", key=f"remove_url_{i}"):
-                    # remove current index if exists
-                    if i < len(new_url_inputs):
-                        new_url_inputs.pop(i)
-                    should_rerun = True
-
-        st.session_state.url_inputs = new_url_inputs
-
-        if should_rerun:
-            st.rerun()
 
     def run(self):
         # Thêm logo và title cùng dòng, logo bo góc tròn, size nhỏ
@@ -309,28 +273,17 @@ class ChatApp:
             with st.sidebar:
                 # Startup handled above; sidebar UI only
 
-                st.subheader("Documents & URLs")
+                st.subheader("Documents")
                 uploader_key = st.session_state.get("uploaded_docs_uploader_key", "uploaded_docs_uploader")
                 uploaded_docs = st.file_uploader(
-                    "Upload (.pdf, .txt, .doc, .docx, .xls, .xlsx)",
-                    type=["pdf", "txt", "doc", "docx", "xls", "xlsx"],
+                    "Upload (.pdf, .txt, .docx, .xlsx)",
+                    type=["pdf", "txt", "docx", "xlsx"],
                     accept_multiple_files=True,
                     key=uploader_key
                 )
 
                 if uploaded_docs:
                     pass
-
-                enable_urls = os.getenv("ENABLE_URL_INPUTS", "false").lower() == "true"
-                if enable_urls:
-                    crawl_links = st.checkbox("Crawl all links on the same domain", value=False, key="crawl_same_domain")
-                    page_limit = 50
-                    if crawl_links:
-                        page_limit = st.number_input(
-                            "Maximum pages to crawl", min_value=1, max_value=1000, value=50, key="page_limit"
-                        )
-
-                    self._handle_url_inputs()
 
                 if st.button(" Process Inputs", use_container_width=True):
                     if not is_backend_healthy(api_base_url):
@@ -348,19 +301,6 @@ class ChatApp:
                                     st.toast(f"Upload failed: {resp.status_code}")
                             except Exception as e:
                                 st.toast(f"Upload error: {e}")
-                        # Process URLs if enabled
-                        if enable_urls:
-                            urls = [u.strip() for u in st.session_state.url_inputs if u.strip()]
-                            if urls:
-                                try:
-                                    resp2 = requests.post(f"{api_base_url}/files/url", json={"urls": urls}, headers=_auth_headers(), timeout=600, verify=False)
-                                    if resp2.ok:
-                                        st.session_state.uploaded_urls.extend(urls)
-                                        st.toast("URLs processed")
-                                    else:
-                                        st.toast(f"URL processing failed: {resp2.status_code}")
-                                except Exception as e:
-                                    st.toast(f"URL error: {e}")
 
                 if os.getenv("ENABLE_MAINTENANCE", "true").lower() == "true":
                     st.markdown("---")
@@ -381,7 +321,7 @@ class ChatApp:
         # -------------------------------
         # Vectorstore and Chat (interface only)
         # -------------------------------
-        has_any_inputs = bool(st.session_state.uploaded_docs or st.session_state.uploaded_urls)
+        has_any_inputs = bool(st.session_state.uploaded_docs)
 
         if has_any_inputs and st.session_state.vectordb is None:
             with st.spinner("Updating knowledge base..."):

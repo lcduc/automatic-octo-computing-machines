@@ -75,14 +75,14 @@
   # (b) the weights are reviewable on disk (`docker exec ... ls model_weights/`).
   # Requires network access at build time. If you override EMBEDDING_MODEL or
   # RERANKER_MODEL at runtime to something not baked in here, that model is
-  # fetched on first use instead — see docs/PRODUCTION_READINESS_REVIEW.md.
+  # fetched on first use instead.
   RUN python -m scripts.download_models
 
   EXPOSE 8500
 
   # Healthcheck: try HTTPS (-k for self-signed), fallback to HTTP.
-  # start-period covers first-boot model downloads from Hugging Face; see
-  # docs/PRODUCTION_READINESS_REVIEW.md (P-4) about baking models into the image.
+  # start-period covers first-boot model downloads from Hugging Face when the
+  # weights were not baked into the image by the build step above.
   HEALTHCHECK --interval=30s --timeout=10s --start-period=90s --retries=3 \
     CMD curl -fsSk https://localhost:8500/ || curl -fsS http://localhost:8500/ || exit 1
   

@@ -17,5 +17,5 @@ router = APIRouter()
 # Include all sub-routers with appropriate prefixes and tags for API documentation
 router.include_router(health_router, tags=["Health"])
 router.include_router(chat_router, prefix="/chat", tags=["Chat"])
-router.include_router(files_router, prefix="/files", tags=["Files & URLs"])
+router.include_router(files_router, prefix="/files", tags=["Files"])
 router.include_router(cleanup_router, prefix="/cleanup", tags=["Cleanup & Maintenance"])

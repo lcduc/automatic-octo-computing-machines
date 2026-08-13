@@ -7,12 +7,10 @@ Provides service layer abstraction for document processing, chat, and file manag
 from .document_service import DocumentService
 from .chat_service import ChatService
 from .upload_service import UploadService
-from .url_service import URLService
 
 # Export all service classes for convenient access
 __all__ = [
     "DocumentService",  # Document processing and management
     "ChatService",  # RAG-powered conversation service
     "UploadService",  # File upload and processing
-    "URLService",  # URL content extraction
 ]

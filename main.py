@@ -22,7 +22,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 load_dotenv()
 
 # Windows-specific asyncio fixes must run before the event loop is created
-from utils.system import (  # noqa: E402
+from utils import (  # noqa: E402
     configure_logging,
     configure_uvicorn_for_windows,
     get_uvicorn_config,
@@ -79,7 +79,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Chatbot",
-    description="A scalable RAG chatbot that supports file uploads, URL processing, and web crawling",
+    description="A scalable RAG chatbot that supports file uploads and document Q&A",
     version="2.0.0",
     docs_url="/docs",
     redoc_url="/redoc",

@@ -1,6 +1,6 @@
 """Unit tests for QueryRewriter - condensing follow-up questions into standalone queries."""
 
-from core.ai_services.llm.query_rewriter import QueryRewriter
+from core.agent.query_rewriter import QueryRewriter
 
 
 class _StubClientProvider:

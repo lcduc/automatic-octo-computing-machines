@@ -1,5 +1,5 @@
 """
-Document processing service for orchestrating file and URL processing operations.
+Document processing service for orchestrating file processing operations.
 Provides batch processing capabilities with efficient vector store management.
 Uses Docling for basic document processing.
 """
@@ -7,14 +7,12 @@ Uses Docling for basic document processing.
 # Standard library imports
 import asyncio
 import logging
-from datetime import datetime
 from typing import Dict, Any, List
 import time
 
 # Local imports
 from core.document_processing import MainDocumentProcessor, FileManager
-from core.document_processing.processors.processors import URLProcessor
-from core.storage.vector_stores import get_vector_store_provider
+from core.storage import get_vector_store_provider
 from config.settings import Config
 
 logger = logging.getLogger(__name__)
@@ -23,7 +21,7 @@ logger = logging.getLogger(__name__)
 class DocumentService:
     """
     Service for document processing orchestration with batch capabilities.
-    Handles file processing, URL extraction, and vector store management.
+    Handles file processing and vector store management.
     Uses Docling for basic document conversion.
     """
 
@@ -51,20 +49,12 @@ class DocumentService:
                 llm_model=llm_model,
             )
         )
-        
-        # Restore original URL processor since Docling doesn't support URLs
-        from core.document_processing.processors.processors import PDFProcessor, DocumentProcessor
-        self.url_processor = URLProcessor(
-            file_manager=self.file_manager,
-            pdf_processor=PDFProcessor(),
-            doc_processor=DocumentProcessor(),
-        )
-        
+
         # OCR concurrency control - configurable to prevent memory issues
         max_concurrent_files = min(2, Config.OCR.OCR_MAX_CONCURRENT_FILES())  # Limit to 2 for better memory management
         self._ocr_semaphore = asyncio.Semaphore(max_concurrent_files)
         logger.info(f"OCR concurrency control: max {max_concurrent_files} concurrent PDF files")
-        
+
         # Share the process-wide vector store so rebuilds are visible to chat
         self._vector_store_provider = get_vector_store_provider()
         self.vector_store = self._vector_store_provider.get_store()
@@ -79,13 +69,13 @@ class DocumentService:
             try:
                 # Clear memory before processing
                 await self._aggressive_memory_cleanup()
-                
+
                 # Process the file
                 result = await self.processor.process_file(file_content, filename)
-                
+
                 # Clear memory after OCR processing
                 await self._aggressive_memory_cleanup()
-                
+
                 logger.info(f"🔓 [DocumentService] Released OCR slot for {filename}")
                 return result
             except Exception as e:
@@ -99,68 +89,28 @@ class DocumentService:
         try:
             import gc
             import torch
-            
+
             # Clear Python garbage collection
             gc.collect()
-            
+
             # Clear PyTorch GPU cache if available
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
                 torch.cuda.synchronize()
-            
+
             # Force garbage collection multiple times
             for _ in range(3):
                 gc.collect()
-            
+
             # Clear any potential caches in the processor
             if hasattr(self.processor, 'docling_processor'):
                 self.processor.docling_processor._clear_memory_caches()
-            
+
             # Small delay to allow memory to be freed
             await asyncio.sleep(0.1)
-            
+
         except Exception as e:
             logger.debug(f"Memory cleanup warning: {e}")
-
-    def _create_url_metadata(self, url: str, document_count: int) -> Dict[str, Any]:
-        """
-        Create metadata for URL processing with unique source identification.
-        Generates structured metadata for tracking URL processing results.
-        """
-        return {
-            "source_type": "url",
-            "source_name": url,
-            "processed_at": datetime.now().isoformat(),
-            "document_count": document_count,
-            "source_id": f"url_{url.replace('://', '_').replace('/', '_')}_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
-        }
-
-    async def _process_url_internal(self, url: str) -> Dict[str, Any]:
-        """
-        Internal URL processing logic using the original URL processor.
-        Extracts content from URLs and returns structured results with error handling.
-        """
-        try:
-            # Use the original URL processor since Docling doesn't support URLs
-            result = await self.url_processor.extract_from_url(url, extract_links=False)
-            documents = result["documents"]
-            metadata = result["metadata"]
-
-            return {
-                "success": True,
-                "documents": documents,
-                "metadata": metadata,
-                "document_count": len(documents),
-            }
-        except Exception as e:
-            logger.error(f" [DocumentService Error] {str(e)} (url={url})")
-            return {
-                "success": False,
-                "error": str(e),
-                "documents": [],
-                "metadata": {},
-                "document_count": 0,
-            }
 
     async def process_multiple_documents(
         self, file_data_list: List[tuple], rebuild_at_end: bool = True
@@ -199,7 +149,7 @@ class DocumentService:
                     result = await self._process_with_ocr_control(file_content, filename)
                 else:
                     result = await self.processor.process_file(file_content, filename)
-                
+
                 doc_count = len(result["documents"])
                 ocr_time = result["metadata"].get("ocr_time")
                 logger.info(
@@ -209,7 +159,7 @@ class DocumentService:
                 for j, doc in enumerate(result["documents"][:3]):  # Show first 3 chunks
                     preview = doc[:100].replace("\n", " ").replace("\r", " ")
                     logger.debug(f"  Chunk {j+1}: {preview}...")
-                
+
                 return {
                     "filename": filename,
                     "success": True,
@@ -229,12 +179,12 @@ class DocumentService:
                     "process_time": None,
                     "result": None
                 }
-        
+
         # Process all files concurrently with OCR control
         logger.info(f" [DocumentService] Processing {len(file_data_list)} files with OCR concurrency control")
         tasks = [process_single_file(file_data) for file_data in file_data_list]
         file_results = await asyncio.gather(*tasks, return_exceptions=True)
-        
+
         # Process results
         for i, file_result in enumerate(file_results):
             if isinstance(file_result, Exception):
@@ -254,12 +204,12 @@ class DocumentService:
                 # Handle normal results
                 if file_result["success"]:
                     successful_documents.append({
-                        "documents": file_result["result"]["documents"], 
+                        "documents": file_result["result"]["documents"],
                         "metadata": file_result["result"]["metadata"]
                     })
                     successful_count += 1
                     total_documents += file_result["document_count"]
-                
+
                 results.append(file_result)
                 if not file_result["success"]:
                     failed_count += 1
@@ -332,105 +282,6 @@ class DocumentService:
             "results": results,
         }
 
-    async def process_multiple_urls(
-        self, urls: List[str], rebuild_at_end: bool = True
-    ) -> Dict[str, Any]:
-        """
-        Process multiple URLs concurrently with batch vector store update.
-        Optimizes performance by processing URLs in parallel and updating vector store once.
-
-        Args:
-            urls: List of URLs to process
-            rebuild_at_end: Whether to rebuild vector store once at the end
-
-        Returns:
-            Dict containing batch processing results with success/failure metrics
-        """
-
-        async def _process_url_for_batch(url: str) -> Dict[str, Any]:
-            """
-            Process a single URL and return result formatted for batch processing.
-            Wraps internal URL processing with standardized result format.
-            """
-            result = await self._process_url_internal(url)
-
-            return {
-                "filename": url,
-                "success": result["success"],
-                "document_count": result["document_count"],
-                "metadata": result["metadata"],
-                "documents": result["documents"],
-                "error": result.get("error"),
-            }
-
-        #  Process all URLs concurrently for optimal performance (with concurrency limit)
-        logger.info(f"🔄 Processing {len(urls)} URLs concurrently...")
-        
-        # Limit concurrent URL processing to prevent connection overload
-        max_concurrent_urls = min(3, len(urls))  # Process max 3 URLs at once for better memory management
-        semaphore = asyncio.Semaphore(max_concurrent_urls)
-        
-        async def process_url_with_semaphore(url):
-            async with semaphore:
-                return await _process_url_for_batch(url)
-        
-        processing_tasks = [process_url_with_semaphore(url) for url in urls]
-        url_results = await asyncio.gather(*processing_tasks)
-
-        # Collect results and prepare for batch vector store update
-        results = []
-        successful_documents = []
-        successful_count = 0
-        failed_count = 0
-        total_documents = 0
-
-        for url_result in url_results:
-            if url_result["success"]:
-                successful_documents.append(
-                    {
-                        "documents": url_result["documents"],
-                        "metadata": url_result["metadata"],
-                    }
-                )
-                successful_count += 1
-                total_documents += url_result["document_count"]
-            else:
-                failed_count += 1
-
-            # Add to results (without documents to avoid duplication)
-            results.append(
-                {
-                    "filename": url_result["filename"],
-                    "success": url_result["success"],
-                    "document_count": url_result["document_count"],
-                    "metadata": url_result["metadata"],
-                    "error": url_result.get("error"),
-                }
-            )
-
-        # Batch update vector store once at the end
-        vector_store_success = False
-        if successful_documents and rebuild_at_end:
-            logger.info(
-                f"🔄 [DocumentService] Batch updating vector store with {len(successful_documents)} successful URLs..."
-            )
-            vector_store_success = self._batch_update_vector_store(
-                successful_documents, rebuild_at_end
-            )
-
-        logger.info(
-            f" URL processing complete: {successful_count} successful, {failed_count} failed"
-        )
-
-        return self._create_batch_response(
-            len(urls),
-            successful_count,
-            failed_count,
-            total_documents,
-            vector_store_success,
-            results,
-        )
-
     def get_supported_extensions(self) -> List[str]:
         """Get list of supported file extensions."""
         return self.processor.get_supported_extensions()
@@ -438,12 +289,3 @@ class DocumentService:
     def is_supported_file(self, filename: str) -> bool:
         """Check if file type is supported."""
         return self.processor.is_supported_file(filename)
-    
-    def close(self):
-        """Close all resources to prevent socket leaks."""
-        if hasattr(self, 'url_processor') and self.url_processor:
-            self.url_processor.close()
-    
-    def __del__(self):
-        """Destructor to ensure resources are cleaned up."""
-        self.close()

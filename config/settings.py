@@ -310,8 +310,13 @@ class FileConfig:
 
     @staticmethod
     def ALLOWED_EXTENSIONS() -> List[str]:
-        """File extensions accepted by the upload endpoint."""
-        return env_list("ALLOWED_EXTENSIONS", ".txt,.pdf,.docx,.doc,.csv,.xlsx,.xls")
+        """
+        File extensions accepted by the upload endpoint.
+
+        The legacy Office binary formats ``.doc`` and ``.xls`` are deliberately
+        absent. Save such files as ``.docx``/``.xlsx`` before uploading.
+        """
+        return env_list("ALLOWED_EXTENSIONS", ".txt,.pdf,.docx,.csv,.xlsx")
 
     @staticmethod
     def MAX_FILES_PER_BATCH() -> int:
@@ -376,8 +381,16 @@ class ServerConfig:
 
     @staticmethod
     def CORS_ALLOW_CREDENTIALS() -> bool:
-        """Whether cross-origin credentials are accepted."""
-        return env_bool("CORS_ALLOW_CREDENTIALS", True)
+        """
+        Whether cross-origin credentials are accepted.
+
+        Defaults to ``False``: paired with the default ``CORS_ORIGINS=*`` this
+        would be the classic wildcard-plus-credentials misconfiguration. Nothing
+        here authenticates via cookies today (the optional ``API_KEY`` travels in
+        an ``X-API-Key`` header, which is not a CORS credential), so turn this on
+        only alongside an explicit origin list.
+        """
+        return env_bool("CORS_ALLOW_CREDENTIALS", False)
 
     @staticmethod
     def RATE_LIMIT_ENABLED() -> bool:
@@ -550,7 +563,7 @@ class OCRConfig:
     """
     OCR settings for scanned/image-only documents.
 
-    Three engines are available (see ``core/document_processing/ocr``):
+    Three engines are available (see ``core/document_processing/engine_selector.py``):
     PP-OCRv6 (local, CPU), PaddleOCR-VL (local, GPU) and Datalab's hosted
     Surya OCR (online). Both local engines are multilingual and need no
     per-language configuration; ``OCR_PROVIDER`` picks between local
@@ -622,25 +635,6 @@ class LoggingConfig:
         return env_bool("REQUEST_LOGGING_ENABLED", True)
 
     LOG_DIR = DatabaseConfig.LOG_DIR
-
-
-class URLConfig:
-    """Web crawling limits."""
-
-    @staticmethod
-    def CRAWL_TIMEOUT() -> int:
-        """Per-URL fetch timeout, in seconds."""
-        return env_int("CRAWL_TIMEOUT", 30)
-
-    @staticmethod
-    def CRAWL_MAX_PAGES() -> int:
-        """Maximum pages fetched per crawl."""
-        return env_int("CRAWL_MAX_PAGES", 50)
-
-    @staticmethod
-    def CRAWL_MAX_CONTENT_LENGTH() -> int:
-        """Largest accepted page body, in bytes."""
-        return env_int("CRAWL_MAX_CONTENT_LENGTH", 10_485_760)
 
 
 class ConfidenceConfig:
@@ -716,7 +710,6 @@ class Config:
     Chat = ChatConfig
     OCR = OCRConfig
     Logging = LoggingConfig
-    URL = URLConfig
     Confidence = ConfidenceConfig
     Health = HealthConfig
     Audit = AuditConfig
@@ -730,7 +723,7 @@ class Config:
             True when an OpenAI API key is present, False otherwise. Directories
             are created either way so ingestion still works without a key.
         """
-        from utils.file_operations.file_manager import FileManager
+        from utils.file_manager import FileManager
 
         directories = [
             DatabaseConfig.CHUNKS_DIR(),

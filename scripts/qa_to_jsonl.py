@@ -52,7 +52,6 @@ def find_columns(df: pd.DataFrame):
     for col, norm in normalized.items():
         # tokenize
         tokens = set(norm.replace("-", " ").replace("_", " ").split())
-        joined = " ".join(tokens)
         if tokens & QUESTION_KEYWORDS and q_col is None:
             q_col = col
         if tokens & ANSWER_KEYWORDS and a_col is None:
@@ -282,7 +281,7 @@ def main():
                 df = all_sheets[first]
             else:
                 df = all_sheets
-    except Exception as e:
+    except Exception:
         logging.exception("Failed to read Excel file. Ensure openpyxl is installed and the file is a valid .xlsx")
         raise
 

@@ -13,10 +13,10 @@ from pydantic import BaseModel, Field
 
 # Local imports
 from config.settings import Config
-from core.infrastructure.caching.cache_service import get_cache_service
-from core.storage.vector_stores import get_vector_store_provider
+from core.infrastructure.cache_service import get_cache_service
+from core.storage import get_vector_store_provider
 from models.responses import HealthResponse, StatusEnum
-from utils.performance import get_performance_monitor
+from utils.monitor import get_performance_monitor
 
 router = APIRouter()
 logger = logging.getLogger(__name__)

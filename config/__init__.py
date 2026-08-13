@@ -13,7 +13,6 @@ ChatConfig = Config.Chat
 DoclingConfig = Config.OCR
 OCRConfig = Config.OCR
 FileConfig = Config.File
-URLConfig = Config.URL
 RAGConfig = Config.RAG
 ServerConfig = Config.Server
 LoggingConfig = Config.Logging
@@ -28,7 +27,6 @@ __all__ = [
     "DoclingConfig",
     "OCRConfig",
     "FileConfig",
-    "URLConfig",
     "RAGConfig",
     "ServerConfig",
     "LoggingConfig",

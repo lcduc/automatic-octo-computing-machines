@@ -12,8 +12,8 @@ from typing import List, Optional, Tuple
 
 # Local imports
 from config.settings import Config
-from core.ai_services.embeddings.embeddings import get_embedding_service
-from core.retrieval.query_expansion.query_adapter import build_from_evals, save_query_adapter
+from core.retrieval.embeddings import get_embedding_service
+from core.retrieval.query_adapter import build_from_evals, save_query_adapter
 
 logger = logging.getLogger(__name__)
 

@@ -1,0 +1,84 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A newer push to the same branch supersedes an in-flight run.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint (ruff)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # Ruff only parses source, so this job skips the multi-GB ML install
+      # entirely and gives fast feedback on syntax/undefined-name errors.
+      - name: Install ruff
+        run: pip install ruff
+
+      - name: Run ruff
+        run: ruff check --output-format=github .
+
+  test:
+    name: Tests (pytest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      # torch is deliberately absent from requirements.txt (it needs a
+      # hardware-specific index URL — see the comment block at the top of that
+      # file), so it is installed separately here exactly as the Dockerfile
+      # does. torchaudio is skipped: nothing in the import graph loads it.
+      # paddlepaddle is skipped too — the OCR engines import paddle lazily, so
+      # the test suite never touches it.
+      - name: Install CPU torch
+        run: pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # No secrets are configured: every setting in config/settings.py falls
+      # back to a safe default, and the suites stub out their LLM clients, so
+      # the tests run fully offline.
+      - name: Run tests
+        run: pytest
+
+  audit:
+    name: Dependency audit (pip-audit)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Advisory only: a CVE disclosed in a transitive dependency should surface
+    # here, but it must not block an unrelated PR from merging. Dependabot (see
+    # .github/dependabot.yml) is what actually proposes the upgrades.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install pip-audit
+        run: pip install pip-audit
+
+      # Audits the pinned requirements without installing the ML stack.
+      - name: Audit pinned dependencies
+        run: pip-audit --requirement requirements.txt --strict

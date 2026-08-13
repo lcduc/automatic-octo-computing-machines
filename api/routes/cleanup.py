@@ -13,14 +13,14 @@ from fastapi import APIRouter, HTTPException, Depends, Body
 from pydantic import BaseModel, Field
 
 # Local imports
-from utils.file_operations import (
+from utils.cleanup import (
     cleanup_data_folders,
     cleanup_logs,
 )
 from config.settings import Config
-from core.storage.vector_stores import VectorStoreProvider, get_vector_store_provider
-from core.ai_services.embeddings.embeddings import get_embedding_service
-from core.retrieval.query_expansion.query_adapter import build_from_evals, save_query_adapter
+from core.storage import VectorStoreProvider, get_vector_store_provider
+from core.retrieval.embeddings import get_embedding_service
+from core.retrieval.query_adapter import build_from_evals, save_query_adapter
 from models.responses import VectorRebuildResponse, StatusEnum
 
 router = APIRouter()
@@ -34,7 +34,36 @@ class CleanupResponse(BaseModel):
     details: Dict[str, Any] = Field(default_factory=dict, description="Additional cleanup details")
 
 
-# Auto-reload functionality removed
+def _require_destructive_cleanup_enabled(operation: str) -> None:
+    """
+    Reject the request unless ``DESTRUCTIVE_CLEANUP_ENABLED`` is set.
+
+    Every route in this module either destroys the knowledge base or
+    overwrites a file the retrieval path reads, and none of them has a
+    confirmation step. ``API_KEY`` is empty by default, which means
+    ``APIKeyMiddleware`` is not installed at all (see
+    :func:`api.middleware.setup_middleware`) — so without this gate these
+    endpoints are reachable unauthenticated by anything that can route to the
+    service.
+
+    Args:
+        operation: Human-readable name of the blocked operation, for the log line.
+
+    Raises:
+        HTTPException: 403 when the environment flag is not enabled.
+    """
+    if Config.Server.DESTRUCTIVE_CLEANUP_ENABLED():
+        return
+
+    logger.warning("Blocked call to disabled destructive endpoint: %s", operation)
+    raise HTTPException(
+        status_code=403,
+        detail=(
+            "This endpoint is disabled by default because it destroys or "
+            "overwrites the knowledge base with no confirmation. Set "
+            "DESTRUCTIVE_CLEANUP_ENABLED=true in the environment to enable it."
+        ),
+    )
 
 
 @router.post("/", response_model=CleanupResponse)
@@ -49,16 +78,7 @@ async def cleanup_all_data(
     "delete everything" button. Set the env var to ``true`` for a maintenance
     window, then turn it back off.
     """
-    if not Config.Server.DESTRUCTIVE_CLEANUP_ENABLED():
-        logger.warning("Blocked call to disabled destructive cleanup endpoint")
-        raise HTTPException(
-            status_code=403,
-            detail=(
-                "This endpoint is disabled by default because it deletes the "
-                "entire knowledge base with no confirmation. Set "
-                "DESTRUCTIVE_CLEANUP_ENABLED=true in the environment to enable it."
-            ),
-        )
+    _require_destructive_cleanup_enabled("comprehensive cleanup")
     try:
         logger.info("🧹 Starting comprehensive data cleanup via API...")
 
@@ -83,11 +103,11 @@ async def cleanup_all_data(
                 "operation": "comprehensive_cleanup"
             }
         )
-    except Exception as e:
+    except Exception:
         logger.exception("Error during comprehensive cleanup")
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to perform comprehensive cleanup: {str(e)}"
+            detail="Failed to perform comprehensive cleanup. See server logs for details."
         )
 
 
@@ -97,13 +117,18 @@ async def rebuild_vectors(
 ):
     """
     Force rebuild the vector store from all current chunk files.
-    
+
     This endpoint will:
     1. Load all documents from chunk files
     2. Create new embeddings for all documents
     3. Rebuild the vector store with updated vectors
     4. Save the updated vector store to disk
+
+    Gated behind ``DESTRUCTIVE_CLEANUP_ENABLED``: re-embedding the whole corpus
+    is an expensive CPU/GPU operation and it swaps out the live vector store,
+    so an open version of this route is a denial-of-service lever.
     """
+    _require_destructive_cleanup_enabled("vector store rebuild")
     try:
         logger.info("🔄 Starting vector store rebuild via cleanup API...")
         start_time = time.time()
@@ -115,7 +140,7 @@ async def rebuild_vectors(
         # Calculate processing time
         processing_time = time.time() - start_time
         processing_time_str = f"{processing_time:.2f}s"
-        
+
         # Prepare response details
         details = {
             "chunk_files_loaded": len(documents) if documents else 0,
@@ -125,7 +150,7 @@ async def rebuild_vectors(
             "chunks_directory": Config.File.CHUNKS_DIR(),
             "vectors_directory": Config.File.VECTORS_DIR()
         }
-        
+
         logger.info(f" Vector store rebuild completed via cleanup API: {len(documents)} documents processed in {processing_time_str}")
 
         return VectorRebuildResponse(
@@ -138,11 +163,11 @@ async def rebuild_vectors(
             details=details
         )
 
-    except Exception as e:
+    except Exception:
         logger.exception("Error during vector store rebuild")
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to rebuild vector store: {str(e)}"
+            detail="Failed to rebuild vector store. See server logs for details."
         )
 
 
@@ -156,7 +181,13 @@ async def update_query_adapter(payload: Dict[str, Any] = Body(default={})):  # s
       "positives": ["..."],
       "lambda": 0.001
     }
+
+    Gated behind ``DESTRUCTIVE_CLEANUP_ENABLED``: the adapter is fitted purely
+    from caller-supplied pairs and overwrites the file every future query is
+    transformed through, so an open version of this route lets a caller degrade
+    retrieval quality for everyone.
     """
+    _require_destructive_cleanup_enabled("query adapter update")
     try:
         queries = payload.get("queries", [])
         positives = payload.get("positives", [])
@@ -172,6 +203,9 @@ async def update_query_adapter(payload: Dict[str, Any] = Body(default={})):  # s
         return {"success": True, "path": path, "dim": int(adapter.shape[0])}
     except HTTPException:
         raise
-    except Exception as e:
+    except Exception:
         logger.exception("Error updating query adapter")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to update query adapter. See server logs for details."
+        )

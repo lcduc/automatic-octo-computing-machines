@@ -1,0 +1,49 @@
+# Tool configuration only — this project is run from source (main.py / app.py),
+# not installed as a package, so there is deliberately no [build-system] here.
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+exclude = ["venv", "model_weights", "data", "logs"]
+
+[tool.ruff.lint]
+# Start conservative: pyflakes (real errors — undefined names, unused imports)
+# plus the pycodestyle errors. Style-only rules stay off so CI fails on things
+# that are actually broken rather than on formatting opinions.
+select = ["E", "F", "W"]
+ignore = [
+    "E501",  # line length: many existing docstrings/comments run long; the
+             # formatter is not enforced here, so this would be noise.
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Package __init__.py files re-export their submodules' public names; those
+# imports are the package API, not dead code.
+"**/__init__.py" = ["F401"]
+# Import-time side effects are required before other imports in these two
+# entrypoints (asyncio/event-loop setup on Windows, dotenv loading), so the
+# "module level import not at top of file" rule cannot hold.
+"main.py" = ["E402"]
+"app.py" = ["E402"]
+# Same reason: load_dotenv() must run before config.settings reads the env.
+"setting.py" = ["E402"]
+# The manual CLI test scripts insert the project root on sys.path before
+# importing project modules, same E402 situation.
+"test/test_chunk_ranking.py" = ["E402"]
+"test/test_model_response.py" = ["E402"]
+"test/test_rag_process.py" = ["E402"]
+"scripts/formatting_pipeline_demo.py" = ["E402"]
+
+[tool.pytest.ini_options]
+testpaths = ["test"]
+# test_chunk_ranking / test_model_response / test_rag_process are manual CLI
+# diagnostics (they need a populated vector store and downloaded models), not
+# automated suites — they define no test functions, so they are excluded from
+# collection to keep their heavy imports out of the test run.
+addopts = [
+    "--ignore=test/test_chunk_ranking.py",
+    "--ignore=test/test_model_response.py",
+    "--ignore=test/test_rag_process.py",
+]
+# All async tests carry an explicit @pytest.mark.asyncio, matching strict mode.
+asyncio_mode = "strict"

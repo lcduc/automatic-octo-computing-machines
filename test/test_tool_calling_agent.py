@@ -4,9 +4,9 @@ import types
 
 import pytest
 
-from core.ai_services.llm.tool_calling_agent import ToolCallingAgent
-from core.ai_services.llm.tools.base import BaseTool
-from core.ai_services.llm.tools.registry import ToolRegistry
+from core.agent.tool_calling_agent import ToolCallingAgent
+from core.agent.tools.base import BaseTool
+from core.agent.tools.registry import ToolRegistry
 
 
 class _StubQueryRewriter:

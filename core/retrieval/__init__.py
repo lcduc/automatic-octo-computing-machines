@@ -1,16 +1,19 @@
 """
 Retrieval Domain
-Handles search, RAG operations, and document retrieval.
+Handles search, RAG operations, document retrieval, and text embeddings.
 """
 
-from .search.retriever import ContextRetriever
-from .search.reranker import Reranker
-from .similarity.similarity import SimilarityCalculator
-from .query_expansion.query_expansion import VietnamesePreprocessor
+from .embeddings import EmbeddingService, get_embedding_service
+from .retriever import ContextRetriever
+from .reranker import Reranker
+from .similarity import SimilarityCalculator
+from .query_expansion import VietnamesePreprocessor
 
 __all__ = [
     "ContextRetriever",
-    "Reranker", 
+    "EmbeddingService",
+    "get_embedding_service",
+    "Reranker",
     "SimilarityCalculator",
     "VietnamesePreprocessor",
 ]

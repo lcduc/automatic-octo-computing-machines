@@ -9,7 +9,7 @@
 # reintroduce native-level crashes those pins were verified against. This is
 # not hypothetical: it happened on this project (torch got reinstalled 4 days
 # after transformers/accelerate, landing on an untested-together combo that
-# segfaulted on load — see core/retrieval/search/reranker.py).
+# segfaulted on load — see core/retrieval/reranker.py).
 #   pip install torch --index-url https://download.pytorch.org/whl/cpu
 #   pip install paddlepaddle==3.2.0 -i https://www.paddlepaddle.org.cn/packages/stable/cpu/
 # Pin paddlepaddle to 3.2.0, not 3.3.x — 3.3.0's oneDNN/PIR CPU executor is
@@ -17,9 +17,9 @@
 # this repo's code; upstream bug PaddlePaddle/Paddle#77340).
 
 # --- Web API ---
-fastapi==0.115.6
+fastapi==0.141.1
 uvicorn[standard]==0.32.1
-python-multipart==0.0.20
+python-multipart==0.0.32
 # Pinned to 0.28.1, not 0.27.0: anthropic==0.120.2/google-genai==2.17.0 below
 # require httpx>=0.28 and pip's resolver upgrades it regardless, so the pin
 # is bumped to match what's actually installed rather than drifting silently.
@@ -58,12 +58,11 @@ pypdfium2==4.30.0
 PyPDF2==3.0.1
 python-docx==1.1.2
 openpyxl==3.1.5
-beautifulsoup4==4.12.3
-requests==2.32.3
+requests==2.34.2
 chardet<6.0.0
-nltk==3.8.1
+nltk==3.10.3
 pandas==2.2.3
-PyMuPDF                 # direct import `fitz`, previously transitive
+PyMuPDF==1.28.0         # direct import `fitz`, previously transitive
 
 # --- OCR (scanned/image-only PDFs) ---
 # paddlepaddle itself is installed separately in the Dockerfile (CPU/GPU
@@ -73,17 +72,17 @@ PyMuPDF                 # direct import `fitz`, previously transitive
 # openai>=1.63 and breaks the openai==1.57.0 pin our chatbot code is written
 # against. Bare paddleocr>=3.7.0 still exposes both PaddleOCR (PP-OCRv6) and
 # PaddleOCRVL — the extra is only needed for an OpenAI-compatible remote
-# serving mode this project doesn't use. Verified against an actual install;
-# see docs/PRODUCTION_READINESS_REVIEW.md.
+# serving mode this project doesn't use. Verified against an actual install.
 paddleocr==3.7.0        # PP-OCRv6 (CPU) + PaddleOCR-VL (GPU)
 
 # --- Frontend ---
-streamlit==1.52.0
+streamlit==1.61.1
 
 # --- Runtime / config ---
-python-dotenv==1.0.1
+python-dotenv==1.2.2
 psutil==6.1.0
 
 # --- Testing ---
-pytest==8.3.3
-pytest-asyncio==0.24.0
+pytest==9.1.1
+# Must be >=1.x: pytest-asyncio 0.24 pins pytest<9.
+pytest-asyncio==1.3.0

@@ -11,7 +11,6 @@ from .responses import (
     ChatRequest,
     FileProcessResult,
     MultipleFileUploadResponse,
-    URLProcessingResponse,
     ErrorResponse,
 )
 

@@ -4,9 +4,9 @@ Organized by domain for better maintainability and clarity.
 """
 
 # Import main components from domain modules
-from .ai_services import ChatbotService, PromptManager, EmbeddingService
+from .agent import ChatbotService, PromptManager
 from .document_processing import MainDocumentProcessor
-from .retrieval import ContextRetriever
+from .retrieval import ContextRetriever, EmbeddingService
 from .storage import VectorStore, DocumentStore
 
 # Export all main components for convenient access

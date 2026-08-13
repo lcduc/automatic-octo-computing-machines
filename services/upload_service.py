@@ -7,7 +7,6 @@ Provides validation, batch processing, and error handling for file uploads.
 import logging
 from typing import List, Dict, Any
 import asyncio
-from concurrent.futures import ThreadPoolExecutor
 
 # Third-party imports
 from fastapi import UploadFile, HTTPException
@@ -15,7 +14,6 @@ from fastapi import UploadFile, HTTPException
 # Local imports
 from config.settings import Config
 from models.responses import MultipleFileUploadResponse
-from utils.text_processing import ValidationUtils
 from .base_service import BaseProcessingService
 
 logger = logging.getLogger(__name__)

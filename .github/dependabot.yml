@@ -1,0 +1,32 @@
+version: 2
+
+updates:
+  # Python dependencies. requirements.txt pins exact versions on purpose (the
+  # comment block at the top of that file explains why: torch/transformers/
+  # paddlepaddle have to move together), so these PRs are the intended way to
+  # bump them — one at a time, with CI proving the suite still passes.
+  - package-ecosystem: pip
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      # Patch bumps are usually safe and noisy individually; batch them.
+      patch-updates:
+        update-types:
+          - patch
+    ignore:
+      # These four are version-locked to each other and to a hardware-specific
+      # wheel index; a lone Dependabot bump would break the pairing the
+      # requirements.txt/Dockerfile comments warn about. Upgrade them together,
+      # by hand, after re-verifying the paddle oneDNN bug (PaddlePaddle#77340).
+      - dependency-name: torch
+      - dependency-name: torchvision
+      - dependency-name: torchaudio
+      - dependency-name: paddlepaddle
+
+  # Keep the workflow actions themselves current (checkout, setup-python, ...).
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
