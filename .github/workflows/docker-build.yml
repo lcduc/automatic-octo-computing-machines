@@ -28,7 +28,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Frees ~10-14 GB by dropping preinstalled toolchains this build does not
       # use. The ML wheels plus baked model weights can otherwise exhaust the
