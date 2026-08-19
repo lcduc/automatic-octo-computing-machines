@@ -115,10 +115,18 @@ class OpenAIClientProvider(BaseLLMProvider):
         Build the model/token-limit/temperature kwargs for a completion call.
 
         ``gpt-5*`` models reject the legacy ``max_tokens`` parameter (they need
-        ``max_completion_tokens`` instead), only support the default
-        ``temperature`` of 1, and take a ``reasoning_effort`` knob instead -
-        so all three are adapted per model family here rather than at each
-        call site.
+        ``max_completion_tokens`` instead) and only support the default
+        ``temperature`` of 1, so both are adapted per model family here rather
+        than at each call site.
+
+        ``reasoning_effort`` is deliberately NOT sent: it is a real parameter
+        for ``gpt-5*`` models, but the ``openai`` SDK version this project is
+        pinned to (see ``requirements.txt``) predates that parameter's
+        addition to ``chat.completions.create`` and rejects it with
+        ``TypeError: unexpected keyword argument 'reasoning_effort'`` on every
+        call. Re-add it (via ``Config.LLM.OPENAI_REASONING_EFFORT()``) only
+        once the pin is deliberately upgraded to a version whose
+        ``create()`` signature includes it.
 
         Args:
             model: Model name to resolve the parameter set for.
@@ -131,7 +139,6 @@ class OpenAIClientProvider(BaseLLMProvider):
         kwargs: Dict[str, Any] = {"model": model}
         if model.startswith("gpt-5"):
             kwargs["max_completion_tokens"] = max_tokens
-            kwargs["reasoning_effort"] = Config.LLM.OPENAI_REASONING_EFFORT()
         else:
             kwargs["max_tokens"] = max_tokens
             kwargs["temperature"] = temperature

@@ -119,6 +119,13 @@ def test_registry_tool_exception_returns_error_string_not_raise():
     assert "Error" in result
 
 
+def test_registry_missing_required_argument_returns_error_string_not_raise():
+    registry = ToolRegistry(tools=[_EchoTool()])
+    result = registry.execute("echo_tool", {})
+    assert "Error" in result
+    assert "text" in result
+
+
 # --- ToolCallingAgent ---------------------------------------------------------
 
 

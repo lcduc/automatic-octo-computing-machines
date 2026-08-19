@@ -160,6 +160,17 @@ class LLMConfig:
         return env_str("OPENAI_LIGHT_MODEL", "gpt-4.1-nano")
 
     @staticmethod
+    def TOOL_CALLING_ENABLED() -> bool:
+        """
+        Route chat turns through ``IntentRouter``/``ToolCallingAgent``.
+
+        Off switch for the action engine: every turn otherwise pays for an
+        extra intent-classification call, so this can disable that without a
+        redeploy if it needs to be turned off in production.
+        """
+        return env_bool("TOOL_CALLING_ENABLED", True)
+
+    @staticmethod
     def EMBEDDING_MODEL() -> str:
         """Sentence-transformers model used to embed chunks and queries."""
         return env_str("EMBEDDING_MODEL", "paraphrase-multilingual-MiniLM-L12-v2")

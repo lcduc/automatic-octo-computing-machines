@@ -18,15 +18,20 @@ from typing import Any, AsyncGenerator, Dict, List, Optional, Union
 from config.settings import Config
 from core.infrastructure.audit_trail_service import AuditTrailService, get_audit_trail_service
 from models.audit_entry import AuditEntry
+from models.intent import IntentType
 from models.responses import ChatResponse, ErrorResponse, StatusEnum
 from .confidence import ConfidenceScorer
 from .base_llm_provider import BaseLLMProvider
+from .intent_router import IntentRouter
 from .openai_client import OpenAIClientProvider
 from .provider_factory import LLMProviderFactory
 from .prompts import PromptManager
 from .query_rewriter import QueryRewriter
 from .response_cache import ResponseCache
 from .response_factory import ChatResponseFactory
+from .tool_calling_agent import ToolCallingAgent
+from .tools.current_time_tool import CurrentTimeTool
+from .tools.registry import ToolRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -89,6 +94,9 @@ class ChatbotService:
         # non-OpenAI LLM_PROVIDER doesn't force an unrelated OpenAI client.
         self._dedicated_transcription_provider: Optional[OpenAIClientProvider] = None
         self.query_rewriter = QueryRewriter(self._llm_provider)
+        self._tool_registry = ToolRegistry(tools=[CurrentTimeTool()])
+        self._intent_router = IntentRouter(self._llm_provider, self._tool_registry)
+        self._dedicated_tool_calling_provider: Optional[OpenAIClientProvider] = None
         self._cache = response_cache or ResponseCache(
             max_entries=Config.LLM.LLM_CACHE_MAX_ENTRIES(),
             ttl_seconds=Config.LLM.LLM_CACHE_TTL(),
@@ -142,6 +150,8 @@ class ChatbotService:
         self._llm_provider.close()
         if self._dedicated_transcription_provider is not None:
             self._dedicated_transcription_provider.close()
+        if self._dedicated_tool_calling_provider is not None:
+            self._dedicated_tool_calling_provider.close()
         logger.info("ChatbotService cleanup completed")
 
     # ------------------------------------------------------------------
@@ -204,6 +214,33 @@ class ChatbotService:
         text = await asyncio.to_thread(provider.transcribe, audio_bytes, filename, content_type)
         logger.debug("Transcription complete: %d chars", len(text))
         return text
+
+    # ------------------------------------------------------------------
+    # Action engine (tool-calling)
+    # ------------------------------------------------------------------
+
+    def _tool_calling_provider(self) -> OpenAIClientProvider:
+        """
+        Return an OpenAI provider for tool-calling, regardless of ``LLM_PROVIDER``.
+
+        Tool-calling is only implemented against OpenAI's API today (see
+        ``base_llm_provider.py``). When the active chat provider already is
+        an ``OpenAIClientProvider`` it is reused directly; otherwise a
+        dedicated instance is built lazily so choosing Anthropic or Gemini
+        for chat doesn't force an unrelated OpenAI client to also be
+        constructed up front.
+
+        Raises:
+            RuntimeError: ``OPENAI_API_KEY`` is not configured, so
+                tool-calling cannot work under any provider choice.
+        """
+        if hasattr(self._llm_provider, "complete_with_tools_async"):
+            return self._llm_provider
+        if self._dedicated_tool_calling_provider is None:
+            self._dedicated_tool_calling_provider = OpenAIClientProvider()
+        if not self._dedicated_tool_calling_provider.is_configured:
+            raise RuntimeError("Tool-calling requires OPENAI_API_KEY to be configured.")
+        return self._dedicated_tool_calling_provider
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -628,6 +665,21 @@ class ChatbotService:
         if not self.api_available:
             yield "[ERROR] Chat service unavailable."
             return
+
+        if Config.LLM.TOOL_CALLING_ENABLED():
+            intent = await self._intent_router.classify(query, history)
+            if intent == IntentType.ACTION:
+                try:
+                    tool_provider = self._tool_calling_provider()
+                except RuntimeError as exc:
+                    logger.warning(
+                        "Tool-calling unavailable (%s); falling back to RAG for this turn", exc
+                    )
+                else:
+                    agent = ToolCallingAgent(tool_provider, self._tool_registry, self.query_rewriter)
+                    async for delta in agent.stream(query, history):
+                        yield delta
+                    return
 
         start_time = time.perf_counter()
         search_results: List[Dict[str, Any]] = []

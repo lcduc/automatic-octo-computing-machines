@@ -81,6 +81,9 @@ streamlit==1.61.1
 # --- Runtime / config ---
 python-dotenv==1.2.2
 psutil==6.1.0
+# zoneinfo (stdlib) has no IANA database of its own on Windows; tzdata is a
+# no-op on Linux/Mac, where the OS already provides one.
+tzdata==2026.3
 
 # --- Testing ---
 pytest==9.1.1
