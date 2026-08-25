@@ -3,6 +3,7 @@ Chat endpoint - RAG-powered conversation API with optional history support.
 """
 
 # Standard library imports
+import json
 import logging
 from typing import AsyncGenerator, Dict, List, Optional
 
@@ -59,30 +60,32 @@ async def chat(
     chat_service: ChatService = Depends(get_chat_service),
 ) -> StreamingResponse:
     """
-    Answer a query, streaming the generated tokens back to the caller.
+    Answer a query, streaming JSON events back to the caller over SSE.
 
     Args:
         request: Body carrying the user query and optional conversation history.
         chat_service: Injected RAG chat service.
 
     Returns:
-        A ``text/event-stream`` response of answer tokens. Failures are streamed
-        as a single ``[ERROR] ...`` token rather than raising, so an
+        A ``text/event-stream`` response of ``data: <json>\\n\\n`` frames, each a
+        ``{"type": "delta"|"final"|"error", ...}`` event (see
+        :class:`core.agent.response_factory.ChatResponseFactory`). Failures are
+        streamed as a single ``error`` event rather than raising, so an
         already-started response is never truncated without explanation.
     """
 
-    async def token_generator() -> AsyncGenerator[str, None]:
+    async def event_generator() -> AsyncGenerator[str, None]:
         try:
-            async for token in chat_service.stream_chat_with_memory(
+            async for event in chat_service.stream_chat_with_memory(
                 request.query, custom_history=_resolve_history(request.history)
             ):
-                yield token
+                yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
         except Exception as exc:
             logger.exception("Error while streaming chat response")
-            yield f"[ERROR] {exc}"
+            yield f"data: {json.dumps({'type': 'error', 'message': str(exc)}, ensure_ascii=False)}\n\n"
 
     return StreamingResponse(
-        token_generator(),
+        event_generator(),
         media_type="text/event-stream",
         headers=STREAM_HEADERS,
     )

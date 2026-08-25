@@ -93,6 +93,11 @@ class SimilarityCalculator:
         max_sim = np.max(similarities)
 
         if max_sim == min_sim:
+            # All-zero means no signal at all (e.g. BM25 with no term overlap) —
+            # normalizing that to all-ones would fabricate a maximal score and
+            # inflate every document's combined score in hybrid_search.
+            if max_sim <= 0:
+                return np.zeros_like(similarities)
             return np.ones_like(similarities)
 
         return (similarities - min_sim) / (max_sim - min_sim)

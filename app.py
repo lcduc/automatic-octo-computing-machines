@@ -6,6 +6,7 @@ import subprocess
 import requests
 import re
 import base64
+import json
 import urllib3
 from utils.cleanup import cleanup_data_folders
 
@@ -71,6 +72,13 @@ def is_backend_healthy(base_url: str) -> bool:
 
 
 def stream_chat(base_url: str, query: str, history: list = None):
+    """
+    Stream ``{"type": "delta"|"final"|"error", ...}`` events from ``/chat/``.
+
+    The backend sends real SSE frames (``data: <json>\\n\\n``); each event is
+    self-contained JSON on one line (``json.dumps`` escapes any newlines the
+    answer text itself contains), so line-splitting never corrupts a frame.
+    """
     url = f"{base_url}/chat/"
     headers = {"accept": "text/event-stream", "content-type": "application/json", **_auth_headers()}
     payload = {"query": query}
@@ -80,34 +88,29 @@ def stream_chat(base_url: str, query: str, history: list = None):
         with requests.post(url, json=payload, headers=headers, stream=True, timeout=300, verify=False) as r:
             r.raise_for_status()
             try:
-                # The backend streams raw text deltas with no line framing (it
-                # is not real data:-prefixed SSE), so splitting on newlines is
-                # the wrong parser: a token that IS just "\n" (e.g. between
-                # list items) would look like a blank line and get dropped.
-                # iter_content preserves every byte, including bare newlines,
-                # and decode_unicode=True decodes incrementally so multi-byte
-                # UTF-8 characters split across chunk boundaries stay intact.
-                for chunk in r.iter_content(chunk_size=None, decode_unicode=True):
-                    if chunk:
-                        yield chunk
+                for line in r.iter_lines(decode_unicode=True):
+                    if not line or not line.startswith("data: "):
+                        continue
+                    try:
+                        yield json.loads(line[len("data: "):])
+                    except json.JSONDecodeError:
+                        continue
             except (requests.exceptions.ChunkedEncodingError, requests.exceptions.ConnectionError, ConnectionResetError) as e:
                 # Handle incomplete chunked read errors gracefully
-                error_msg = f"[ERROR] Connection interrupted: {str(e)}"
-                yield error_msg
+                yield {"type": "error", "message": f"Connection interrupted: {str(e)}"}
                 return
             except Exception as e:
                 # Handle other streaming errors
-                error_msg = f"[ERROR] Streaming error: {str(e)}"
-                yield error_msg
+                yield {"type": "error", "message": f"Streaming error: {str(e)}"}
                 return
     except requests.exceptions.Timeout:
-        yield "[ERROR] Request timeout - the server took too long to respond."
+        yield {"type": "error", "message": "Request timeout - the server took too long to respond."}
     except requests.exceptions.ConnectionError as e:
-        yield f"[ERROR] Connection error: Could not connect to the server. {str(e)}"
+        yield {"type": "error", "message": f"Connection error: Could not connect to the server. {str(e)}"}
     except requests.exceptions.RequestException as e:
-        yield f"[ERROR] Request failed: {str(e)}"
+        yield {"type": "error", "message": f"Request failed: {str(e)}"}
     except Exception as e:
-        yield f"[ERROR] Unexpected error: {str(e)}"
+        yield {"type": "error", "message": f"Unexpected error: {str(e)}"}
 
 
 def transcribe_audio(base_url: str, audio_bytes: bytes) -> str:
@@ -184,6 +187,25 @@ def format_markdown_response(text: str) -> str:
 
     text = re.sub(r"\n{3,}", "\n\n", text)
     return text.strip()
+
+
+def render_citations(citations: list) -> None:
+    """
+    Render a distinct "Sources" expander for the given citations.
+
+    Kept as its own element (never concatenated into the answer's Markdown)
+    so the frontend can show sources independently of the generated text.
+    No-op when there is nothing to cite.
+    """
+    if not citations:
+        return
+    with st.expander(f"📚 Nguồn tham khảo ({len(citations)})"):
+        for citation in citations:
+            source = citation.get("source", "Không rõ nguồn")
+            label = f"[{source}]({source})" if citation.get("type") == "url" else source
+            score = citation.get("score")
+            suffix = f" · {score:.2f}" if isinstance(score, (int, float)) else ""
+            st.markdown(f"- {label}{suffix}")
 
 
 class ChatApp:
@@ -332,6 +354,7 @@ class ChatApp:
         for msg in st.session_state.chat_history:
             with st.chat_message(msg["role"]):
                 st.markdown(msg["content"])
+                render_citations(msg.get("citations", []))
 
         if st.session_state.get(_PENDING_CHAT_PREFILL_KEY):
             st.session_state[CHAT_INPUT_KEY] = st.session_state.pop(_PENDING_CHAT_PREFILL_KEY)
@@ -368,19 +391,38 @@ class ChatApp:
             with st.chat_message("assistant"):
                 placeholder = st.empty()
                 accumulated = ""
+                citations = []
+                error_message = None
                 last_flush = time.time()
                 try:
-                    for token in stream_chat(api_base_url, user_input, recent_history):
-                        accumulated += token
-                        now = time.time()
-                        # Flush on punctuation/newline or every ~50ms to reduce flicker & CPU
-                        if token.endswith((" ", "\n", ".", ",", ":", ";", "!", "?")) or (now - last_flush) > 0.05:
-                            placeholder.markdown(format_markdown_response(accumulated))
-                            last_flush = now
-                    # After full completion, apply full formatter and update the UI immediately
-                    final_text = format_markdown_response(accumulated)
-                    placeholder.markdown(final_text)
-                    st.session_state.chat_history.append({"role": "assistant", "content": final_text})
+                    for event in stream_chat(api_base_url, user_input, recent_history):
+                        event_type = event.get("type")
+                        if event_type == "delta":
+                            delta = event.get("answer", {}).get("text", "")
+                            accumulated += delta
+                            now = time.time()
+                            # Flush on punctuation/newline or every ~50ms to reduce flicker & CPU
+                            if delta.endswith((" ", "\n", ".", ",", ":", ";", "!", "?")) or (now - last_flush) > 0.05:
+                                placeholder.markdown(format_markdown_response(accumulated))
+                                last_flush = now
+                        elif event_type == "final":
+                            citations = event.get("citations") or []
+                        elif event_type == "error":
+                            error_message = event.get("message", "Unknown error")
+                            break
+
+                    if error_message:
+                        final_text = f"Chat failed: {error_message}"
+                        placeholder.markdown(final_text)
+                        st.session_state.chat_history.append({"role": "assistant", "content": final_text})
+                    else:
+                        # After full completion, apply full formatter and update the UI immediately
+                        final_text = format_markdown_response(accumulated)
+                        placeholder.markdown(final_text)
+                        render_citations(citations)
+                        st.session_state.chat_history.append(
+                            {"role": "assistant", "content": final_text, "citations": citations}
+                        )
                 except Exception as e:
                     error_msg = f"Chat failed: {e}"
                     placeholder.markdown(error_msg)

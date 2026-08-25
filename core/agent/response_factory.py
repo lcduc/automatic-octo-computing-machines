@@ -1,9 +1,10 @@
 """
 Builders for the chat payloads returned by ``ChatbotService``.
 
-The confidence and search-metadata blocks used to be copy-pasted at every return
-site; centralising them here keeps the wire format consistent and makes a change
-to the response shape a one-line edit.
+Every response shape — the pydantic ``ChatResponse``, the plain-dict history
+payload, and the streaming SSE events — is assembled here so the wire format
+(an ``{"answer": {...}, "citations": [...]}`` envelope) is defined in exactly
+one place instead of being copy-pasted at every return site.
 """
 
 # Standard library imports
@@ -12,12 +13,9 @@ from typing import Any, Dict, List, Optional
 # Local imports
 from models.responses import ChatResponse, StatusEnum
 
-#: Number of top-scoring chunks reported back to the caller.
-TOP_SCORE_SAMPLE_SIZE = 3
-
 
 class ChatResponseFactory:
-    """Assembles confidence/search metadata and the response objects around it."""
+    """Assembles the answer/citations envelope and the response objects around it."""
 
     def __init__(self, confidence_scorer):
         """
@@ -38,34 +36,41 @@ class ChatResponseFactory:
         }
 
     def confidence_payload(self, confidence) -> Dict[str, Any]:
-        """Build the ``{score, level, details}`` block used by ``ChatResponse``."""
+        """Build the ``{score, level, details}`` block used by ``answer.confidence``."""
         return {
             "score": confidence.overall_score,
             "level": self._confidence_scorer.get_confidence_level(confidence.overall_score),
             "details": self.confidence_details(confidence),
         }
 
-    @staticmethod
-    def top_scores(search_results: Optional[List[Dict[str, Any]]]) -> List[float]:
-        """Extract the highest combined scores from the retrieved chunks."""
-        results = search_results or []
-        return [
-            result.get("combined_score", 0)
-            for result in results[:TOP_SCORE_SAMPLE_SIZE]
-            if result.get("combined_score", 0) > 0
-        ]
-
-    def search_metadata(
-        self,
-        search_results: Optional[List[Dict[str, Any]]],
-        cached: bool,
-    ) -> Dict[str, Any]:
-        """Build the search metadata block for a ``ChatResponse``."""
+    def answer_payload(self, response_text: str, confidence, cached: bool) -> Dict[str, Any]:
+        """Build the ``answer`` block shared by every response shape."""
         return {
-            "results_count": len(search_results or []),
-            "top_scores": self.top_scores(search_results),
-            "cached_response": cached,
+            "text": response_text,
+            "confidence": self.confidence_payload(confidence),
+            "cached": cached,
         }
+
+    @staticmethod
+    def citations(search_results: Optional[List[Dict[str, Any]]]) -> List[Dict[str, Any]]:
+        """
+        Distinct sources behind the answer, highest-scoring first.
+
+        One entry per source (deduplicated by ``source_id``), keeping that
+        source's best-scoring retrieved chunk.
+        """
+        best_by_source: Dict[str, Dict[str, Any]] = {}
+        for result in search_results or []:
+            source_id = result.get("source_id", "unknown")
+            score = result.get("combined_score", 0)
+            existing = best_by_source.get(source_id)
+            if existing is None or score > existing["score"]:
+                best_by_source[source_id] = {
+                    "source": result.get("source_name", source_id),
+                    "type": result.get("source_type", "unknown"),
+                    "score": round(score, 3),
+                }
+        return sorted(best_by_source.values(), key=lambda c: c["score"], reverse=True)
 
     def chat_response(
         self,
@@ -79,10 +84,9 @@ class ChatResponseFactory:
         return ChatResponse(
             status=StatusEnum.SUCCESS,
             message="Response generated successfully",
-            response=response_text,
             query=query,
-            confidence=self.confidence_payload(confidence),
-            search_metadata=self.search_metadata(search_results, cached),
+            answer=self.answer_payload(response_text, confidence, cached),
+            citations=self.citations(search_results),
         )
 
     def history_payload(
@@ -99,29 +103,44 @@ class ChatResponseFactory:
         directly when assembling its own ``BaseResponse``.
         """
         return {
-            "response": response_text,
-            "confidence": confidence.overall_score,
-            "confidence_level": self._confidence_scorer.get_confidence_level(
-                confidence.overall_score
-            ),
-            "confidence_details": self.confidence_details(confidence),
-            "search_results": {
-                "count": len(search_results or []),
-                "top_scores": self.top_scores(search_results),
-            },
+            "answer": self.answer_payload(response_text, confidence, cached),
+            "citations": self.citations(search_results),
             "success": True,
-            "cached": cached,
         }
 
     @staticmethod
     def history_error_payload(error_message: str) -> Dict[str, Any]:
         """Build the failure counterpart of :meth:`history_payload`."""
         return {
-            "response": error_message,
-            "confidence": 0.0,
-            "confidence_level": "Low",
-            "confidence_details": {},
-            "search_results": {"count": 0, "top_scores": []},
+            "answer": None,
+            "citations": [],
             "success": False,
-            "cached": False,
+            "error": error_message,
         }
+
+    @staticmethod
+    def stream_delta_event(text: str) -> Dict[str, Any]:
+        """Build one incremental ``delta`` SSE event carrying an answer text chunk."""
+        return {"type": "delta", "answer": {"text": text}}
+
+    def stream_final_event(
+        self,
+        response_text: str,
+        confidence,
+        search_results: Optional[List[Dict[str, Any]]],
+        cached: bool,
+    ) -> Dict[str, Any]:
+        """
+        Build the terminal ``final`` SSE event.
+
+        Carries confidence and citations for the turn; ``answer.text`` is left
+        blank since the full text was already delivered via ``delta`` events.
+        """
+        payload = self.answer_payload(response_text, confidence, cached)
+        payload["text"] = ""
+        return {"type": "final", "answer": payload, "citations": self.citations(search_results)}
+
+    @staticmethod
+    def stream_error_event(message: str) -> Dict[str, Any]:
+        """Build the ``error`` SSE event for a failed turn."""
+        return {"type": "error", "message": message}

@@ -38,6 +38,16 @@ class _StubProvider:
             yield chunk
 
 
+class _StubRetriever:
+    """Fake retriever returning fixed, pre-built search results."""
+
+    def __init__(self, results):
+        self._results = results
+
+    def hybrid_search(self, query, embeddings, documents, k, semantic_weight):
+        return self._results
+
+
 @pytest.mark.asyncio
 async def test_action_intent_uses_tool_calling_agent_and_skips_rag():
     decision_message = types.SimpleNamespace(content="It's 10am.", tool_calls=[])
@@ -46,7 +56,10 @@ async def test_action_intent_uses_tool_calling_agent_and_skips_rag():
 
     deltas = [delta async for delta in service.stream_response_with_history("what time is it?")]
 
-    assert deltas == ["It's 10am."]
+    assert deltas == [
+        {"type": "delta", "answer": {"text": "It's 10am."}},
+        {"type": "final", "answer": {"text": ""}, "citations": []},
+    ]
     assert len(provider.complete_async_calls) == 1  # IntentRouter.classify
     assert len(provider.complete_with_tools_calls) == 1  # ToolCallingAgent decision call
     assert provider.stream_calls == []  # RAG generation never reached
@@ -63,12 +76,63 @@ async def test_rag_intent_leaves_existing_rag_flow_untouched(tmp_path):
         context_retriever=object(), llm_provider=provider, audit_trail=audit_trail
     )
 
-    deltas = [delta async for delta in service.stream_response_with_history("hi")]
+    events = [event async for event in service.stream_response_with_history("hi")]
 
-    assert deltas == ["hello ", "there"]
+    assert events[:2] == [
+        {"type": "delta", "answer": {"text": "hello "}},
+        {"type": "delta", "answer": {"text": "there"}},
+    ]
+    assert len(events) == 3
+    final_event = events[2]
+    assert final_event["type"] == "final"
+    assert final_event["answer"]["text"] == ""
+    assert final_event["answer"]["cached"] is False
+    assert "confidence" in final_event["answer"]
+    assert final_event["citations"] == []  # no documents were provided, so no RAG results
     assert len(provider.complete_async_calls) == 1  # IntentRouter.classify only
     assert provider.complete_with_tools_calls == []  # tool-calling never invoked
     assert len(provider.stream_calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_rag_intent_streams_citations_for_retrieved_sources(tmp_path):
+    results = [
+        {
+            "document": "doc a text",
+            "combined_score": 0.9,
+            "index": 0,
+            "source_id": "doc_a",
+            "source_name": "doc_a.pdf",
+            "source_type": "file",
+        },
+        {
+            "document": "doc b text",
+            "combined_score": 0.7,
+            "index": 1,
+            "source_id": "doc_b",
+            "source_name": "doc_b.pdf",
+            "source_type": "file",
+        },
+    ]
+    provider = _StubProvider(intent_text="rag", stream_chunks=["answer"])
+    audit_trail = AuditTrailService(log_path=str(tmp_path / "audit_trail.jsonl"))
+    service = ChatbotService(
+        context_retriever=_StubRetriever(results), llm_provider=provider, audit_trail=audit_trail
+    )
+
+    events = [
+        event
+        async for event in service.stream_response_with_history(
+            "hi", embeddings=object(), documents=["doc a text", "doc b text"]
+        )
+    ]
+
+    final_event = events[-1]
+    assert final_event["type"] == "final"
+    assert final_event["citations"] == [
+        {"source": "doc_a.pdf", "type": "file", "score": 0.9},
+        {"source": "doc_b.pdf", "type": "file", "score": 0.7},
+    ]
 
 
 @pytest.mark.asyncio
@@ -79,10 +143,10 @@ async def test_tool_calling_disabled_skips_intent_classification(monkeypatch):
 
     generator = service.stream_response_with_history("hi")
     try:
-        first_delta = await generator.__anext__()
+        first_event = await generator.__anext__()
     finally:
         await generator.aclose()
 
-    assert first_delta == "ok"
+    assert first_event == {"type": "delta", "answer": {"text": "ok"}}
     assert provider.complete_async_calls == []  # classify() never called
     assert provider.complete_with_tools_calls == []

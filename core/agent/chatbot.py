@@ -598,10 +598,9 @@ class ChatbotService:
         """Build the batch result entry for a query that could not be answered at all."""
         return {
             "query": query,
-            "response": None,
+            "answer": None,
+            "citations": [],
             "success": False,
-            "cached": False,
-            "confidence": None,
             "error": error,
         }
 
@@ -644,9 +643,9 @@ class ChatbotService:
         embeddings=None,
         documents=None,
         history: Optional[List[Dict[str, str]]] = None,
-    ) -> AsyncGenerator[str, None]:
+    ) -> AsyncGenerator[Dict[str, Any], None]:
         """
-        Stream an answer token-by-token, replaying conversation history.
+        Stream an answer as JSON events, replaying conversation history.
 
         Checks the answer cache first (keyed on query + context + history): on
         a hit the cached text is yielded immediately instead of calling the
@@ -660,10 +659,13 @@ class ChatbotService:
             history: Prior conversation turns.
 
         Yields:
-            Text deltas, or a single ``[ERROR] ...`` string when generation fails.
+            ``{"type": "delta", "answer": {"text": ...}}`` events as the
+            answer is generated, followed by one ``{"type": "final", ...}``
+            event carrying confidence and citations, or a single
+            ``{"type": "error", "message": ...}`` event when generation fails.
         """
         if not self.api_available:
-            yield "[ERROR] Chat service unavailable."
+            yield self._responses.stream_error_event("Chat service unavailable.")
             return
 
         if Config.LLM.TOOL_CALLING_ENABLED():
@@ -678,7 +680,8 @@ class ChatbotService:
                 else:
                     agent = ToolCallingAgent(tool_provider, self._tool_registry, self.query_rewriter)
                     async for delta in agent.stream(query, history):
-                        yield delta
+                        yield self._responses.stream_delta_event(delta)
+                    yield {"type": "final", "answer": {"text": ""}, "citations": []}
                     return
 
         start_time = time.perf_counter()
@@ -720,13 +723,16 @@ class ChatbotService:
                     success=True,
                     rewritten_query=search_query,
                 )
-                yield cached_text
+                yield self._responses.stream_delta_event(cached_text)
+                yield self._responses.stream_final_event(
+                    cached_text, confidence, search_results, cached=True
+                )
                 return
 
             messages = self._build_messages(query, context, history)
             async for delta in self._llm_provider.stream(messages):
                 chunks.append(delta)
-                yield delta
+                yield self._responses.stream_delta_event(delta)
             response_text = "".join(chunks)
             self._cache.set(cache_key, response_text)
 
@@ -741,15 +747,22 @@ class ChatbotService:
                 success=True,
                 rewritten_query=search_query,
             )
+            yield self._responses.stream_final_event(
+                response_text, confidence, search_results, cached=False
+            )
         except Exception as exc:
             logger.exception("Error during streaming")
             record_failure(str(exc))
             category = self._classify_error(exc)
             if category == "timeout":
-                yield "[ERROR] Request timeout - the AI service took too long to respond."
+                yield self._responses.stream_error_event(
+                    "Request timeout - the AI service took too long to respond."
+                )
             elif category == "connection":
-                yield f"[ERROR] Connection error: Could not reach the AI service. {exc}"
+                yield self._responses.stream_error_event(
+                    f"Connection error: Could not reach the AI service. {exc}"
+                )
             elif category in ("status", "rate_limit"):
-                yield f"[ERROR] API error: {exc}"
+                yield self._responses.stream_error_event(f"API error: {exc}")
             else:
-                yield f"[ERROR] {exc}"
+                yield self._responses.stream_error_event(str(exc))

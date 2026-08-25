@@ -288,7 +288,7 @@ class ChatService:
 
     async def stream_chat_with_memory(
         self, query: str, custom_history: Optional[List[Dict[str, str]]] = None
-    ) -> AsyncGenerator[str, None]:
+    ) -> AsyncGenerator[Dict[str, Any], None]:
         """
         Stream a chat response, replaying caller-supplied conversation history.
 
@@ -303,21 +303,23 @@ class ChatService:
                 recent last. ``None`` means no history is used for this turn.
 
         Yields:
-            Answer text deltas, or a single ``[ERROR] ...`` token on failure.
+            ``{"type": "delta"|"final"|"error", ...}`` events; see
+            :class:`core.agent.response_factory.ChatResponseFactory` for the
+            exact shape of each event type.
         """
         start_time = time.time()
         self.service_metrics["total_requests"] += 1
 
         if not query or not query.strip():
-            yield "[ERROR] Empty query provided."
+            yield {"type": "error", "message": "Empty query provided."}
             return
         if not self.chatbot_service.api_available:
-            yield "[ERROR] Chat service is currently unavailable."
+            yield {"type": "error", "message": "Chat service is currently unavailable."}
             return
 
         kb = self._load_knowledge_base()
         if kb is None:
-            yield "[ERROR] Knowledge base unavailable"
+            yield {"type": "error", "message": "Knowledge base unavailable"}
             return
         current_embeddings, current_documents = kb
 
@@ -325,17 +327,17 @@ class ChatService:
         history = (custom_history or [])[-max_messages:] if max_messages > 0 else []
 
         try:
-            async for token in self.chatbot_service.stream_response_with_history(
+            async for event in self.chatbot_service.stream_response_with_history(
                 query,
                 embeddings=current_embeddings,
                 documents=current_documents,
                 history=history,
             ):
-                yield token
+                yield event
         except Exception:
             logger.exception("Streaming chat failed for query: %s...", query[:50])
             self.service_metrics["failed_requests"] += 1
-            yield "[ERROR] An unexpected error occurred while generating the response."
+            yield {"type": "error", "message": "An unexpected error occurred while generating the response."}
             return
 
         self.service_metrics["successful_requests"] += 1
@@ -362,8 +364,8 @@ class ChatService:
         if not self.chatbot_service.api_available:
             self.service_metrics["failed_requests"] += len(queries)
             return [
-                {"query": q, "response": None, "success": False, "cached": False,
-                 "confidence": None, "error": "Chat service is currently unavailable"}
+                {"query": q, "answer": None, "citations": [], "success": False,
+                 "error": "Chat service is currently unavailable"}
                 for q in queries
             ]
 
@@ -371,8 +373,8 @@ class ChatService:
         if kb is None:
             self.service_metrics["failed_requests"] += len(queries)
             return [
-                {"query": q, "response": None, "success": False, "cached": False,
-                 "confidence": None, "error": "Knowledge base unavailable"}
+                {"query": q, "answer": None, "citations": [], "success": False,
+                 "error": "Knowledge base unavailable"}
                 for q in queries
             ]
         embeddings, documents = kb

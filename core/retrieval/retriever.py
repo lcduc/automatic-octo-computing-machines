@@ -257,6 +257,22 @@ class ContextRetriever:
 
         return results
 
+    def _attach_source_metadata(self, results: List[Dict[str, Any]]) -> None:
+        """
+        Enrich each result in place with the source it was retrieved from.
+
+        Looks up ``document_metadata`` (aligned by index, same as
+        :meth:`_expand_context_with_adjacent_chunks`) so callers building a
+        citation from a result don't need to touch the vector store themselves.
+        """
+        document_metadata = self.vector_store.get_metadata() or []
+        for result in results:
+            idx = result["index"]
+            meta = document_metadata[idx] if 0 <= idx < len(document_metadata) else {}
+            result["source_id"] = meta.get("source_id", "unknown")
+            result["source_name"] = meta.get("source_name") or meta.get("source", "unknown")
+            result["source_type"] = meta.get("source_type", "unknown")
+
     def hybrid_search(
         self,
         query: str,
@@ -318,11 +334,13 @@ class ContextRetriever:
                     query_embedding, embeddings
                 )
 
-            # Keyword search using BM25 with enhanced caching
-            try:
-                cache_key = (len(documents), hash(documents[0]) if documents else 0)
-            except Exception:
-                cache_key = len(documents)
+            # Keyword search using BM25 with enhanced caching.
+            # `documents` is the vector store provider's cached payload, only
+            # ever replaced wholesale (never mutated in place) on invalidate/
+            # rebuild — so its identity is a correct, O(1) fingerprint of the
+            # corpus, unlike (len, hash(first doc)) which missed changes to
+            # any other document.
+            cache_key = (id(documents), len(documents))
 
             # Check query cache first
             query_cache_key = f"{query}_{cache_key}"
@@ -423,12 +441,13 @@ class ContextRetriever:
 
             # Ensure minimum context chunks
             final_results = self._ensure_minimum_context(expanded_results, documents)
+            self._attach_source_metadata(final_results)
 
             logger.info(
                 f" Hybrid search completed: {len(final_results)} results (expanded from {len(top_k_results)})"
             )
             return final_results
 
-        except Exception as e:
-            logger.warning(f" Hybrid search failed: {e}")
+        except Exception:
+            logger.exception("Hybrid search failed")
             return []

@@ -51,40 +51,42 @@ class HealthResponse(BaseResponse):
 
 
 class ChatResponse(BaseResponse):
-    """Enhanced chat response model with confidence scoring and search metadata."""
+    """Enhanced chat response model with a nested answer and its source citations."""
 
-    response: str = Field(..., description="AI response to the query")
     query: str = Field(..., description="Original query")
-    confidence: Optional[Dict[str, Any]] = Field(
-        None, description="Confidence scoring details"
+    answer: Dict[str, Any] = Field(
+        ..., description="Generated text plus confidence scoring, as {text, confidence, cached}"
     )
-    search_metadata: Optional[Dict[str, Any]] = Field(
-        None, description="Search and retrieval metadata"
+    citations: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description="Distinct sources used to answer the query, highest-scoring first",
     )
 
     class Config:
         json_schema_extra = {
             "example": {
                 "status": "success",
-                "response": "Based on the available information, we have several products...",
                 "query": "What products are available?",
-                "confidence": {
-                    "score": 0.85,
-                    "level": "High",
-                    "details": {
-                        "context_alignment": 0.9,
-                        "response_length_appropriateness": 0.8,
-                        "semantic_coherence": 0.85,
-                        "source_citation": 0.7,
-                        "uncertainty_indicators": 0.9,
-                        "reasoning": "Response well-aligned with provided context. Response length appropriate for query complexity.",
+                "answer": {
+                    "text": "Based on the available information, we have several products...",
+                    "confidence": {
+                        "score": 0.85,
+                        "level": "High",
+                        "details": {
+                            "context_alignment": 0.9,
+                            "response_length_appropriateness": 0.8,
+                            "semantic_coherence": 0.85,
+                            "source_citation": 0.7,
+                            "uncertainty_indicators": 0.9,
+                            "reasoning": "Response well-aligned with provided context. Response length appropriate for query complexity.",
+                        },
                     },
+                    "cached": False,
                 },
-                "search_metadata": {
-                    "results_count": 3,
-                    "top_scores": [0.92, 0.85, 0.78],
-                    "cached_response": False,
-                },
+                "citations": [
+                    {"source": "product_catalog.pdf", "type": "file", "score": 0.92},
+                    {"source": "faq.pdf", "type": "file", "score": 0.78},
+                ],
                 "timestamp": "2024-01-01T12:00:00Z",
             }
         }
@@ -254,10 +256,13 @@ class BatchChatResult(BaseModel):
     """Outcome for a single query within a batch request."""
 
     query: str = Field(..., description="The original query")
-    response: Optional[str] = Field(None, description="Generated answer, if successful")
+    answer: Optional[Dict[str, Any]] = Field(
+        None, description="Generated text plus confidence scoring, if successful"
+    )
+    citations: List[Dict[str, Any]] = Field(
+        default_factory=list, description="Distinct sources used to answer the query"
+    )
     success: bool = Field(..., description="Whether an answer was generated")
-    cached: bool = Field(False, description="Whether the answer was served from cache")
-    confidence: Optional[float] = Field(None, description="Overall confidence score, if available")
     error: Optional[str] = Field(None, description="Failure reason, if unsuccessful")
 
 

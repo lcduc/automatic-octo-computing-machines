@@ -226,7 +226,8 @@ class RAGProcessTester:
             response_time = time.time() - response_start
 
             print(f"    Model response generated in {response_time:.3f}s")
-            response_text = response.response if hasattr(response, 'response') else ''
+            answer = getattr(response, 'answer', None) or {}
+            response_text = answer.get('text', '')
             print(f"   📏 Response length: {len(response_text)} characters")
             print()
 
@@ -237,9 +238,9 @@ class RAGProcessTester:
             print()
 
             # Show response metadata if available
-            if hasattr(response, 'confidence') and response.confidence:
+            confidence = answer.get('confidence')
+            if confidence:
                 print(" Response Confidence:")
-                confidence = response.confidence
                 print(f"    Overall Score: {confidence.get('score', 'N/A')}")
                 print(f"   📈 Level: {confidence.get('level', 'N/A')}")
                 if 'details' in confidence:
@@ -250,12 +251,11 @@ class RAGProcessTester:
                             print(f"      - {key}: {value}")
                 print()
 
-            if hasattr(response, 'search_metadata') and response.search_metadata:
-                print(" Search Metadata:")
-                search_meta = response.search_metadata
-                print(f"    Results Count: {search_meta.get('results_count', 'N/A')}")
-                print(f"    Top Scores: {search_meta.get('top_scores', 'N/A')}")
-                print(f"   💾 Cached: {search_meta.get('cached_response', 'N/A')}")
+            citations = getattr(response, 'citations', None) or []
+            if citations:
+                print(" Citations:")
+                for citation in citations:
+                    print(f"    - {citation.get('source', 'N/A')} (score: {citation.get('score', 'N/A')})")
                 print()
 
         except Exception as e:
@@ -278,12 +278,12 @@ class RAGProcessTester:
             "search_results": search_results,
             "context": context,
             "system_prompt": system_prompt,
-            "model_response": response.response if 'response' in locals() and hasattr(response, 'response') else '',
-            "response_confidence": response.confidence if 'response' in locals() and hasattr(response, 'confidence') else {},
-            "search_metadata": response.search_metadata if 'response' in locals() and hasattr(response, 'search_metadata') else {},
+            "model_response": response_text if 'response_text' in locals() else '',
+            "response_confidence": answer.get('confidence', {}) if 'answer' in locals() else {},
+            "citations": citations if 'citations' in locals() else [],
             "context_length": len(context),
             "prompt_length": len(system_prompt),
-            "response_length": len(response.response) if 'response' in locals() and hasattr(response, 'response') else 0,
+            "response_length": len(response_text) if 'response_text' in locals() else 0,
             "chunks_retrieved": len(search_results),
             "total_documents": len(documents)
         }
@@ -334,12 +334,10 @@ class RAGProcessTester:
                         print(f"      - {key.replace('_', ' ').title()}: {value}")
             print()
 
-        if results['search_metadata']:
-            print(" Search Performance:")
-            search_meta = results['search_metadata']
-            print(f"    Chunks Found: {search_meta.get('results_count', 'N/A')}")
-            print(f"    Top Scores: {search_meta.get('top_scores', 'N/A')}")
-            print(f"   💾 Cached Response: {search_meta.get('cached_response', 'N/A')}")
+        if results['citations']:
+            print(" Citations:")
+            for citation in results['citations']:
+                print(f"    - {citation.get('source', 'N/A')} (score: {citation.get('score', 'N/A')})")
             print()
 
 

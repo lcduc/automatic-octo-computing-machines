@@ -90,25 +90,25 @@ class ModelResponseTester:
             print()
 
             # Show the response
+            answer = getattr(response, 'answer', None) or {}
             print(" MODEL RESPONSE:")
             print("-" * 80)
-            print(response.response if hasattr(response, 'response') else 'No response generated')
+            print(answer.get('text', 'No response generated'))
             print("-" * 80)
             print()
 
             # Show confidence if available
-            if hasattr(response, 'confidence') and response.confidence:
-                confidence = response.confidence
+            if answer.get('confidence'):
+                confidence = answer['confidence']
                 print(f" Confidence: {confidence.get('score', 'N/A')} ({confidence.get('level', 'N/A')})")
                 print()
 
-            # Show search metadata if available
-            if hasattr(response, 'search_metadata') and response.search_metadata:
-                search_meta = response.search_metadata
-                print(f" Search Results: {search_meta.get('results_count', 'N/A')} chunks found")
-                if 'top_scores' in search_meta:
-                    scores = search_meta['top_scores']
-                    print(f" Top Scores: {[f'{s:.3f}' for s in scores[:3]]}")
+            # Show citations if available
+            citations = getattr(response, 'citations', None) or []
+            if citations:
+                top_scores = [f"{c.get('score', 0):.3f}" for c in citations[:3]]
+                print(f" Search Results: {len(citations)} source(s) cited")
+                print(f" Top Scores: {top_scores}")
                 print()
 
             return response

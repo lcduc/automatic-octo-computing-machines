@@ -83,29 +83,36 @@ class Reranker:
                 self.tokenizer = tokenizer
                 self.model.eval()
 
-            def predict(self, pairs):
-                """Predict scores for query-document pairs."""
+            def predict(self, pairs, batch_size: int = 32):
+                """Predict scores for query-document pairs, batched for throughput."""
                 import torch
                 import numpy as np
 
+                if not pairs:
+                    return np.array([])
+
                 scores = []
-                for query, document in pairs:
-                    # Tokenize the pair
+                for i in range(0, len(pairs), batch_size):
+                    batch = pairs[i:i + batch_size]
+                    queries = [q for q, _ in batch]
+                    documents = [d for _, d in batch]
+
+                    # Tokenize the whole batch at once
                     inputs = self.tokenizer(
-                        query,
-                        document,
+                        queries,
+                        documents,
                         return_tensors="pt",
                         truncation=True,
                         max_length=512,
                         padding=True,
                     ).to(self.device)
 
-                    # Get prediction
+                    # Get predictions for the batch in a single forward pass
                     with torch.no_grad():
                         outputs = self.model(**inputs)
                         # Get the score (logits) for the positive class
-                        score = torch.sigmoid(outputs.logits).item()
-                        scores.append(score)
+                        batch_scores = torch.sigmoid(outputs.logits.squeeze(-1))
+                        scores.extend(batch_scores.cpu().tolist())
 
                 return np.array(scores)
 
