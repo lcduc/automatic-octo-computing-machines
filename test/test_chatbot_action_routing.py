@@ -130,8 +130,8 @@ async def test_rag_intent_streams_citations_for_retrieved_sources(tmp_path):
     final_event = events[-1]
     assert final_event["type"] == "final"
     assert final_event["citations"] == [
-        {"source": "doc_a.pdf", "type": "file", "score": 0.9},
-        {"source": "doc_b.pdf", "type": "file", "score": 0.7},
+        {"source": "doc_a.pdf", "type": "file", "score": 0.9, "chunk_id": "unknown"},
+        {"source": "doc_b.pdf", "type": "file", "score": 0.7, "chunk_id": "unknown"},
     ]
 
 

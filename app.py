@@ -203,6 +203,9 @@ def render_citations(citations: list) -> None:
         for citation in citations:
             source = citation.get("source", "Không rõ nguồn")
             label = f"[{source}]({source})" if citation.get("type") == "url" else source
+            chunk_id = citation.get("chunk_id")
+            if chunk_id and chunk_id != "unknown":
+                label = f"{label} ({chunk_id})"
             score = citation.get("score")
             suffix = f" · {score:.2f}" if isinstance(score, (int, float)) else ""
             st.markdown(f"- {label}{suffix}")

@@ -30,7 +30,6 @@ class ChatResponseFactory:
             "context_alignment": confidence.context_alignment,
             "response_length_appropriateness": confidence.response_length_appropriateness,
             "semantic_coherence": confidence.semantic_coherence,
-            "source_citation": confidence.source_citation,
             "uncertainty_indicators": confidence.uncertainty_indicators,
             "reasoning": confidence.reasoning,
         }
@@ -57,7 +56,7 @@ class ChatResponseFactory:
         Distinct sources behind the answer, highest-scoring first.
 
         One entry per source (deduplicated by ``source_id``), keeping that
-        source's best-scoring retrieved chunk.
+        source's best-scoring retrieved chunk and that chunk's id.
         """
         best_by_source: Dict[str, Dict[str, Any]] = {}
         for result in search_results or []:
@@ -69,6 +68,7 @@ class ChatResponseFactory:
                     "source": result.get("source_name", source_id),
                     "type": result.get("source_type", "unknown"),
                     "score": round(score, 3),
+                    "chunk_id": result.get("chunk_id", "unknown"),
                 }
         return sorted(best_by_source.values(), key=lambda c: c["score"], reverse=True)
 

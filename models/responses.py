@@ -76,7 +76,6 @@ class ChatResponse(BaseResponse):
                             "context_alignment": 0.9,
                             "response_length_appropriateness": 0.8,
                             "semantic_coherence": 0.85,
-                            "source_citation": 0.7,
                             "uncertainty_indicators": 0.9,
                             "reasoning": "Response well-aligned with provided context. Response length appropriate for query complexity.",
                         },
@@ -84,8 +83,8 @@ class ChatResponse(BaseResponse):
                     "cached": False,
                 },
                 "citations": [
-                    {"source": "product_catalog.pdf", "type": "file", "score": 0.92},
-                    {"source": "faq.pdf", "type": "file", "score": 0.78},
+                    {"source": "product_catalog.pdf", "type": "file", "score": 0.92, "chunk_id": "chunk_003"},
+                    {"source": "faq.pdf", "type": "file", "score": 0.78, "chunk_id": "chunk_001"},
                 ],
                 "timestamp": "2024-01-01T12:00:00Z",
             }
@@ -124,13 +123,12 @@ class ChatAnswerResponse(BaseModel):
                         "context_alignment": 0.9,
                         "response_length_appropriateness": 0.8,
                         "semantic_coherence": 0.85,
-                        "source_citation": 0.7,
                         "uncertainty_indicators": 0.9,
                         "reasoning": "Response well-aligned with provided context.",
                     },
                 },
                 "citations": [
-                    {"source": "product_catalog.pdf", "type": "file", "score": 0.92},
+                    {"source": "product_catalog.pdf", "type": "file", "score": 0.92, "chunk_id": "chunk_003"},
                 ],
                 "cached": False,
                 "rewritten_query": None,

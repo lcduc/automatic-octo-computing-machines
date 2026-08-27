@@ -664,7 +664,7 @@ class ConfidenceConfig:
     @staticmethod
     def CONFIDENCE_CONTEXT_WEIGHT() -> float:
         """Weight of context alignment."""
-        return env_float("CONFIDENCE_CONTEXT_WEIGHT", 0.35)
+        return env_float("CONFIDENCE_CONTEXT_WEIGHT", 0.40)
 
     @staticmethod
     def CONFIDENCE_LENGTH_WEIGHT() -> float:
@@ -674,12 +674,7 @@ class ConfidenceConfig:
     @staticmethod
     def CONFIDENCE_COHERENCE_WEIGHT() -> float:
         """Weight of semantic coherence."""
-        return env_float("CONFIDENCE_COHERENCE_WEIGHT", 0.25)
-
-    @staticmethod
-    def CONFIDENCE_CITATION_WEIGHT() -> float:
-        """Weight of source citation."""
-        return env_float("CONFIDENCE_CITATION_WEIGHT", 0.10)
+        return env_float("CONFIDENCE_COHERENCE_WEIGHT", 0.30)
 
     @staticmethod
     def CONFIDENCE_UNCERTAINTY_WEIGHT() -> float:

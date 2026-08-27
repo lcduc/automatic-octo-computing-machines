@@ -19,7 +19,6 @@ class ConfidenceScore:
     context_alignment: float  # How well response aligns with provided context
     response_length_appropriateness: float  # Response length vs query complexity
     semantic_coherence: float  # Internal consistency and logical flow
-    source_citation: float  # Whether response cites sources from context
     uncertainty_indicators: float  # Presence of uncertainty markers
     factors: Dict[str, float]  # Detailed factor breakdown for analysis
     reasoning: str  # Human-readable explanation of the score
@@ -30,6 +29,19 @@ class ConfidenceScorer:
     Multi-factor confidence scoring system for LLM responses.
     Evaluates response quality based on context alignment, coherence, and linguistic indicators.
     """
+
+    #: Function words excluded from context/response word-overlap comparison.
+    #: Vietnamese content words are often 2-3 characters, so (unlike English)
+    #: they can't be filtered out with a length cutoff — an explicit stopword
+    #: list is used for both languages instead. See ``_extract_keywords``.
+    _STOPWORDS = {
+        "the", "and", "for", "are", "was", "were", "this", "that", "with",
+        "from", "have", "has", "had", "not", "but", "you", "your",
+        "và", "là", "có", "của", "được", "cho", "này", "đó", "các", "một",
+        "những", "với", "để", "trong", "khi", "sẽ", "đã", "không", "nếu",
+        "thì", "nên", "vì", "như", "về", "tại", "đến", "từ", "còn", "ra",
+        "đi", "lên", "xuống", "rồi", "hay", "hoặc", "mà", "nữa", "cũng",
+    }
 
     def __init__(self):
         # Linguistic patterns that indicate uncertainty or low confidence
@@ -52,36 +64,30 @@ class ConfidenceScorer:
             "it depends",
             "to the best of my knowledge",
             "as far as i know",
+            "có lẽ",
+            "hình như",
+            "dường như",
+            "không chắc",
+            "không rõ",
+            "chưa rõ",
+            "không biết",
+            "tôi nghĩ",
+            "theo tôi",
         ]
 
-        # Linguistic patterns that indicate high confidence
-        self.confidence_phrases = [
-            "definitely",
-            "certainly",
-            "absolutely",
-            "clearly",
-            "obviously",
-            "without doubt",
-            "for sure",
-            "the answer is",
-            "this is",
-            "specifically",
-            "according to",
-            "based on",
-            "as stated in",
-        ]
+    def _extract_keywords(self, text: str) -> set:
+        """
+        Extract content words from text for overlap comparison.
 
-        # Regex patterns for detecting source citations in responses
-        self.citation_patterns = [
-            r"according to [^.]*",
-            r"as mentioned in [^.]*",
-            r"based on [^.]*",
-            r"from [^.]*",
-            r"in [^.]* it states",
-            r"[^.]* shows that",
-            r"[^.]* indicates",
-            r"[^.]* demonstrates",
-        ]
+        Drops single-character tokens and common function words (English and
+        Vietnamese) instead of filtering by length, since many Vietnamese
+        content words are only 2-3 characters long.
+        """
+        return {
+            word
+            for word in re.findall(r"\b\w+\b", text.lower())
+            if len(word) > 1 and word not in self._STOPWORDS
+        }
 
     def calculate_confidence(
         self,
@@ -118,20 +124,19 @@ class ConfidenceScorer:
             # 3. Semantic coherence - internal consistency and logical flow
             factors["semantic_coherence"] = self._calculate_semantic_coherence(response)
 
-            # 4. Source citation - whether response cites sources from context
-            factors["source_citation"] = self._calculate_source_citation(response)
-
-            # 5. Uncertainty indicators - presence of uncertainty markers
+            # 4. Uncertainty indicators - presence of uncertainty markers
             factors["uncertainty_indicators"] = self._calculate_uncertainty_score(
                 response
             )
 
-            # Calculate overall score using weighted average of all factors
+            # Calculate overall score using weighted average of all factors.
+            # No "cites its sources" factor: the model is instructed never to
+            # mention that it's drawing on a knowledge base, so that signal
+            # would always read as zero regardless of answer quality.
             weights = {
-                "context_alignment": 0.35,  # Most important - response should use context
+                "context_alignment": 0.40,  # Most important - response should use context
                 "response_length_appropriateness": 0.20,  # Length should match query
-                "semantic_coherence": 0.25,  # Response should be internally consistent
-                "source_citation": 0.10,  # Should cite sources when appropriate
+                "semantic_coherence": 0.30,  # Response should be internally consistent
                 "uncertainty_indicators": 0.10,  # Should avoid uncertainty markers
             }
 
@@ -149,7 +154,6 @@ class ConfidenceScorer:
                     "response_length_appropriateness"
                 ],
                 semantic_coherence=factors["semantic_coherence"],
-                source_citation=factors["source_citation"],
                 uncertainty_indicators=factors["uncertainty_indicators"],
                 factors=factors,
                 reasoning=reasoning,
@@ -163,7 +167,6 @@ class ConfidenceScorer:
                 context_alignment=0.5,
                 response_length_appropriateness=0.5,
                 semantic_coherence=0.5,
-                source_citation=0.5,
                 uncertainty_indicators=0.5,
                 factors={},
                 reasoning=f"Confidence calculation failed: {e}",
@@ -183,8 +186,8 @@ class ConfidenceScorer:
             return 0.3  # Low score when no context available
 
         # Extract key terms from context and response for comparison
-        context_words = set(re.findall(r"\b\w{4,}\b", context.lower()))
-        response_words = set(re.findall(r"\b\w{4,}\b", response.lower()))
+        context_words = self._extract_keywords(context)
+        response_words = self._extract_keywords(response)
 
         if not context_words:
             return 0.5
@@ -279,6 +282,19 @@ class ConfidenceScorer:
             "third",
             "finally",
             "in conclusion",
+            "tuy nhiên",
+            "do đó",
+            "vì vậy",
+            "vì thế",
+            "ngoài ra",
+            "hơn nữa",
+            "bên cạnh đó",
+            "đầu tiên",
+            "thứ hai",
+            "thứ ba",
+            "cuối cùng",
+            "tóm lại",
+            "như vậy",
         ]
 
         connector_count = sum(
@@ -299,32 +315,6 @@ class ConfidenceScorer:
 
         coherence_score = connector_score * 0.6 + repetition_score * 0.4
         return min(1.0, max(0.0, coherence_score))
-
-    def _calculate_source_citation(self, response: str) -> float:
-        """Calculate source citation score."""
-        citation_count = 0
-
-        # Check for citation patterns
-        for pattern in self.citation_patterns:
-            matches = re.findall(pattern, response, re.IGNORECASE)
-            citation_count += len(matches)
-
-        # Check for confidence phrases (positive indicator)
-        confidence_count = sum(
-            1 for phrase in self.confidence_phrases if phrase in response.lower()
-        )
-
-        # Calculate citation score
-        if citation_count > 0:
-            citation_score = min(1.0, citation_count / 3)  # Cap at 3 citations
-        else:
-            citation_score = 0.0
-
-        confidence_bonus = min(
-            0.2, confidence_count * 0.05
-        )  # Small bonus for confidence
-
-        return min(1.0, citation_score + confidence_bonus)
 
     def _calculate_uncertainty_score(self, response: str) -> float:
         """Calculate uncertainty score (lower is better for confidence)."""
@@ -366,9 +356,6 @@ class ConfidenceScorer:
             reasoning_parts.append("Response shows good internal coherence")
         elif factors.get("semantic_coherence", 0) < 0.6:
             reasoning_parts.append("Response may lack logical flow")
-
-        if factors.get("source_citation", 0) > 0.6:
-            reasoning_parts.append("Response includes source references")
 
         if factors.get("uncertainty_indicators", 0) < 0.6:
             reasoning_parts.append("Response contains uncertainty indicators")

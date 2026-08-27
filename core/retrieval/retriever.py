@@ -6,6 +6,7 @@ Handles document retrieval and result aggregation for enhanced search accuracy.
 from typing import List, Dict, Any
 import numpy as np
 import logging
+import os
 from rank_bm25 import BM25Okapi
 from .embeddings import get_embedding_service
 from ..storage.provider import get_vector_store_provider
@@ -273,6 +274,8 @@ class ContextRetriever:
             result["source_id"] = meta.get("source_id", "unknown")
             result["source_name"] = meta.get("source_name") or meta.get("source", "unknown")
             result["source_type"] = meta.get("source_type", "unknown")
+            chunk_file = meta.get("chunk_file")
+            result["chunk_id"] = os.path.splitext(chunk_file)[0] if chunk_file else "unknown"
 
     def hybrid_search(
         self,
