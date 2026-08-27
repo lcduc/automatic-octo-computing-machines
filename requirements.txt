@@ -62,7 +62,7 @@ requests==2.34.2
 chardet<6.0.0
 nltk==3.10.3
 pandas==2.2.3
-PyMuPDF==1.28.0         # direct import `fitz`, previously transitive
+PyMuPDF==1.28.2         # direct import `fitz`, previously transitive
 
 # --- OCR (scanned/image-only PDFs) ---
 # paddlepaddle itself is installed separately in the Dockerfile (CPU/GPU
@@ -79,7 +79,7 @@ paddleocr==3.7.0        # PP-OCRv6 (CPU) + PaddleOCR-VL (GPU)
 streamlit==1.61.1
 
 # --- Runtime / config ---
-python-dotenv==1.2.2
+python-dotenv==1.2.3
 psutil==6.1.0
 # zoneinfo (stdlib) has no IANA database of its own on Windows; tzdata is a
 # no-op on Linux/Mac, where the OS already provides one.
