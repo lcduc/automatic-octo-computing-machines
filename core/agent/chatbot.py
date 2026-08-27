@@ -32,6 +32,8 @@ from .response_factory import ChatResponseFactory
 from .tool_calling_agent import ToolCallingAgent
 from .tools.current_time_tool import CurrentTimeTool
 from .tools.registry import ToolRegistry
+from utils.monitor import get_performance_monitor
+from utils.text_utils import TextUtils
 
 logger = logging.getLogger(__name__)
 
@@ -104,6 +106,7 @@ class ChatbotService:
         self._audit_trail = audit_trail or get_audit_trail_service()
         self._responses = ChatResponseFactory(self.confidence_scorer)
         self._api_available = self._llm_provider.check_availability()
+        self._performance_monitor = get_performance_monitor()
 
         # Retrieval (embedding + BM25 + cross-encoder rerank) is CPU/GPU-bound
         # and synchronous; the async paths below run it in a worker thread so
@@ -251,6 +254,11 @@ class ChatbotService:
         """Short, stable identifier used to correlate log lines for one query."""
         return hashlib.md5(query.encode("utf-8")).hexdigest()[:8]
 
+    @staticmethod
+    def _effective_rewritten_query(query: str, search_query: Optional[str]) -> Optional[str]:
+        """``search_query`` when it's a real rewrite, ``None`` when nothing changed."""
+        return search_query if search_query and search_query != query else None
+
     def _create_error_response(self, query: str, error_msg: str) -> ErrorResponse:
         """Create the standardized error envelope for a failed query."""
         return ErrorResponse(
@@ -327,6 +335,32 @@ class ChatbotService:
             return await asyncio.to_thread(
                 self._retrieve_context, query, embeddings, documents, history
             )
+
+    async def _retrieve_context_timed(
+        self,
+        query: str,
+        embeddings,
+        documents,
+        history: Optional[List[Dict[str, str]]] = None,
+    ) -> tuple[str, List[Dict[str, Any]], str, float]:
+        """
+        Run :meth:`_retrieve_context_async` and report its own wall-clock duration.
+
+        Wrapped so the timing reflects retrieval's actual execution window even
+        when the coroutine is scheduled as a background task (e.g. running
+        concurrently with intent classification) and awaited later — measuring
+        around the ``await`` at the call site would otherwise include however
+        long the caller took to get back to it.
+
+        Returns:
+            The usual ``(context, search_results, search_query)`` triple, plus
+            ``retrieval_ms``.
+        """
+        start = time.perf_counter()
+        context, search_results, search_query = await self._retrieve_context_async(
+            query, embeddings, documents, history
+        )
+        return context, search_results, search_query, (time.perf_counter() - start) * 1000
 
     def _build_messages(
         self,
@@ -421,13 +455,26 @@ class ChatbotService:
         success: bool,
         error: Optional[str] = None,
         rewritten_query: Optional[str] = None,
+        intent_ms: Optional[float] = None,
+        retrieval_ms: Optional[float] = None,
+        generation_ms: Optional[float] = None,
     ) -> None:
         """
-        Record one audit trail entry for an answered (or failed) turn.
+        Record one audit trail entry for an answered (or failed) turn, and feed
+        the live performance monitor with the same stage breakdown.
 
         Never raises: a logging problem here must not affect the response
         already produced for the user.
         """
+        query_id = self._query_id(query)
+        self._performance_monitor.record_stage_timings(
+            latency_ms,
+            query_id=query_id,
+            intent_ms=intent_ms,
+            retrieval_ms=retrieval_ms,
+            generation_ms=generation_ms,
+        )
+
         if not Config.Audit.ENABLED():
             return
         try:
@@ -438,11 +485,9 @@ class ChatbotService:
                 else "Unknown"
             )
             entry = AuditEntry(
-                query_id=self._query_id(query),
+                query_id=query_id,
                 query=query,
-                rewritten_query=(
-                    rewritten_query if rewritten_query and rewritten_query != query else None
-                ),
+                rewritten_query=self._effective_rewritten_query(query, rewritten_query),
                 response=response_text,
                 confidence_score=confidence_score,
                 confidence_level=confidence_level,
@@ -451,10 +496,13 @@ class ChatbotService:
                 latency_ms=latency_ms,
                 success=success,
                 error=error,
+                intent_ms=intent_ms,
+                retrieval_ms=retrieval_ms,
+                generation_ms=generation_ms,
             )
             self._audit_trail.record(entry)
         except Exception:
-            logger.exception("Failed to build audit entry for query %s", self._query_id(query))
+            logger.exception("Failed to build audit entry for query %s", query_id)
 
     @staticmethod
     def _classify_error(exc: Exception) -> str:
@@ -630,12 +678,114 @@ class ChatbotService:
         payloads: List[Dict[str, Any]] = []
         for query, result in zip(queries, results):
             if isinstance(result, Exception):
-                logger.error("Error processing query '%s...': %s", query[:30], result)
+                logger.error("Error processing query '%s': %s", TextUtils.truncate_text(query, 30), result)
                 payloads.append(self._batch_failure(query, str(result)))
             else:
                 result["query"] = query
                 payloads.append(result)
         return payloads
+
+    async def get_response_with_history(
+        self,
+        query: str,
+        embeddings=None,
+        documents=None,
+        history: Optional[List[Dict[str, str]]] = None,
+    ) -> Dict[str, Any]:
+        """
+        Answer a query in one shot, replaying conversation history.
+
+        Non-streaming counterpart of :meth:`stream_response_with_history`:
+        same retrieval/cache/confidence pipeline, but returns the full
+        answer instead of an event stream, so callers get ordinary HTTP
+        status codes on failure instead of an in-band ``error`` event.
+
+        Args:
+            query: User query.
+            embeddings: Corpus embeddings for semantic search.
+            documents: Corpus documents aligned with ``embeddings``.
+            history: Prior conversation turns.
+
+        Returns:
+            The flat ``{answer, confidence, citations, cached}`` payload.
+
+        Raises:
+            RuntimeError: The chat service is currently unavailable.
+            Exception: Propagated from the active provider's API call.
+        """
+        if not self.api_available:
+            raise RuntimeError(UNAVAILABLE_MESSAGE)
+
+        start_time = time.perf_counter()
+        # Kicked off unconditionally, before intent is known: retrieval doesn't
+        # depend on the rag/action decision, so overlapping it with the intent
+        # classification call (when tool-calling is enabled) saves that call's
+        # latency off the critical path for the common "rag" outcome instead of
+        # paying for it strictly before retrieval even starts.
+        retrieval_task = asyncio.create_task(
+            self._retrieve_context_timed(query, embeddings, documents, history)
+        )
+        intent_ms: Optional[float] = None
+
+        if Config.LLM.TOOL_CALLING_ENABLED():
+            intent_start = time.perf_counter()
+            intent = await self._intent_router.classify(query, history)
+            intent_ms = (time.perf_counter() - intent_start) * 1000
+            if intent == IntentType.ACTION:
+                try:
+                    tool_provider = self._tool_calling_provider()
+                except RuntimeError as exc:
+                    logger.warning(
+                        "Tool-calling unavailable (%s); falling back to RAG for this turn", exc
+                    )
+                else:
+                    # The retrieval result won't be used on this branch. Its
+                    # thread-pool work can't actually be interrupted (asyncio
+                    # can only stop *waiting* on a to_thread call, not the
+                    # thread itself), so this only stops us from awaiting it.
+                    retrieval_task.cancel()
+                    gen_start = time.perf_counter()
+                    agent = ToolCallingAgent(tool_provider, self._tool_registry, self.query_rewriter)
+                    chunks = [delta async for delta in agent.stream(query, history)]
+                    generation_ms = (time.perf_counter() - gen_start) * 1000
+                    response_text = "".join(chunks)
+                    self._record_audit(
+                        query, response_text, None, [], cached=False,
+                        latency_ms=(time.perf_counter() - start_time) * 1000,
+                        success=True, rewritten_query=query,
+                        intent_ms=intent_ms, generation_ms=generation_ms,
+                    )
+                    return self._responses.flat_response_payload(
+                        response_text, None, [], cached=False, rewritten_query=None
+                    )
+
+        context, search_results, search_query, retrieval_ms = await retrieval_task
+        rewritten_query = self._effective_rewritten_query(query, search_query)
+
+        try:
+            gen_start = time.perf_counter()
+            response_text, cached = await self._complete_async(query, context, history)
+            generation_ms = (time.perf_counter() - gen_start) * 1000
+        except Exception as exc:
+            logger.exception("Non-streaming generation failed for query %s", self._query_id(query))
+            self._record_audit(
+                query, "", None, search_results, cached=False,
+                latency_ms=(time.perf_counter() - start_time) * 1000,
+                success=False, error=str(exc), rewritten_query=search_query,
+                intent_ms=intent_ms, retrieval_ms=retrieval_ms,
+            )
+            raise
+
+        confidence = self._score(response_text, query, context, search_results)
+        self._record_audit(
+            query, response_text, confidence, search_results, cached=cached,
+            latency_ms=(time.perf_counter() - start_time) * 1000,
+            success=True, rewritten_query=search_query,
+            intent_ms=intent_ms, retrieval_ms=retrieval_ms, generation_ms=generation_ms,
+        )
+        return self._responses.flat_response_payload(
+            response_text, confidence, search_results, cached, rewritten_query=rewritten_query
+        )
 
     async def stream_response_with_history(
         self,
@@ -668,8 +818,19 @@ class ChatbotService:
             yield self._responses.stream_error_event("Chat service unavailable.")
             return
 
+        start_time = time.perf_counter()
+        # See get_response_with_history: started unconditionally so a
+        # tool-calling intent check (when enabled) overlaps with retrieval
+        # instead of strictly preceding it.
+        retrieval_task = asyncio.create_task(
+            self._retrieve_context_timed(query, embeddings, documents, history)
+        )
+        intent_ms: Optional[float] = None
+
         if Config.LLM.TOOL_CALLING_ENABLED():
+            intent_start = time.perf_counter()
             intent = await self._intent_router.classify(query, history)
+            intent_ms = (time.perf_counter() - intent_start) * 1000
             if intent == IntentType.ACTION:
                 try:
                     tool_provider = self._tool_calling_provider()
@@ -678,16 +839,35 @@ class ChatbotService:
                         "Tool-calling unavailable (%s); falling back to RAG for this turn", exc
                     )
                 else:
+                    # Retrieval's result is unused on this branch; cancelling
+                    # only stops us from awaiting it (asyncio can't interrupt
+                    # the underlying to_thread call itself).
+                    retrieval_task.cancel()
+                    gen_start = time.perf_counter()
+                    action_chunks: List[str] = []
                     agent = ToolCallingAgent(tool_provider, self._tool_registry, self.query_rewriter)
                     async for delta in agent.stream(query, history):
+                        action_chunks.append(delta)
                         yield self._responses.stream_delta_event(delta)
-                    yield {"type": "final", "answer": {"text": ""}, "citations": []}
+                    generation_ms = (time.perf_counter() - gen_start) * 1000
+                    self._record_audit(
+                        query, "".join(action_chunks), None, [], cached=False,
+                        latency_ms=(time.perf_counter() - start_time) * 1000,
+                        success=True, rewritten_query=query,
+                        intent_ms=intent_ms, generation_ms=generation_ms,
+                    )
+                    yield {
+                        "type": "final",
+                        "answer": {"text": ""},
+                        "citations": [],
+                        "rewritten_query": None,
+                    }
                     return
 
-        start_time = time.perf_counter()
         search_results: List[Dict[str, Any]] = []
         search_query = query
         chunks: List[str] = []
+        retrieval_ms: Optional[float] = None
 
         def record_failure(error_text: str) -> None:
             """Audit a failed turn, capturing any partial text already streamed out."""
@@ -701,12 +881,13 @@ class ChatbotService:
                 success=False,
                 error=error_text,
                 rewritten_query=search_query,
+                intent_ms=intent_ms,
+                retrieval_ms=retrieval_ms,
             )
 
         try:
-            context, search_results, search_query = await self._retrieve_context_async(
-                query, embeddings, documents, history
-            )
+            context, search_results, search_query, retrieval_ms = await retrieval_task
+            rewritten_query = self._effective_rewritten_query(query, search_query)
 
             cache_key = ResponseCache.build_key(query, context, history)
             cached_text = self._cache.get(cache_key)
@@ -722,17 +903,22 @@ class ChatbotService:
                     latency_ms=(time.perf_counter() - start_time) * 1000,
                     success=True,
                     rewritten_query=search_query,
+                    intent_ms=intent_ms,
+                    retrieval_ms=retrieval_ms,
+                    generation_ms=0.0,
                 )
                 yield self._responses.stream_delta_event(cached_text)
                 yield self._responses.stream_final_event(
-                    cached_text, confidence, search_results, cached=True
+                    cached_text, confidence, search_results, cached=True, rewritten_query=rewritten_query
                 )
                 return
 
             messages = self._build_messages(query, context, history)
+            gen_start = time.perf_counter()
             async for delta in self._llm_provider.stream(messages):
                 chunks.append(delta)
                 yield self._responses.stream_delta_event(delta)
+            generation_ms = (time.perf_counter() - gen_start) * 1000
             response_text = "".join(chunks)
             self._cache.set(cache_key, response_text)
 
@@ -746,9 +932,12 @@ class ChatbotService:
                 latency_ms=(time.perf_counter() - start_time) * 1000,
                 success=True,
                 rewritten_query=search_query,
+                intent_ms=intent_ms,
+                retrieval_ms=retrieval_ms,
+                generation_ms=generation_ms,
             )
             yield self._responses.stream_final_event(
-                response_text, confidence, search_results, cached=False
+                response_text, confidence, search_results, cached=False, rewritten_query=rewritten_query
             )
         except Exception as exc:
             logger.exception("Error during streaming")

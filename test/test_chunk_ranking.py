@@ -6,7 +6,7 @@ A focused script to test and visualize chunk ranking and scoring in the RAG syst
 Shows detailed scoring breakdown for semantic and keyword search components.
 
 Usage:
-    python -m test.test_chunk_ranking "your_query_here"
+    python -m test.test_chunk_ranking "Ai là tổng biên tập của tạp chí?"
 """
 
 import sys
@@ -82,26 +82,39 @@ class ChunkRankingTester:
             print(f"    Current threshold: {Config.RAG.SIMILARITY_THRESHOLD()}")
             return
 
-        print(f" Found {len(search_results)} relevant chunks:")
+        matched_count = sum(1 for r in search_results if r.get("matched", True))
+        context_count = len(search_results) - matched_count
+        print(f" Found {matched_count} matched chunk(s) + {context_count} context chunk(s):")
         print()
 
-        # Display detailed ranking
-        for i, result in enumerate(search_results, 1):
-            print(f"🏆 Rank #{i}")
-            print(f"   📄 Chunk Index: {result['index']}")
-            print(f"    Combined Score: {result['combined_score']:.4f}")
-            print(f"    Semantic Score: {result['semantic_score']:.4f}")
-            print(f"   🔤 Keyword Score: {result['keyword_score']:.4f}")
+        # Display detailed ranking. Matched chunks were independently retrieved and
+        # scored; context chunks were pulled in only for surrounding continuity (they
+        # were never scored, so they don't get a rank or a score line — printing a
+        # fabricated 0.0000 there would make padding look like a competing result).
+        match_number = 0
+        for result in search_results:
+            if result.get("matched", True):
+                match_number += 1
+                print(f"🏆 Match #{match_number}")
+                print(f"   📄 Chunk Index: {result['index']}")
+                print(f"    Combined Score: {result['combined_score']:.4f}")
+                print(f"    Semantic Score: {result['semantic_score']:.4f}")
+                print(f"   🔤 Keyword Score: {result['keyword_score']:.4f}")
+            else:
+                print(f"   ↳ Context Chunk (Index: {result['index']}) — unscored, included for continuity")
             print(f"   📏 Length: {len(result['document'])} chars")
             print("   📝 Content Preview:")
             print(f"      {result['document'][:200]}...")
             print()
 
-        # Show score distribution
-        self._show_score_distribution(search_results)
-
-        # Show top keywords
-        self._show_keyword_analysis(query, search_results)
+        # Score distribution and keyword analysis are only meaningful over chunks
+        # that were actually scored — context padding would skew Min/Avg toward 0.
+        matched_results = [r for r in search_results if r.get("matched", True)]
+        if matched_results:
+            self._show_score_distribution(matched_results)
+            self._show_keyword_analysis(query, matched_results)
+        else:
+            print("  No independently matched chunks — all results are unscored context padding")
 
     def _show_score_distribution(self, results: List[Dict[str, Any]]):
         """Show score distribution analysis."""

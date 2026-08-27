@@ -110,7 +110,9 @@ class OpenAIClientProvider(BaseLLMProvider):
             return False
 
     @staticmethod
-    def _completion_kwargs(model: str, max_tokens: int, temperature: float) -> Dict[str, Any]:
+    def _completion_kwargs(
+        model: str, max_tokens: int, temperature: float, reasoning_effort: Optional[str] = None
+    ) -> Dict[str, Any]:
         """
         Build the model/token-limit/temperature kwargs for a completion call.
 
@@ -119,19 +121,25 @@ class OpenAIClientProvider(BaseLLMProvider):
         ``temperature`` of 1, so both are adapted per model family here rather
         than at each call site.
 
-        ``reasoning_effort`` is deliberately NOT sent: it is a real parameter
-        for ``gpt-5*`` models, but the ``openai`` SDK version this project is
-        pinned to (see ``requirements.txt``) predates that parameter's
-        addition to ``chat.completions.create`` and rejects it with
-        ``TypeError: unexpected keyword argument 'reasoning_effort'`` on every
-        call. Re-add it (via ``Config.LLM.OPENAI_REASONING_EFFORT()``) only
-        once the pin is deliberately upgraded to a version whose
-        ``create()`` signature includes it.
+        ``reasoning_effort`` is a real parameter for ``gpt-5*`` models, but the
+        ``openai`` SDK version this project is pinned to (see
+        ``requirements.txt``) predates that parameter's addition to
+        ``chat.completions.create``'s typed signature and raises
+        ``TypeError: unexpected keyword argument 'reasoning_effort'`` if passed
+        directly. The API itself accepts it as a plain JSON body field
+        regardless of the installed SDK's parameter list, so it is sent via
+        ``extra_body`` instead — a raw-payload escape hatch the SDK has
+        supported since its first Stainless-generated release. Switch this to
+        a direct keyword once the pin is upgraded to a version whose
+        ``create()`` signature includes it natively.
 
         Args:
             model: Model name to resolve the parameter set for.
             max_tokens: Completion token cap.
             temperature: Sampling temperature; dropped for ``gpt-5*`` models.
+            reasoning_effort: One of ``none/minimal/low/medium/high/xhigh/max``
+                (model-dependent); ignored for non-``gpt-5*`` models, and
+                omitted entirely when falsy.
 
         Returns:
             Kwargs ready to splat into ``chat.completions.create``.
@@ -139,6 +147,8 @@ class OpenAIClientProvider(BaseLLMProvider):
         kwargs: Dict[str, Any] = {"model": model}
         if model.startswith("gpt-5"):
             kwargs["max_completion_tokens"] = max_tokens
+            if reasoning_effort:
+                kwargs["extra_body"] = {"reasoning_effort": reasoning_effort}
         else:
             kwargs["max_tokens"] = max_tokens
             kwargs["temperature"] = temperature
@@ -161,6 +171,7 @@ class OpenAIClientProvider(BaseLLMProvider):
                 model or Config.LLM.OPENAI_MODEL(),
                 Config.LLM.OPENAI_MAX_TOKENS(),
                 Config.LLM.OPENAI_TEMPERATURE(),
+                Config.LLM.OPENAI_REASONING_EFFORT(),
             ),
         )
         content = response.choices[0].message.content
@@ -188,6 +199,7 @@ class OpenAIClientProvider(BaseLLMProvider):
                 model or Config.LLM.OPENAI_MODEL(),
                 Config.LLM.OPENAI_MAX_TOKENS(),
                 Config.LLM.OPENAI_TEMPERATURE(),
+                Config.LLM.OPENAI_REASONING_EFFORT(),
             ),
         )
         content = response.choices[0].message.content
@@ -265,6 +277,7 @@ class OpenAIClientProvider(BaseLLMProvider):
                 model or Config.LLM.OPENAI_MODEL(),
                 Config.LLM.OPENAI_MAX_TOKENS(),
                 Config.LLM.OPENAI_TEMPERATURE(),
+                Config.LLM.OPENAI_REASONING_EFFORT(),
             ),
         )
         if tools:
@@ -293,6 +306,7 @@ class OpenAIClientProvider(BaseLLMProvider):
                 model or Config.LLM.OPENAI_MODEL(),
                 Config.LLM.OPENAI_MAX_TOKENS(),
                 Config.LLM.OPENAI_TEMPERATURE(),
+                Config.LLM.OPENAI_REASONING_EFFORT(),
             ),
         )
         async for chunk in response_stream:

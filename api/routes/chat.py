@@ -17,6 +17,7 @@ from config.settings import Config
 from models.responses import (
     BatchChatRequest,
     BatchChatResponse,
+    ChatAnswerResponse,
     ChatRequest,
     StatusEnum,
     TranscriptionResponse,
@@ -54,13 +55,50 @@ def _resolve_history(client_history: Optional[List[Dict[str, str]]]) -> Optional
     return client_history or []
 
 
-@router.post("/")
+@router.post("/", response_model=ChatAnswerResponse)
 async def chat(
+    request: ChatRequest = Body(...),
+    chat_service: ChatService = Depends(get_chat_service),
+) -> ChatAnswerResponse:
+    """
+    Answer a query and return the full answer as a single JSON response.
+
+    Args:
+        request: Body carrying the user query and optional conversation history.
+        chat_service: Injected RAG chat service.
+
+    Returns:
+        The flat ``{answer, confidence, citations, cached}`` envelope (see
+        :class:`models.responses.ChatAnswerResponse`).
+    """
+    try:
+        result = await chat_service.get_chat_response(
+            request.query, custom_history=_resolve_history(request.history)
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    except Exception:
+        logger.exception("Error while generating chat response")
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to generate chat response. See server logs for details.",
+        )
+    return ChatAnswerResponse(**result)
+
+
+@router.post("/stream")
+async def chat_stream(
     request: ChatRequest = Body(...),
     chat_service: ChatService = Depends(get_chat_service),
 ) -> StreamingResponse:
     """
     Answer a query, streaming JSON events back to the caller over SSE.
+
+    Kept for the bundled Streamlit demo (``app.py``); the primary ``POST /``
+    route (see :func:`chat`) returns a single non-streaming JSON response
+    instead.
 
     Args:
         request: Body carrying the user query and optional conversation history.

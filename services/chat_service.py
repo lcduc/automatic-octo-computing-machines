@@ -14,6 +14,7 @@ from core.infrastructure.cache_service import get_cache_service
 from core.retrieval.context_builder import ContextAssembler
 from core.storage import get_vector_store_provider
 from utils.monitor import get_performance_monitor
+from utils.text_utils import TextUtils
 
 logger = logging.getLogger(__name__)
 
@@ -335,7 +336,7 @@ class ChatService:
             ):
                 yield event
         except Exception:
-            logger.exception("Streaming chat failed for query: %s...", query[:50])
+            logger.exception("Streaming chat failed for query: %s", TextUtils.truncate_text(query, 50))
             self.service_metrics["failed_requests"] += 1
             yield {"type": "error", "message": "An unexpected error occurred while generating the response."}
             return
@@ -344,6 +345,67 @@ class ChatService:
         processing_time = time.time() - start_time
         self._update_average_response_time(processing_time)
         self._performance_monitor.record_request(processing_time, cache_hit=False)
+
+    async def get_chat_response(
+        self, query: str, custom_history: Optional[List[Dict[str, str]]] = None
+    ) -> Dict[str, Any]:
+        """
+        Answer a chat query in one shot, replaying caller-supplied history.
+
+        Non-streaming counterpart of :meth:`stream_chat_with_memory` — same
+        validation, knowledge-base loading and history cap, but returns the
+        full answer instead of an async event stream.
+
+        Args:
+            query: User query.
+            custom_history: Prior turns as ``{"role", "content"}`` dicts, most
+                recent last. ``None`` means no history is used for this turn.
+
+        Returns:
+            The flat ``{answer, confidence, citations, cached}`` payload.
+
+        Raises:
+            ValueError: The query is empty.
+            RuntimeError: The chat service or knowledge base is unavailable.
+        """
+        start_time = time.time()
+        self.service_metrics["total_requests"] += 1
+
+        if not query or not query.strip():
+            self.service_metrics["failed_requests"] += 1
+            raise ValueError("Empty query provided.")
+        if not self.chatbot_service.api_available:
+            self.service_metrics["failed_requests"] += 1
+            raise RuntimeError("Chat service is currently unavailable.")
+
+        kb = self._load_knowledge_base()
+        if kb is None:
+            self.service_metrics["failed_requests"] += 1
+            raise RuntimeError("Knowledge base unavailable")
+        current_embeddings, current_documents = kb
+
+        max_messages = Config.Chat.MAX_HISTORY_TURNS() * 2
+        history = (custom_history or [])[-max_messages:] if max_messages > 0 else []
+
+        try:
+            result = await self.chatbot_service.get_response_with_history(
+                query,
+                embeddings=current_embeddings,
+                documents=current_documents,
+                history=history,
+            )
+        except Exception:
+            logger.exception("Non-streaming chat failed for query: %s", TextUtils.truncate_text(query, 50))
+            self.service_metrics["failed_requests"] += 1
+            raise
+
+        self.service_metrics["successful_requests"] += 1
+        processing_time = time.time() - start_time
+        self._update_average_response_time(processing_time)
+        self._performance_monitor.record_request(
+            processing_time, cache_hit=result.get("cached", False)
+        )
+        return result
 
     async def batch_chat(self, queries: List[str]) -> List[Dict[str, Any]]:
         """

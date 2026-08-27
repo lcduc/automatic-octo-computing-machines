@@ -200,9 +200,14 @@ class LLMConfig:
         """
         Reasoning depth for ``gpt-5*`` models.
 
-        One of ``none/minimal/low/medium/high/xhigh/max`` (model-dependent).
-        Ignored for non-reasoning models like the light model - see
-        ``OpenAIClientProvider._completion_kwargs``.
+        One of ``none/minimal/low/medium/high/xhigh/max``, but which of those
+        are actually accepted is model-dependent and enforced server-side:
+        ``gpt-5-mini`` (the default ``OPENAI_MODEL``) rejects ``none``/``xhigh``/
+        ``max`` with a 400 ``unsupported_value`` error and only accepts
+        ``minimal``/``low``/``medium``/``high`` (verified against the live API).
+        ``minimal`` is the lowest-latency option for this model family - there
+        is no true "no reasoning" mode. Ignored for non-reasoning models like
+        the light model - see ``OpenAIClientProvider._completion_kwargs``.
         """
         return env_str("OPENAI_REASONING_EFFORT", "low")
 
@@ -694,6 +699,11 @@ class HealthConfig:
     def SERVICE_MIN_REQUESTS_FOR_HEALTH() -> int:
         """Requests required before the success rate is meaningful."""
         return env_int("SERVICE_MIN_REQUESTS_FOR_HEALTH", 10)
+
+    @staticmethod
+    def SLOW_REQUEST_THRESHOLD_MS() -> float:
+        """Single-request latency above which a warning is logged immediately."""
+        return env_float("SLOW_REQUEST_THRESHOLD_MS", 8000.0)
 
 
 class AuditConfig:

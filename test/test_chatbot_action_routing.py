@@ -58,7 +58,7 @@ async def test_action_intent_uses_tool_calling_agent_and_skips_rag():
 
     assert deltas == [
         {"type": "delta", "answer": {"text": "It's 10am."}},
-        {"type": "final", "answer": {"text": ""}, "citations": []},
+        {"type": "final", "answer": {"text": ""}, "citations": [], "rewritten_query": None},
     ]
     assert len(provider.complete_async_calls) == 1  # IntentRouter.classify
     assert len(provider.complete_with_tools_calls) == 1  # ToolCallingAgent decision call

@@ -6,11 +6,18 @@ Provides real-time performance metrics and monitoring capabilities.
 import time
 import psutil
 import logging
-from typing import Dict, Any
+from collections import deque
+from typing import Any, Dict, Optional
 from datetime import datetime
 import threading
 
+from config.settings import Config
+
 logger = logging.getLogger(__name__)
+
+#: Bounded window of recent per-request latencies kept for percentile
+#: calculation; ``total_response_time``/``request_count`` stay all-time.
+_RECENT_LATENCY_WINDOW = 500
 
 
 class PerformanceMonitor:
@@ -24,6 +31,9 @@ class PerformanceMonitor:
         self.cache_misses = 0
         self.memory_usage_history = []
         self.cpu_usage_history = []
+        self._recent_response_times: deque = deque(maxlen=_RECENT_LATENCY_WINDOW)
+        self._stage_totals: Dict[str, float] = {}
+        self._stage_counts: Dict[str, int] = {}
         self._lock = threading.Lock()
 
     def record_request(self, response_time: float, cache_hit: bool = False):
@@ -31,10 +41,46 @@ class PerformanceMonitor:
         with self._lock:
             self.request_count += 1
             self.total_response_time += response_time
+            self._recent_response_times.append(response_time)
             if cache_hit:
                 self.cache_hits += 1
             else:
                 self.cache_misses += 1
+
+    def record_stage_timings(self, latency_ms: float, query_id: str = "", **stage_ms: Optional[float]) -> None:
+        """
+        Record a per-query stage breakdown (e.g. retrieval/generation/intent, in ms).
+
+        Also logs a warning immediately when the turn's total latency exceeds
+        ``SLOW_REQUEST_THRESHOLD_MS``, since an aggregate average can hide a
+        single very slow query.
+
+        Args:
+            latency_ms: Total wall-clock time for the turn, in milliseconds.
+            query_id: Short identifier for the log line, if available.
+            **stage_ms: Named stage durations in milliseconds; ``None`` values
+                (stage skipped for this turn, e.g. no intent classification)
+                are ignored.
+        """
+        with self._lock:
+            for name, value in stage_ms.items():
+                if value is None:
+                    continue
+                self._stage_totals[name] = self._stage_totals.get(name, 0.0) + value
+                self._stage_counts[name] = self._stage_counts.get(name, 0) + 1
+
+        threshold_ms = Config.Health.SLOW_REQUEST_THRESHOLD_MS()
+        if latency_ms > threshold_ms:
+            breakdown = ", ".join(
+                f"{name}={value:.0f}ms" for name, value in stage_ms.items() if value is not None
+            )
+            logger.warning(
+                "Slow query %s: %.0fms exceeds threshold %.0fms%s",
+                query_id or "?",
+                latency_ms,
+                threshold_ms,
+                f" ({breakdown})" if breakdown else "",
+            )
 
     def record_system_metrics(self):
         """
@@ -67,6 +113,16 @@ class PerformanceMonitor:
         except Exception as e:
             logger.debug(f"Failed to record system metrics: {e}")
 
+    @staticmethod
+    def _percentile(sorted_values, pct: float) -> float:
+        """Nearest-rank percentile (``pct`` in 0-100) over an already-sorted sequence."""
+        if not sorted_values:
+            return 0.0
+        if len(sorted_values) == 1:
+            return sorted_values[0]
+        rank = max(1, min(len(sorted_values), round(pct / 100 * len(sorted_values))))
+        return sorted_values[rank - 1]
+
     def get_performance_stats(self) -> Dict[str, Any]:
         """Get comprehensive performance statistics."""
         with self._lock:
@@ -83,17 +139,28 @@ class PerformanceMonitor:
             avg_memory = sum(m['memory_percent'] for m in recent_memory) / len(recent_memory) if recent_memory else 0
             avg_cpu = sum(c['cpu_percent'] for c in recent_cpu) / len(recent_cpu) if recent_cpu else 0
 
+            sorted_recent = sorted(self._recent_response_times)
+            stage_averages = {
+                name: round(self._stage_totals[name] / self._stage_counts[name], 1)
+                for name in self._stage_totals
+                if self._stage_counts.get(name)
+            }
+
             return {
                 'uptime_seconds': uptime,
                 'uptime_formatted': f"{int(uptime // 3600)}h {int((uptime % 3600) // 60)}m {int(uptime % 60)}s",
                 'total_requests': self.request_count,
                 'average_response_time': round(avg_response_time, 3),
+                'p50_response_time': round(self._percentile(sorted_recent, 50), 3),
+                'p95_response_time': round(self._percentile(sorted_recent, 95), 3),
+                'p99_response_time': round(self._percentile(sorted_recent, 99), 3),
                 'cache_hit_rate': round(cache_hit_rate, 1),
                 'cache_hits': self.cache_hits,
                 'cache_misses': self.cache_misses,
                 'average_memory_usage': round(avg_memory, 1),
                 'average_cpu_usage': round(avg_cpu, 1),
                 'requests_per_minute': round(self.request_count / (uptime / 60), 1) if uptime > 0 else 0,
+                'stage_breakdown_ms': stage_averages,
                 'timestamp': datetime.now().isoformat()
             }
 
@@ -122,6 +189,9 @@ class PerformanceMonitor:
             self.cache_misses = 0
             self.memory_usage_history.clear()
             self.cpu_usage_history.clear()
+            self._recent_response_times.clear()
+            self._stage_totals.clear()
+            self._stage_counts.clear()
             logger.info("Performance statistics reset")
 
 
@@ -148,7 +218,11 @@ def log_performance_summary():
     print("="*60)
     print(f"⏱️  Uptime: {stats['uptime_formatted']}")
     print(f" Total Requests: {stats['total_requests']}")
-    print(f"⚡ Avg Response Time: {stats['average_response_time']}s")
+    print(f"⚡ Avg Response Time: {stats['average_response_time']}s "
+          f"(p50={stats['p50_response_time']}s, p95={stats['p95_response_time']}s, p99={stats['p99_response_time']}s)")
+    if stats['stage_breakdown_ms']:
+        breakdown = ", ".join(f"{name}={value}ms" for name, value in stats['stage_breakdown_ms'].items())
+        print(f" Stage Breakdown: {breakdown}")
     print(f" Cache Hit Rate: {stats['cache_hit_rate']}%")
     print(f"💾 Avg Memory Usage: {stats['average_memory_usage']}%")
     print(f"🖥️  Avg CPU Usage: {stats['average_cpu_usage']}%")

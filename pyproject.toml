@@ -33,6 +33,7 @@ ignore = [
 "test/test_model_response.py" = ["E402"]
 "test/test_rag_process.py" = ["E402"]
 "scripts/formatting_pipeline_demo.py" = ["E402"]
+"scripts/eval_rag.py" = ["E402"]
 
 [tool.pytest.ini_options]
 testpaths = ["test"]

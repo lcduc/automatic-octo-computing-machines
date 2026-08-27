@@ -92,6 +92,52 @@ class ChatResponse(BaseResponse):
         }
 
 
+class ChatAnswerResponse(BaseModel):
+    """Flat, non-streaming chat response: a plain-string answer plus its confidence and citations."""
+
+    answer: str = Field(..., description="Generated answer text")
+    confidence: Optional[Dict[str, Any]] = Field(
+        None,
+        description="{score, level, details}; null for tool-calling answers, which aren't scored against retrieved context",
+    )
+    citations: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description="Distinct sources used to answer the query, highest-scoring first",
+    )
+    cached: bool = Field(..., description="Whether this answer was served from the response cache")
+    rewritten_query: Optional[str] = Field(
+        None,
+        description=(
+            "Standalone query actually sent to retrieval, when conversation history caused it "
+            "to differ from the request's query; null when the query was searched as-is"
+        ),
+    )
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "answer": "Based on the available information, we have several products...",
+                "confidence": {
+                    "score": 0.85,
+                    "level": "High",
+                    "details": {
+                        "context_alignment": 0.9,
+                        "response_length_appropriateness": 0.8,
+                        "semantic_coherence": 0.85,
+                        "source_citation": 0.7,
+                        "uncertainty_indicators": 0.9,
+                        "reasoning": "Response well-aligned with provided context.",
+                    },
+                },
+                "citations": [
+                    {"source": "product_catalog.pdf", "type": "file", "score": 0.92},
+                ],
+                "cached": False,
+                "rewritten_query": None,
+            }
+        }
+
+
 class FileProcessResult(BaseModel):
     """Individual file processing result for batch upload responses."""
 

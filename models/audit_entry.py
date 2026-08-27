@@ -28,3 +28,12 @@ class AuditEntry(BaseModel):
     latency_ms: float = Field(..., description="Wall-clock time to answer, in milliseconds")
     success: bool = Field(..., description="Whether the turn completed without error")
     error: Optional[str] = Field(None, description="Error text when ``success`` is False")
+    intent_ms: Optional[float] = Field(
+        None, description="Time spent classifying rag/action intent, in milliseconds (tool-calling only)"
+    )
+    retrieval_ms: Optional[float] = Field(
+        None, description="Time spent on hybrid search + context assembly, in milliseconds"
+    )
+    generation_ms: Optional[float] = Field(
+        None, description="Time spent generating the LLM response (cache lookup included), in milliseconds"
+    )

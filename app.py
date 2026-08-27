@@ -73,13 +73,13 @@ def is_backend_healthy(base_url: str) -> bool:
 
 def stream_chat(base_url: str, query: str, history: list = None):
     """
-    Stream ``{"type": "delta"|"final"|"error", ...}`` events from ``/chat/``.
+    Stream ``{"type": "delta"|"final"|"error", ...}`` events from ``/chat/stream``.
 
     The backend sends real SSE frames (``data: <json>\\n\\n``); each event is
     self-contained JSON on one line (``json.dumps`` escapes any newlines the
     answer text itself contains), so line-splitting never corrupts a frame.
     """
-    url = f"{base_url}/chat/"
+    url = f"{base_url}/chat/stream"
     headers = {"accept": "text/event-stream", "content-type": "application/json", **_auth_headers()}
     payload = {"query": query}
     if history:

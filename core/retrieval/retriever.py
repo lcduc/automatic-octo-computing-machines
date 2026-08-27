@@ -248,10 +248,11 @@ class ContextRetriever:
                 results.append(
                     {
                         "document": documents[idx],
-                        "semantic_score": 0.0,  # Lower score for additional chunks
+                        "semantic_score": 0.0,  # Unscored padding, not a real (low) match
                         "keyword_score": 0.0,
                         "combined_score": 0.0,
                         "index": idx,
+                        "matched": False,
                     }
                 )
 
@@ -295,7 +296,7 @@ class ContextRetriever:
         Returns:
             List of dictionaries containing documents, scores, and metadata
         """
-        logger.info(f"Starting hybrid search for query: '{query[:50]}...'")
+        logger.info("Starting hybrid search for query: '%s'", TextUtils.truncate_text(query, 50))
         logger.info(f" Search parameters: k={k}, semantic_weight={semantic_weight}")
         logger.info(f" Available documents: {len(documents)}")
 
@@ -378,38 +379,54 @@ class ContextRetriever:
                 + (1 - semantic_weight) * norm_keyword_scores
             )
 
-            # Filter by similarity threshold before selecting top K (use combined score)
-            threshold = Config.RAG.SIMILARITY_THRESHOLD()
-            filtered_indices = [
-                i for i in range(len(documents)) if combined_scores[i] >= threshold
+            # Build the candidate pool from EVERY document, ranked by combined
+            # score — the similarity threshold is applied further below, as a
+            # final gate AFTER reranking, not here. Filtering here would let a
+            # single weak semantic score (crushed toward 0 by min-max
+            # normalization, especially on a small corpus) permanently hide a
+            # document that BM25 flagged as a strong keyword match, before the
+            # cross-encoder reranker ever gets a chance to correct that —
+            # exactly the "keep the candidate pool wide" rationale already
+            # used for the FAISS candidate pull above.
+            all_indices_by_score = sorted(
+                range(len(documents)), key=lambda i: combined_scores[i], reverse=True
+            )
+            candidate_multiplier = self.RERANK_CANDIDATE_MULTIPLIER if Config.RAG.RERANKING_ENABLED() else 1
+            pool_size = max(k * candidate_multiplier, k)
+            prelim_top_k = [
+                {
+                    "document": documents[i],
+                    "semantic_score": float(semantic_scores[i]),
+                    "keyword_score": float(keyword_scores[i]),
+                    "norm_semantic_score": float(norm_semantic_scores[i]),
+                    "norm_keyword_score": float(norm_keyword_scores[i]),
+                    "combined_score": float(combined_scores[i]),
+                    "index": i,
+                }
+                for i in all_indices_by_score[:pool_size]
             ]
 
-            # Create results with metadata (store both raw and normalized scores)
-            results = []
-            for i in filtered_indices:
-                results.append(
-                    {
-                        "document": documents[i],
-                        "semantic_score": float(semantic_scores[i]),
-                        "keyword_score": float(keyword_scores[i]),
-                        "norm_semantic_score": float(norm_semantic_scores[i]),
-                        "norm_keyword_score": float(norm_keyword_scores[i]),
-                        "combined_score": float(combined_scores[i]),
-                        "index": i,
-                    }
-                )
-
-            # Sort by combined score for initial ranking
-            results.sort(key=lambda x: x["combined_score"], reverse=True)
-            candidate_multiplier = self.RERANK_CANDIDATE_MULTIPLIER if Config.RAG.RERANKING_ENABLED() else 1
-            prelim_top_k = results[: max(k * candidate_multiplier, k)]
-
             top_k_results = prelim_top_k[:k]
+            reranked = False
             if Config.RAG.RERANKING_ENABLED() and self.reranker is not None:
                 try:
                     top_k_results = self.reranker.rerank(query, prelim_top_k, k)
+                    reranked = True
                 except Exception as e:
                     logger.warning(f" Reranking failed, using combined scores: {e}")
+
+            if not reranked:
+                # No cross-encoder ran to judge relevance directly, so the
+                # fused hybrid score is the best signal available — gate on
+                # it here. When reranking succeeds, its top-k choice already
+                # IS the relevance judgment (that's the whole point of a
+                # cross-encoder over the query+document pair); re-filtering
+                # by the pre-rerank combined score at this point would just
+                # reintroduce the bug this pool-building change fixes, since
+                # a document can rerank #1 while its combined_score still
+                # sits under threshold from a min-max-crushed semantic score.
+                threshold = Config.RAG.SIMILARITY_THRESHOLD()
+                top_k_results = [r for r in top_k_results if r["combined_score"] >= threshold]
 
             # Apply context expansion to include adjacent chunks
             top_indices = [result["index"] for result in top_k_results]
@@ -417,7 +434,10 @@ class ContextRetriever:
                 top_indices, len(documents), Config.RAG.CONTEXT_EXPANSION_RADIUS()
             )
 
-            # Rebuild final results directly from expanded indices order, preserving original scores when available
+            # Rebuild final results directly from expanded indices order, preserving original scores when available.
+            # Order stays index-adjacent (not score-sorted): these chunks are meant to read as a
+            # contiguous passage for the LLM, so a neighbor pulled in for continuity must stay
+            # next to the match it surrounds rather than being reshuffled by score.
             expanded_results = []
             index_to_result = {r["index"]: r for r in top_k_results}
 
@@ -431,12 +451,16 @@ class ContextRetriever:
             for idx in expanded_indices:
                 base = index_to_result.get(idx)
                 if base:
+                    # A real retrieval hit — scored and selected on its own merits.
+                    base["matched"] = True
                     expanded_results.append(base)
                 else:
-                    # Create result with minimal string operations
+                    # Pulled in only for surrounding context; it was never scored, so
+                    # "matched: False" distinguishes it from a real (low) score of 0.0.
                     result = default_result.copy()
                     result["document"] = documents[idx]
                     result["index"] = idx
+                    result["matched"] = False
                     expanded_results.append(result)
 
             # Ensure minimum context chunks

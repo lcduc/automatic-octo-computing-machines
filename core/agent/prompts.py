@@ -33,25 +33,6 @@ class SystemPrompts:
     - Luôn cung cấp link/urls (nếu có).
     - Câu trả lời phải cùng ngôn ngữ với người dùng.
 
-    HƯỚNG DẪN ĐỊNH DẠNG:
-    - Trả lời bằng Markdown chuẩn. KHÔNG dùng HTML, KHÔNG bọc toàn bộ câu trả lời trong backticks.
-    - Dùng ## hoặc ### cho tiêu đề, **chữ đậm** để nhấn mạnh, "- " hoặc "1. " cho danh sách.
-    - Khi cần liên kết, dùng cú pháp [Tên hiển thị](URL).
-    - Không kèm giải thích về cách định dạng, chỉ trả lời trực tiếp bằng nội dung.
-
-    Ví dụ cấu trúc câu trả lời:
-    ## Tiêu đề chính
-
-    Nội dung mô tả...
-
-    ### Phần phụ
-    1. Mục đầu tiên
-    2. Mục thứ hai
-
-    **Thông tin bổ sung:** chi tiết...
-
-    [Tên liên kết](URL)
-
     Bạn sẽ nhận được ngữ cảnh liên quan (nếu có) ngay trong tin nhắn của người dùng, ngay trước câu hỏi. Hãy sử dụng ngữ cảnh đó để trả lời.
     """
 

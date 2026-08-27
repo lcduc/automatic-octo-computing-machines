@@ -118,6 +118,31 @@ class ChatResponseFactory:
             "error": error_message,
         }
 
+    def flat_response_payload(
+        self,
+        response_text: str,
+        confidence,
+        search_results: Optional[List[Dict[str, Any]]],
+        cached: bool,
+        rewritten_query: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Build the flat ``{answer, confidence, citations, cached}`` envelope
+        used by the non-streaming chat endpoint.
+
+        ``confidence`` is ``None`` for tool-calling answers, which aren't
+        scored against retrieved context. ``rewritten_query`` is ``None``
+        unless conversation history caused the search string actually sent to
+        retrieval to differ from the request's own query.
+        """
+        return {
+            "answer": response_text,
+            "confidence": self.confidence_payload(confidence) if confidence is not None else None,
+            "citations": self.citations(search_results),
+            "cached": cached,
+            "rewritten_query": rewritten_query,
+        }
+
     @staticmethod
     def stream_delta_event(text: str) -> Dict[str, Any]:
         """Build one incremental ``delta`` SSE event carrying an answer text chunk."""
@@ -129,16 +154,24 @@ class ChatResponseFactory:
         confidence,
         search_results: Optional[List[Dict[str, Any]]],
         cached: bool,
+        rewritten_query: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Build the terminal ``final`` SSE event.
 
         Carries confidence and citations for the turn; ``answer.text`` is left
         blank since the full text was already delivered via ``delta`` events.
+        ``rewritten_query`` is ``None`` unless conversation history caused the
+        search string actually sent to retrieval to differ from the query.
         """
         payload = self.answer_payload(response_text, confidence, cached)
         payload["text"] = ""
-        return {"type": "final", "answer": payload, "citations": self.citations(search_results)}
+        return {
+            "type": "final",
+            "answer": payload,
+            "citations": self.citations(search_results),
+            "rewritten_query": rewritten_query,
+        }
 
     @staticmethod
     def stream_error_event(message: str) -> Dict[str, Any]:

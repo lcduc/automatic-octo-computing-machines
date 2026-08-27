@@ -13,6 +13,7 @@ import os
 
 # Local imports
 from config.settings import Config
+from utils.text_utils import TextUtils
 
 logger = logging.getLogger(__name__)
 
@@ -177,7 +178,7 @@ class SmartCacheService:
         # Store in cache
         self._cache[cache_key] = entry
 
-        logger.debug(f"💾 Cached response for query: {query[:50]}... (key: {cache_key[:8]}...)")
+        logger.debug("💾 Cached response for query: %s (key: %s...)", TextUtils.truncate_text(query, 50), cache_key[:8])
         return cache_key
 
     def get(self, query: str, context_hash: str = "",
@@ -209,7 +210,7 @@ class SmartCacheService:
             entry.last_accessed = time.time()
 
             self._hits += 1
-            logger.debug(f" Cache hit (exact): {query[:50]}...")
+            logger.debug("Cache hit (exact): %s", TextUtils.truncate_text(query, 50))
             return entry.value
 
         # Try similarity matching if enabled
@@ -228,7 +229,7 @@ class SmartCacheService:
                 entry.last_accessed = time.time()
 
                 self._hits += 1
-                logger.debug(f" Cache hit (similar): {query[:50]}...")
+                logger.debug("Cache hit (similar): %s", TextUtils.truncate_text(query, 50))
                 return entry.value
 
         self._misses += 1
