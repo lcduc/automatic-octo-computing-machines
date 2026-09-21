@@ -44,7 +44,7 @@ faiss-cpu==1.15.0
 # sentence-transformers/transformers/accelerate pinned together as a known-
 # compatible set (previously transformers/accelerate floated unpinned).
 sentence-transformers==5.6.1
-transformers==4.53.3    # direct import, previously transitive (reranker.py)
+transformers==5.15.0    # direct import, previously transitive (reranker.py)
 accelerate==1.14.0       # pulled in by transformers' from_pretrained meta-loading path
 huggingface_hub[hf_xet]==0.33.1
 rank-bm25==0.2.2
