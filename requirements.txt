@@ -71,7 +71,17 @@ scikit-learn==1.5.2
 h5py==3.16.0
 
 # --- Document processing ---
-docling==2.54.0
+# 2.94.0 clears 4 of the 5 CVEs pip-audit flags on the old 2.54.0 pin
+# (PYSEC-2026-2143/2144/2146/240) and lifts the pillow/lxml ceiling those
+# CVEs were capped under. Verified in isolation before bumping here: the
+# 2.92.0 docling-slim packaging split left DocumentConverter/.convert()/
+# .export_to_markdown() (this repo's only docling API surface) unchanged,
+# torch/transformers/huggingface_hub/pypdfium2 pins below are untouched by
+# its resolver, and a live DoclingProcessor.process_document() run produced
+# byte-identical output to 2.54.0. The 2 remaining docling CVEs (JATS-XML
+# and METS-GBS XXE) have no upstream fix yet, but aren't reachable here:
+# ALLOWED_EXTENSIONS never accepts .xml uploads.
+docling==2.94.0
 pypdfium2==4.30.0
 # pypdf is PyPDF2's successor (PyPDF2's own last release, 3.0.1, never got a
 # fix for CVE-2023-36464 / PYSEC-2026-1835 — the fix only shipped under the
@@ -82,9 +92,10 @@ openpyxl==3.1.5
 requests==2.34.2
 chardet<6.0.0
 nltk==3.10.3
-# NOTE: docling==2.54.0 pins pandas<3.0.0,>=2.1.4 (Requires-Dist in its own
-# metadata) — pandas 3.x is unresolvable here until docling is bumped to a
-# version that supports it (and that bump re-verified independently).
+# docling>=2.94.0 dropped its own pandas dependency entirely, so this pin is
+# no longer docling-constrained — pandas 3.x is not yet verified against our
+# own CSV/XLSX extractors, so staying on 2.x here is a deliberate choice,
+# not a forced one.
 pandas==2.2.3
 PyMuPDF==1.28.0         # direct import `fitz`, previously transitive
 
