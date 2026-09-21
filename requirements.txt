@@ -20,7 +20,7 @@
 fastapi==0.141.1
 uvicorn[standard]==0.32.1
 python-multipart==0.0.32
-# Pinned to 0.28.1, not 0.27.0: anthropic==0.120.2/google-genai==2.17.0 below
+# Pinned to 0.28.1, not 0.27.0: anthropic==0.121.0/google-genai==2.17.0 below
 # require httpx>=0.28 and pip's resolver upgrades it regardless, so the pin
 # is bumped to match what's actually installed rather than drifting silently.
 httpx==0.28.1
@@ -28,7 +28,7 @@ aiofiles==24.1.0
 
 # --- LLM providers --- (select via LLM_PROVIDER=openai|anthropic|gemini)
 openai==1.57.0
-anthropic==0.120.2
+anthropic==0.121.0
 google-genai==2.17.0
 
 # --- Retrieval / embeddings ---
