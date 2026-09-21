@@ -57,6 +57,14 @@ sentence-transformers==5.6.1
 transformers==4.53.3    # direct import, previously transitive (reranker.py)
 accelerate==1.14.0       # pulled in by transformers' from_pretrained meta-loading path
 huggingface_hub[hf_xet]==0.33.1
+# jinaai/jina-reranker-v2-base-multilingual's remote modeling code (fetched
+# from the HF Hub at load time, not vendored here) requires einops; not a
+# transitive dep of anything else pinned above. Without it,
+# scripts/download_models.py fails at Docker build time with "This modeling
+# file requires the following packages that were not found in your
+# environment: einops" as soon as the Hub-side remote code picks it up
+# (unrelated to any pin change here — that model isn't pinned to a revision).
+einops==0.8.2
 rank-bm25==0.2.2
 numpy==1.26.4
 scikit-learn==1.5.2
