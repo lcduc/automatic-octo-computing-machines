@@ -7,7 +7,8 @@ Cheap, fast retrieval-accuracy check for the RAG pipeline.
 Runs a small golden set of (query, expected_source) pairs through the same
 ``ContextRetriever.hybrid_search()`` the live chat path uses (see
 ``ChatbotService._retrieve_context`` in core/agent/chatbot.py), and reports
-recall@k and MRR against the expected source folder under data/chunks/.
+recall@k, precision@k and MRR against the expected source folder under
+data/chunks/.
 
 No LLM calls are made — this only exercises embeddings + BM25 retrieval, so
 it costs nothing and runs in seconds against an already-built vector store.
@@ -59,7 +60,9 @@ class RetrievalEvaluator:
 
         Returns:
             Dict with the query, expected source, retrieved source order,
-            whether the expected source was found, and its rank if found.
+            whether the expected source was found, its rank if found, and
+            precision@k (the fraction of returned chunks that belong to the
+            expected source).
         """
         results = self._retriever.hybrid_search(
             query, embeddings, documents, k=self._k, semantic_weight=self._semantic_weight
@@ -67,19 +70,22 @@ class RetrievalEvaluator:
         retrieved_sources = [r.get("source_id", "unknown") for r in results]
         hit = expected_source in retrieved_sources
         rank = retrieved_sources.index(expected_source) + 1 if hit else None
+        relevant_count = sum(1 for source in retrieved_sources if source == expected_source)
+        precision_at_k = relevant_count / len(retrieved_sources) if retrieved_sources else 0.0
         return {
             "query": query,
             "expected_source": expected_source,
             "retrieved_sources": retrieved_sources,
             "hit": hit,
             "rank": rank,
+            "precision_at_k": precision_at_k,
         }
 
     def evaluate_all(
         self, golden_set: List[Dict[str, str]], embeddings, documents: List[str]
     ) -> Dict[str, Any]:
         """
-        Run the full golden set and aggregate recall@k / MRR, overall and per source.
+        Run the full golden set and aggregate recall@k / precision@k / MRR, overall and per source.
 
         Returns:
             Report dict with overall metrics, a per-source breakdown, the
@@ -93,20 +99,30 @@ class RetrievalEvaluator:
         total = len(per_query)
         hits = sum(1 for r in per_query if r["hit"])
         mrr = sum(1.0 / r["rank"] for r in per_query if r["hit"]) / total if total else 0.0
+        mean_precision_at_k = sum(r["precision_at_k"] for r in per_query) / total if total else 0.0
 
-        by_source: Dict[str, Dict[str, int]] = {}
+        by_source: Dict[str, Dict[str, Any]] = {}
         for r in per_query:
-            bucket = by_source.setdefault(r["expected_source"], {"total": 0, "hits": 0})
+            bucket = by_source.setdefault(
+                r["expected_source"], {"total": 0, "hits": 0, "precision_sum": 0.0}
+            )
             bucket["total"] += 1
             bucket["hits"] += 1 if r["hit"] else 0
+            bucket["precision_sum"] += r["precision_at_k"]
 
         return {
             "k": self._k,
             "total_queries": total,
             "recall_at_k": hits / total if total else 0.0,
+            "precision_at_k": mean_precision_at_k,
             "mrr": mrr,
             "by_source": {
-                source: {**stats, "recall": stats["hits"] / stats["total"]}
+                source: {
+                    "total": stats["total"],
+                    "hits": stats["hits"],
+                    "recall": stats["hits"] / stats["total"],
+                    "precision_at_k": stats["precision_sum"] / stats["total"],
+                }
                 for source, stats in sorted(by_source.items())
             },
             "misses": [r for r in per_query if not r["hit"]],
@@ -123,12 +139,16 @@ def load_golden_set(path: str) -> List[Dict[str, str]]:
 def print_report(report: Dict[str, Any]) -> None:
     """Print a human-readable summary of the evaluation report."""
     print(f"\nRetrieval eval -- {report['total_queries']} queries, k={report['k']}")
-    print(f"  Recall@{report['k']}: {report['recall_at_k']:.1%}")
+    print(f"  Recall@{report['k']}:    {report['recall_at_k']:.1%}")
+    print(f"  Precision@{report['k']}: {report['precision_at_k']:.1%}")
     print(f"  MRR:        {report['mrr']:.3f}")
 
     print("\n  By source:")
     for source, stats in report["by_source"].items():
-        print(f"    {source:6s} {stats['hits']}/{stats['total']}  ({stats['recall']:.0%})")
+        print(
+            f"    {source:6s} {stats['hits']}/{stats['total']}  "
+            f"(recall {stats['recall']:.0%}, precision {stats['precision_at_k']:.0%})"
+        )
 
     if report["misses"]:
         print("\n  Misses:")

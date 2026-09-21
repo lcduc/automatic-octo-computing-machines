@@ -181,6 +181,21 @@ class EmbeddingService:
             # Fail open: return original embedding
             return query_embedding
 
+    @classmethod
+    def clear_query_adapter(cls) -> None:
+        """
+        Drop any loaded query adapter so subsequent queries are untransformed.
+
+        The adapter matrix is process-wide (see the class attributes above),
+        so a fresh :class:`ContextRetriever` re-loading from the same
+        ``QUERY_ADAPTER_PATH`` would otherwise leave a previously loaded
+        adapter in place. Used by the config-comparison eval harness to get a
+        clean vector-only baseline in the same process as an adapter-enabled run.
+        """
+        cls._query_adapter_matrix = None
+        cls._adapter_loaded_path = None
+        cls._adapter_loaded_mtime = None
+
     def get_device_info(self):
         """
         Get information about the embedding model device and configuration.
