@@ -73,7 +73,10 @@ h5py==3.16.0
 # --- Document processing ---
 docling==2.54.0
 pypdfium2==4.30.0
-PyPDF2==3.0.1
+# pypdf is PyPDF2's successor (PyPDF2's own last release, 3.0.1, never got a
+# fix for CVE-2023-36464 / PYSEC-2026-1835 — the fix only shipped under the
+# new package name). Same PdfReader API, drop-in replacement.
+pypdf==6.19.0
 python-docx==1.1.2
 openpyxl==3.1.5
 requests==2.34.2

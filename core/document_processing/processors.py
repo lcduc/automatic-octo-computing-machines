@@ -75,7 +75,7 @@ class TextProcessor(BaseProcessor):
 
 class PDFProcessor(BaseProcessor):
     """
-    Direct PDF text-layer extraction via PyPDF2.
+    Direct PDF text-layer extraction via pypdf.
 
     This is the fallback used when Docling declines or fails on a PDF, so it
     deliberately does *not* call Docling itself \u2014 ``MainDocumentProcessor``

@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from typing import Optional
 import io
 import logging
-import PyPDF2
+import pypdf
 from docx import Document
 import pandas as pd
 from openpyxl import load_workbook
@@ -48,7 +48,7 @@ class PDFTextExtractor(BaseFileExtractor):
     ) -> list:
         try:
             pdf_file = io.BytesIO(content)
-            pdf_reader = PyPDF2.PdfReader(pdf_file)
+            pdf_reader = pypdf.PdfReader(pdf_file)
             text_parts = []
             for page_num, page in enumerate(pdf_reader.pages):
                 try:
