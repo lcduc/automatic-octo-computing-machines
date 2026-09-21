@@ -80,5 +80,43 @@ jobs:
         run: pip install pip-audit
 
       # Audits the pinned requirements without installing the ML stack.
+      #
+      # The --ignore-vuln entries below are deliberate, not swept-under-the-
+      # rug: each is a CVE with no available remediation right now, verified
+      # against GitHub's own advisory API (`gh api advisories/<GHSA-id>`),
+      # not just this mirror. Re-check periodically; a real fix should be
+      # taken, not re-ignored.
+      #
+      # transformers==4.53.3 (PYSEC-2025-{211,212,213,214,215,216,217,218},
+      # PYSEC-2026-{2288,2289,2290,3929}): all fixed only in transformers>=5,
+      # which is a known-incompatible bump — see the NOTE above the
+      # transformers pin in requirements.txt (breaks the
+      # jinaai/jina-reranker-v2-base-multilingual remote code, confirmed by
+      # loading the real cached model; also unresolvable against the
+      # huggingface_hub pin). Verified 2026-09-21 via commit 845d894.
+      #
+      # accelerate==1.14.0 (PYSEC-2026-3804) and nltk==3.10.3
+      # (PYSEC-2026-3740): both `first_patched_version: null` on GitHub's
+      # advisory API as of 2026-09-21 -- no fixed release exists yet for
+      # either. Also not reachable through this app's own usage: accelerate's
+      # path-traversal is only exploitable via untrusted sharded checkpoints
+      # (this app only loads pinned, trusted HF models), and nltk's is in
+      # TransitionParser/AveragedPerceptron/PerceptronTagger/maxent model
+      # loading (utils/text_utils.py only calls nltk.download/sent_tokenize).
       - name: Audit pinned dependencies
-        run: pip-audit --requirement requirements.txt --strict
+        run: >-
+          pip-audit --requirement requirements.txt --strict
+          --ignore-vuln PYSEC-2025-211
+          --ignore-vuln PYSEC-2025-212
+          --ignore-vuln PYSEC-2025-213
+          --ignore-vuln PYSEC-2025-214
+          --ignore-vuln PYSEC-2025-215
+          --ignore-vuln PYSEC-2025-216
+          --ignore-vuln PYSEC-2025-217
+          --ignore-vuln PYSEC-2025-218
+          --ignore-vuln PYSEC-2026-2288
+          --ignore-vuln PYSEC-2026-2289
+          --ignore-vuln PYSEC-2026-2290
+          --ignore-vuln PYSEC-2026-3929
+          --ignore-vuln PYSEC-2026-3804
+          --ignore-vuln PYSEC-2026-3740
