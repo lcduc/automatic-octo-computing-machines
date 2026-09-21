@@ -20,7 +20,7 @@
 fastapi==0.141.1
 uvicorn[standard]==0.32.1
 python-multipart==0.0.32
-# Pinned to 0.28.1, not 0.27.0: anthropic==0.120.2/google-genai==2.17.0 below
+# Pinned to 0.28.1, not 0.27.0: anthropic==0.121.0/google-genai==2.17.0 below
 # require httpx>=0.28 and pip's resolver upgrades it regardless, so the pin
 # is bumped to match what's actually installed rather than drifting silently.
 httpx==0.28.1
@@ -28,7 +28,7 @@ aiofiles==24.1.0
 
 # --- LLM providers --- (select via LLM_PROVIDER=openai|anthropic|gemini)
 openai==1.57.0
-anthropic==0.120.2
+anthropic==0.121.0
 google-genai==2.17.0
 
 # --- Retrieval / embeddings ---
@@ -44,13 +44,13 @@ faiss-cpu==1.15.0
 # sentence-transformers/transformers/accelerate pinned together as a known-
 # compatible set (previously transformers/accelerate floated unpinned).
 sentence-transformers==5.6.1
-transformers==4.53.3    # direct import, previously transitive (reranker.py)
+transformers==5.15.0    # direct import, previously transitive (reranker.py)
 accelerate==1.14.0       # pulled in by transformers' from_pretrained meta-loading path
 huggingface_hub[hf_xet]==0.33.1
 rank-bm25==0.2.2
 numpy==1.26.4
 scikit-learn==1.5.2
-h5py==3.10.0
+h5py==3.16.0
 
 # --- Document processing ---
 docling==2.54.0
@@ -61,8 +61,8 @@ openpyxl==3.1.5
 requests==2.34.2
 chardet<6.0.0
 nltk==3.10.3
-pandas==2.2.3
-PyMuPDF==1.28.2         # direct import `fitz`, previously transitive
+pandas==3.0.5
+PyMuPDF==1.28.0         # direct import `fitz`, previously transitive
 
 # --- OCR (scanned/image-only PDFs) ---
 # paddlepaddle itself is installed separately in the Dockerfile (CPU/GPU
