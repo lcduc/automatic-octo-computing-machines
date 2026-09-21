@@ -50,7 +50,7 @@ huggingface_hub[hf_xet]==0.33.1
 rank-bm25==0.2.2
 numpy==1.26.4
 scikit-learn==1.5.2
-h5py==3.10.0
+h5py==3.16.0
 
 # --- Document processing ---
 docling==2.54.0
