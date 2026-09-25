@@ -171,3 +171,14 @@ SSL/
 # config/settings.py) so this rule can't accidentally swallow new source
 # files added to that package.
 model_weights/
+
+# Client frontends (frontends/<client>/): dependencies, build output, local secrets.
+# Each frontend keeps its own .gitignore too; these apply even before it has one.
+frontends/*/node_modules/
+frontends/*/.next/
+frontends/*/out/
+frontends/*/coverage/
+frontends/*/*.tsbuildinfo
+frontends/*/next-env.d.ts
+frontends/*/.env*
+!frontends/*/.env.example
