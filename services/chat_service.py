@@ -1,476 +1,300 @@
+"""
+One chat turn end to end: quotas, redaction, conversation state, the pipeline
+and persistence of everything the turn produced.
+"""
+
 # Standard library imports
+import asyncio
 import logging
 import time
-from datetime import datetime
-from typing import Any, AsyncGenerator, Dict, List, Optional
-
-# Third-party imports
-import numpy as np
+import uuid
+from dataclasses import dataclass, field
+from typing import Any, AsyncIterator, Dict, List, Optional, Sequence, Set
 
 # Local imports
 from config.settings import Config
-from core.agent import ChatbotService
-from core.infrastructure.cache_service import get_cache_service
-from core.retrieval.context_builder import ContextAssembler
-from core.storage import get_vector_store_provider
-from utils.monitor import get_performance_monitor
-from utils.text_utils import TextUtils
+from core.agent.chatbot import ChatbotService
+from core.agent.prompts import AutoReplies
+from core.guardrails.pii_redactor import PiiRedactor
+from core.storage.conversation_repository import ConversationRepository
+from core.storage.database import Database
+from core.storage.tables.base import utc_now
+from core.storage.tables.conversation_tables import Conversation, Message, TokenUsage
+from models.caller import ChatCaller
+from models.chat_turn import TurnDelta, TurnOutcome, TurnRequest, TurnResult, TurnUsage
+from .errors import NotFoundError, RateLimitedError, ServiceUnavailableError
+from .handoff_service import HandoffService
+from .rate_limit_service import RateLimitService
+from .settings_service import SettingsService
+from .usage_service import UsageService
 
 logger = logging.getLogger(__name__)
 
+#: Shown when a visitor exhausted today's token budget.
+#: ``Retry-After`` for an exhausted daily budget (the client just needs to stop retrying).
+BUDGET_RETRY_AFTER_SECONDS = 3600
+#: Outcome stored when the visitor disconnected before the answer finished.
+ABORTED_GUARD_REASON = "client_disconnected"
+
+
+@dataclass
+class PreparedTurn:
+    """A validated turn whose user message is already stored."""
+
+    caller: ChatCaller
+    conversation_id: uuid.UUID
+    assistant_message_id: uuid.UUID
+    request: TurnRequest
+    started_at: float
+    usages: List[TurnUsage] = field(default_factory=list)
+
 
 class ChatService:
-    """
-    Enhanced chat service with RAG integration, performance monitoring, and robust error handling.
-    Provides comprehensive chat functionality with knowledge base integration and service health tracking.
-    """
+    """Runs chat turns for authenticated callers and records their results."""
 
-    def __init__(self, chatbot_service=None, vector_store_provider=None):
+    def __init__(
+        self,
+        database: Database,
+        pipeline: ChatbotService,
+        settings: SettingsService,
+        usage: UsageService,
+        handoffs: HandoffService,
+        rate_limiter: RateLimitService,
+        redactor: Optional[PiiRedactor],
+    ):
         """
-        Initialize chat service with core components and monitoring infrastructure.
-
         Args:
-            chatbot_service: LLM-facing service; created on demand when omitted.
-            vector_store_provider: Shared knowledge-base provider; defaults to
-                the process-wide provider so ingestion updates are visible here.
+            database: Connected database.
+            pipeline: The RAG chat pipeline.
+            settings: Runtime chat policy.
+            usage: Token budgets and the live feed.
+            handoffs: Creates handoff requests.
+            rate_limiter: Per-user / per-IP request limiter.
+            redactor: PII redactor, or ``None`` when redaction is disabled.
         """
-        # Initialize core components and monitoring
-        if chatbot_service is None:
-            self.chatbot_service = ChatbotService()
-        else:
-            self.chatbot_service = chatbot_service
-        self.service_metrics = {
-            "total_requests": 0,
-            "successful_requests": 0,
-            "failed_requests": 0,
-            "average_response_time": 0.0,
-            "service_start_time": datetime.now().isoformat(),
-        }
+        self._database = database
+        self._pipeline = pipeline
+        self._settings = settings
+        self._usage = usage
+        self._handoffs = handoffs
+        self._rate_limiter = rate_limiter
+        self._redactor = redactor
+        self._slots = asyncio.Semaphore(Config.Security.MAX_CONCURRENT_CHATS())
+        self._pending_writes: Set[asyncio.Task] = set()
 
-        # Shared knowledge base — invalidated by ingestion, not time-based
-        self._vector_store_provider = vector_store_provider or get_vector_store_provider()
-        self._context_assembler = ContextAssembler()
+    # ------------------------------------------------------------------
+    # Turn preparation
+    # ------------------------------------------------------------------
 
-        # Use existing smart cache service
-        self._smart_cache = get_cache_service()
+    def _redact(self, text: str) -> str:
+        """Mask personal data when redaction is enabled."""
+        return self._redactor.redact(text).text if self._redactor is not None else text
 
-        # Performance monitoring
-        self._performance_monitor = get_performance_monitor()
-
-    def _get_cached_vector_store(self):
+    async def prepare(
+        self,
+        caller: ChatCaller,
+        message: str,
+        conversation_id: Optional[uuid.UUID],
+        sources: Optional[Sequence[str]],
+    ) -> PreparedTurn:
         """
-        Get the shared knowledge-base payload.
+        Check quotas, resolve the conversation and store the user's message.
 
-        Returns:
-            The ``(index, embeddings, documents)`` tuple, or ``None`` if the
-            store could not be loaded.
+        Raises:
+            RateLimitedError: Too many requests or today's token budget used up.
+            ServiceUnavailableError: Every generation slot is busy.
+            NotFoundError: ``conversation_id`` does not belong to this visitor.
         """
-        return self._vector_store_provider.get_data()
+        retry_after = self._rate_limiter.hit(f"user:{caller.end_user_id}", Config.Security.RATE_LIMIT_USER_PER_MINUTE())
+        if retry_after is not None:
+            raise RateLimitedError(AutoReplies.RATE_LIMITED, retry_after)
+        if not await self._usage.within_budget(caller.end_user_id):
+            raise RateLimitedError(AutoReplies.BUDGET_EXCEEDED, BUDGET_RETRY_AFTER_SECONDS)
+        if self._slots.locked():
+            raise ServiceUnavailableError("Hệ thống đang bận, vui lòng thử lại sau giây lát.")
 
-    def _update_average_response_time(self, response_time: float):
-        """Update rolling average response time."""
-        current_avg = self.service_metrics["average_response_time"]
-        successful_requests = self.service_metrics["successful_requests"]
-
-        if successful_requests == 1:
-            self.service_metrics["average_response_time"] = response_time
-        else:
-            self.service_metrics["average_response_time"] = (
-                current_avg * (successful_requests - 1) + response_time
-            ) / successful_requests
-
-    def get_knowledge_base_status(self) -> Dict[str, Any]:
-        """
-        Get comprehensive knowledge base status with OCR-level detail.
-
-        Returns:
-            Dict containing detailed knowledge base information
-        """
-        try:
-            logger.debug("Checking knowledge base status...")
-            vector_store_result = self._get_cached_vector_store()
-            if vector_store_result is None:
-                raise RuntimeError("Vector store could not be loaded")
-            _, current_embeddings, current_documents = vector_store_result
-            store = self._vector_store_provider.get_store()
-
-            # Calculate additional metrics
-            embedding_dimensions = 0
-            if current_embeddings is not None and len(current_embeddings) > 0:
-                embedding_dimensions = (
-                    current_embeddings.shape[1]
-                    if hasattr(current_embeddings, "shape")
-                    else 0
-                )
-
-            status_info = {
-                "available": bool(current_documents),
-                "document_count": len(current_documents) if current_documents else 0,
-                "embedding_count": (
-                    len(current_embeddings) if current_embeddings is not None else 0
-                ),
-                "embedding_dimensions": embedding_dimensions,
-                "status": "ready" if current_documents else "empty",
-                "last_updated": datetime.now().isoformat(),
-                "vector_store_path": getattr(store, "h5_path", None),
-                "health": "healthy" if current_documents else "no_data",
-            }
-
-            logger.debug(
-                f" Knowledge base status: {status_info['status']} ({status_info['document_count']} docs)"
+        redacted = self._redact(message.strip())
+        history_limit = Config.Chat.MAX_HISTORY_TURNS() * 2
+        async with self._database.session() as session:
+            repository = ConversationRepository(session)
+            conversation = await self._resolve_conversation(repository, caller, conversation_id)
+            history_rows = await repository.recent_messages(conversation.id, history_limit) if conversation_id else []
+            repository.add(
+                Message(conversation_id=conversation.id, role="user", content=redacted, request_id=caller.request_id)
             )
-            return status_info
+            conversation.message_count += 1
+            conversation.last_activity_at = utc_now()
 
-        except Exception as e:
-            logger.exception("Error getting knowledge base status")
-            return {
-                "available": False,
-                "document_count": 0,
-                "embedding_count": 0,
-                "embedding_dimensions": 0,
-                "status": "error",
-                "health": "unhealthy",
-                "last_updated": datetime.now().isoformat(),
-                "error": str(e),
-            }
+        history = [{"role": row.role, "content": row.content} for row in history_rows]
+        request = TurnRequest(query=redacted, history=history, policy=self._settings.chat_policy(), sources=sources)
+        return PreparedTurn(caller, conversation.id, uuid.uuid4(), request, time.perf_counter())
 
-    def get_comprehensive_service_status(self) -> Dict[str, Any]:
+    @staticmethod
+    async def _resolve_conversation(
+        repository: ConversationRepository, caller: ChatCaller, conversation_id: Optional[uuid.UUID]
+    ) -> Conversation:
+        """Load the visitor's conversation or start a new one."""
+        if conversation_id is not None:
+            conversation = await repository.get_conversation(conversation_id)
+            if conversation is None or conversation.end_user_id != caller.end_user_id:
+                raise NotFoundError("Conversation not found")
+            return conversation
+        conversation = Conversation(api_key_id=caller.api_key_id, end_user_id=caller.end_user_id)
+        repository.add(conversation)
+        await repository.flush()
+        return conversation
+
+    # ------------------------------------------------------------------
+    # Streaming
+    # ------------------------------------------------------------------
+
+    async def stream(self, turn: PreparedTurn) -> AsyncIterator[Dict[str, Any]]:
         """
-        Get comprehensive service status like OCR's service monitoring.
-
-        Returns:
-            Dict containing detailed service health and performance metrics
-        """
-        try:
-            # Get knowledge base status
-            kb_status = self.get_knowledge_base_status()
-
-            # Get chatbot service status
-            chatbot_status = self.chatbot_service.get_service_status()
-
-            # Calculate success rate
-            total_requests = self.service_metrics["total_requests"]
-            success_rate = 0.0
-            if total_requests > 0:
-                success_rate = (
-                    self.service_metrics["successful_requests"] / total_requests
-                ) * 100
-
-            # Determine overall health
-            overall_health = "healthy"
-            if not chatbot_status["service_available"]:
-                overall_health = "unhealthy"
-            elif not kb_status["available"]:
-                overall_health = "no_data"
-            elif (
-                success_rate < Config.Health.SERVICE_SUCCESS_RATE_THRESHOLD()
-                and total_requests > Config.Health.SERVICE_MIN_REQUESTS_FOR_HEALTH()
-            ):
-                overall_health = "degraded"
-
-            return {
-                "service_name": "ChatService",
-                "overall_health": overall_health,
-                "service_available": chatbot_status["service_available"],
-                "knowledge_base": kb_status,
-                "chatbot_service": chatbot_status,
-                "service_metrics": {
-                    **self.service_metrics,
-                    "success_rate_percent": round(success_rate, 2),
-                    "failure_rate_percent": round(100 - success_rate, 2),
-                },
-                "timestamp": datetime.now().isoformat(),
-                "uptime_info": {
-                    "service_start_time": self.service_metrics["service_start_time"],
-                    "current_time": datetime.now().isoformat(),
-                },
-            }
-
-        except Exception as e:
-            logger.error(f" Error getting comprehensive service status: {e}")
-            return {
-                "service_name": "ChatService",
-                "overall_health": "error",
-                "service_available": False,
-                "error": str(e),
-                "timestamp": datetime.now().isoformat(),
-            }
-
-    def reset_metrics(self):
-        """Reset service metrics for monitoring purposes."""
-        logger.info("Resetting ChatService metrics")
-        self.service_metrics = {
-            "total_requests": 0,
-            "successful_requests": 0,
-            "failed_requests": 0,
-            "average_response_time": 0.0,
-            "service_start_time": datetime.now().isoformat(),
-        }
-
-    def clear_cache(self) -> Dict[str, Any]:
-        """Clear all caches including smart cache and local caches."""
-        try:
-            # Clear chatbot service cache
-            chatbot_result = self.chatbot_service.clear_cache()
-
-            # Clear smart cache
-            self._smart_cache.clear()
-            smart_cache_stats = self._smart_cache.get_stats()
-
-            # Drop the shared knowledge-base payload so it reloads on next use
-            self._vector_store_provider.invalidate()
-
-            logger.info("🧹 All caches cleared successfully")
-            return {
-                "message": "All caches cleared successfully",
-                "chatbot_cache": chatbot_result,
-                "smart_cache_cleared": True,
-                "smart_cache_stats": smart_cache_stats,
-                "vector_store_cache_cleared": True,
-                "timestamp": time.time()
-            }
-        except Exception as e:
-            logger.error("Failed to clear cache: %s", e)
-            return {
-                "message": "Failed to clear cache",
-                "error": str(e),
-                "timestamp": time.time()
-            }
-
-    def get_cache_stats(self) -> Dict[str, Any]:
-        """Get comprehensive cache statistics from all cache layers."""
-        try:
-            # Get smart cache stats
-            smart_cache_stats = self._smart_cache.get_stats()
-
-            # Get chatbot cache stats
-            chatbot_status = self.chatbot_service.get_service_status()
-
-            return {
-                "smart_cache": smart_cache_stats,
-                "chatbot_cache": {
-                    "size": chatbot_status.get("cache_size", 0),
-                    "model": chatbot_status.get("model", "unknown"),
-                    "available": chatbot_status.get("service_available", False)
-                },
-                "vector_store_cache": {
-                    "cached": self._vector_store_provider.is_loaded,
-                },
-                "performance_metrics": self._performance_monitor.get_performance_stats(),
-                "timestamp": time.time()
-            }
-        except Exception as e:
-            logger.error("Failed to get cache stats: %s", e)
-            return {
-                "error": str(e),
-                "timestamp": time.time()
-            }
-
-    def _load_knowledge_base(self) -> Optional[tuple]:
-        """
-        Fetch and normalize the current knowledge base.
-
-        Returns:
-            An ``(embeddings, documents)`` pair (both empty when the corpus is
-            empty), or ``None`` if the vector store could not be loaded at all.
-        """
-        vector_store_result = self._get_cached_vector_store()
-        if vector_store_result is None:
-            return None
-
-        _, embeddings, documents = vector_store_result
-        if not documents:
-            return np.array([]), []
-        if embeddings is None:
-            embeddings = np.array([])
-        elif isinstance(embeddings, list):
-            embeddings = np.array(embeddings)
-        return embeddings, documents
-
-    async def stream_chat_with_memory(
-        self, query: str, custom_history: Optional[List[Dict[str, str]]] = None
-    ) -> AsyncGenerator[Dict[str, Any], None]:
-        """
-        Stream a chat response, replaying caller-supplied conversation history.
-
-        There is no server-side session store: the caller sends its own
-        history each turn (see ``ChatRequest.history``) and this method only
-        applies a hard server-side cap (``MAX_HISTORY_TURNS``) so a
-        misbehaving client cannot blow the prompt's token budget.
-
-        Args:
-            query: User query.
-            custom_history: Prior turns as ``{"role", "content"}`` dicts, most
-                recent last. ``None`` means no history is used for this turn.
+        Run the pipeline and yield client events.
 
         Yields:
-            ``{"type": "delta"|"final"|"error", ...}`` events; see
-            :class:`core.agent.response_factory.ChatResponseFactory` for the
-            exact shape of each event type.
+            ``meta`` (ids) first, then ``delta`` events, then one ``done``
+            event with outcome and citations. The assistant message, token
+            usage and any handoff are persisted even if the client disconnects.
         """
-        start_time = time.time()
-        self.service_metrics["total_requests"] += 1
+        async with self._slots:
+            yield {
+                "type": "meta",
+                "conversation_id": str(turn.conversation_id),
+                "message_id": str(turn.assistant_message_id),
+            }
+            streamed: List[str] = []
+            result: Optional[TurnResult] = None
+            try:
+                async for event in self._pipeline.run(turn.request):
+                    if isinstance(event, TurnUsage):
+                        turn.usages.append(event)
+                    elif isinstance(event, TurnDelta):
+                        streamed.append(event.text)
+                        yield {"type": "delta", "text": event.text}
+                    else:
+                        result = event
+            except (asyncio.CancelledError, GeneratorExit):
+                partial = TurnResult(TurnOutcome.ERROR, "".join(streamed), guard_reason=ABORTED_GUARD_REASON)
+                self._persist_in_background(turn, partial)
+                raise
 
-        if not query or not query.strip():
-            yield {"type": "error", "message": "Empty query provided."}
-            return
-        if not self.chatbot_service.api_available:
-            yield {"type": "error", "message": "Chat service is currently unavailable."}
-            return
+            if result is None:
+                logger.error("Chat pipeline ended without a result")
+                result = TurnResult(TurnOutcome.ERROR, "".join(streamed), guard_reason="no_result")
+            handoff_id = await self._persist(turn, result)
+            yield {
+                "type": "done",
+                "outcome": result.outcome.value,
+                # Canned replies (deny/handoff/blocked) arrive only here, never as deltas.
+                "text": result.text,
+                "citations": result.citations,
+                "confidence": result.confidence,
+                "cached": result.cached,
+                "handoff_id": handoff_id,
+            }
 
-        kb = self._load_knowledge_base()
-        if kb is None:
-            yield {"type": "error", "message": "Knowledge base unavailable"}
-            return
-        current_embeddings, current_documents = kb
+    async def answer(self, turn: PreparedTurn) -> Dict[str, Any]:
+        """Non-streaming variant: run the turn and return the ``done`` payload with ids."""
+        done: Dict[str, Any] = {}
+        meta: Dict[str, Any] = {}
+        async for event in self.stream(turn):
+            if event["type"] == "meta":
+                meta = event
+            elif event["type"] == "done":
+                done = event
+        return {**meta, **done}
 
-        max_messages = Config.Chat.MAX_HISTORY_TURNS() * 2
-        history = (custom_history or [])[-max_messages:] if max_messages > 0 else []
+    # ------------------------------------------------------------------
+    # Persistence
+    # ------------------------------------------------------------------
 
-        try:
-            async for event in self.chatbot_service.stream_response_with_history(
-                query,
-                embeddings=current_embeddings,
-                documents=current_documents,
-                history=history,
-            ):
-                yield event
-        except Exception:
-            logger.exception("Streaming chat failed for query: %s", TextUtils.truncate_text(query, 50))
-            self.service_metrics["failed_requests"] += 1
-            yield {"type": "error", "message": "An unexpected error occurred while generating the response."}
-            return
+    def _persist_in_background(self, turn: PreparedTurn, result: TurnResult) -> None:
+        """Save an interrupted turn without awaiting (the request task is being cancelled)."""
+        task = asyncio.create_task(self._persist(turn, result))
+        self._pending_writes.add(task)
+        task.add_done_callback(self._pending_writes.discard)
 
-        self.service_metrics["successful_requests"] += 1
-        processing_time = time.time() - start_time
-        self._update_average_response_time(processing_time)
-        self._performance_monitor.record_request(processing_time, cache_hit=False)
-
-    async def get_chat_response(
-        self, query: str, custom_history: Optional[List[Dict[str, str]]] = None
-    ) -> Dict[str, Any]:
+    async def _persist(self, turn: PreparedTurn, result: TurnResult) -> Optional[str]:
         """
-        Answer a chat query in one shot, replaying caller-supplied history.
-
-        Non-streaming counterpart of :meth:`stream_chat_with_memory` — same
-        validation, knowledge-base loading and history cap, but returns the
-        full answer instead of an async event stream.
-
-        Args:
-            query: User query.
-            custom_history: Prior turns as ``{"role", "content"}`` dicts, most
-                recent last. ``None`` means no history is used for this turn.
+        Store the assistant message, token usage and handoff in one transaction.
 
         Returns:
-            The flat ``{answer, confidence, citations, cached}`` payload.
-
-        Raises:
-            ValueError: The query is empty.
-            RuntimeError: The chat service or knowledge base is unavailable.
+            The new handoff request id, if one was opened.
         """
-        start_time = time.time()
-        self.service_metrics["total_requests"] += 1
-
-        if not query or not query.strip():
-            self.service_metrics["failed_requests"] += 1
-            raise ValueError("Empty query provided.")
-        if not self.chatbot_service.api_available:
-            self.service_metrics["failed_requests"] += 1
-            raise RuntimeError("Chat service is currently unavailable.")
-
-        kb = self._load_knowledge_base()
-        if kb is None:
-            self.service_metrics["failed_requests"] += 1
-            raise RuntimeError("Knowledge base unavailable")
-        current_embeddings, current_documents = kb
-
-        max_messages = Config.Chat.MAX_HISTORY_TURNS() * 2
-        history = (custom_history or [])[-max_messages:] if max_messages > 0 else []
-
+        prompt_tokens = sum(item.usage.prompt_tokens for item in turn.usages)
+        completion_tokens = sum(item.usage.completion_tokens for item in turn.usages)
+        latency_ms = int((time.perf_counter() - turn.started_at) * 1000)
+        handoff = None
         try:
-            result = await self.chatbot_service.get_response_with_history(
-                query,
-                embeddings=current_embeddings,
-                documents=current_documents,
-                history=history,
-            )
+            async with self._database.session() as session:
+                repository = ConversationRepository(session)
+                conversation = await repository.get_conversation(turn.conversation_id)
+                repository.add(
+                    Message(
+                        id=turn.assistant_message_id,
+                        conversation_id=turn.conversation_id,
+                        role="assistant",
+                        content=self._redact(result.text),
+                        outcome=result.outcome.value,
+                        cached=result.cached,
+                        citations=result.citations,
+                        confidence=result.confidence,
+                        model=result.model,
+                        prompt_tokens=prompt_tokens,
+                        completion_tokens=completion_tokens,
+                        latency_ms=latency_ms,
+                        request_id=turn.caller.request_id,
+                        guard_reason=result.guard_reason,
+                    )
+                )
+                await repository.flush()
+                repository.add_all(
+                    [
+                        TokenUsage(
+                            conversation_id=turn.conversation_id,
+                            message_id=turn.assistant_message_id,
+                            end_user_id=turn.caller.end_user_id,
+                            purpose=item.purpose,
+                            provider=item.usage.provider,
+                            model=item.usage.model,
+                            prompt_tokens=item.usage.prompt_tokens,
+                            completion_tokens=item.usage.completion_tokens,
+                        )
+                        for item in turn.usages
+                    ]
+                )
+                if conversation is not None:
+                    conversation.message_count += 1
+                    conversation.last_activity_at = utc_now()
+                    if result.handoff_reason is not None:
+                        handoff = self._handoffs.open_request(
+                            repository, conversation, turn.assistant_message_id, result.handoff_reason.value
+                        )
+                        await repository.flush()
         except Exception:
-            logger.exception("Non-streaming chat failed for query: %s", TextUtils.truncate_text(query, 50))
-            self.service_metrics["failed_requests"] += 1
-            raise
+            logger.exception("Failed to persist chat turn %s", turn.assistant_message_id)
+            return None
 
-        self.service_metrics["successful_requests"] += 1
-        processing_time = time.time() - start_time
-        self._update_average_response_time(processing_time)
-        self._performance_monitor.record_request(
-            processing_time, cache_hit=result.get("cached", False)
+        self._usage.add(turn.caller.end_user_id, prompt_tokens + completion_tokens)
+        self._usage.publish(
+            {
+                "type": "turn",
+                "conversation_id": str(turn.conversation_id),
+                "message_id": str(turn.assistant_message_id),
+                "outcome": result.outcome.value,
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "latency_ms": latency_ms,
+                "model": result.model,
+            }
         )
-        return result
+        if handoff is not None:
+            self._handoffs.notify(handoff)
+            return str(handoff.id)
+        return None
 
-    async def batch_chat(self, queries: List[str]) -> List[Dict[str, Any]]:
-        """
-        Answer several independent queries concurrently, no shared history.
-
-        Each query gets its own retrieval + generation + cache lookup; a
-        failure in one query does not affect the others.
-
-        Args:
-            queries: Questions to answer.
-
-        Returns:
-            One result dict per input query, in the original order — see
-            :class:`models.responses.BatchChatResult` for the shape.
-        """
-        self.service_metrics["total_requests"] += len(queries)
-
-        if not self.chatbot_service.api_available:
-            self.service_metrics["failed_requests"] += len(queries)
-            return [
-                {"query": q, "answer": None, "citations": [], "success": False,
-                 "error": "Chat service is currently unavailable"}
-                for q in queries
-            ]
-
-        kb = self._load_knowledge_base()
-        if kb is None:
-            self.service_metrics["failed_requests"] += len(queries)
-            return [
-                {"query": q, "answer": None, "citations": [], "success": False,
-                 "error": "Knowledge base unavailable"}
-                for q in queries
-            ]
-        embeddings, documents = kb
-
-        start_time = time.time()
-        results = await self.chatbot_service.async_get_batch_responses(queries, embeddings, documents)
-        processing_time = time.time() - start_time
-
-        successful = sum(1 for r in results if r.get("success"))
-        self.service_metrics["successful_requests"] += successful
-        self.service_metrics["failed_requests"] += len(queries) - successful
-        if successful:
-            self._update_average_response_time(processing_time / len(queries))
-        return results
-
-    async def transcribe_audio(
-        self, audio_bytes: bytes, filename: str, content_type: str = "audio/wav"
-    ) -> str:
-        """
-        Transcribe a recorded/uploaded voice query to text.
-
-        Args:
-            audio_bytes: Raw audio file content.
-            filename: Original filename; its extension hints the audio
-                format to the transcription API.
-            content_type: MIME type reported by the client.
-
-        Returns:
-            The transcribed text.
-
-        Raises:
-            RuntimeError: The chat service is currently unavailable.
-            Exception: Propagated from the transcription API on failure.
-        """
-        if not self.chatbot_service.api_available:
-            raise RuntimeError("Chat service is currently unavailable")
-        return await self.chatbot_service.transcribe_audio(audio_bytes, filename, content_type)
+    async def wait_for_pending_writes(self) -> None:
+        """Await background persistence of interrupted turns (shutdown and tests)."""
+        if self._pending_writes:
+            await asyncio.gather(*self._pending_writes, return_exceptions=True)
