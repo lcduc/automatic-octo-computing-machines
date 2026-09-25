@@ -23,8 +23,8 @@ from typing import Any, Dict, List, Optional
 # Local imports
 from config.settings import Config
 from models.metadata import ProcessingMethod
+from utils.text_utils import TextUtils
 from .docling_processor import DoclingProcessor
-from .file_manager import FileManager
 from .processors import (
     BaseProcessor,
     DocumentProcessor,
@@ -45,26 +45,17 @@ class MainDocumentProcessor:
 
     SUPPORTED_EXTENSIONS = set(Config.File.ALLOWED_EXTENSIONS())
 
-    def __init__(
-        self,
-        file_manager=None,
-        enable_ocr: bool = None,  # Deprecated - OCR is now automatic for PDFs
-        llm_client=None,
-        llm_model: str = None,
-    ):
+    def __init__(self, llm_client=None, llm_model: str = None):
         """
-        Initialize main processor with file manager and Docling processor.
-        - PDFs: Automatically OCR'd when they have no extractable text layer
-        - Other formats: Use normal Docling extraction
+        Initialize the Docling processor and the local fallback processors.
+
+        PDFs are OCR'd automatically when they have no extractable text layer;
+        other formats use normal Docling extraction.
 
         Args:
-            file_manager: File manager for handling file operations
-            enable_ocr: Deprecated - OCR is now automatic for PDFs
-            llm_client: OpenAI client for enhanced processing
-            llm_model: LLM model to use for enhanced processing
+            llm_client: OpenAI client for enhanced processing.
+            llm_model: LLM model to use for enhanced processing.
         """
-        self.file_manager = file_manager if file_manager is not None else FileManager()
-
         self.docling_processor = DoclingProcessor(
             enable_ocr=False,  # OCR is now automatic based on file type
             llm_client=llm_client,
@@ -77,6 +68,7 @@ class MainDocumentProcessor:
         #: outage degrades extraction quality rather than rejecting uploads.
         self._fallback_processors = {
             ".txt": TextProcessor(),
+            ".md": TextProcessor(),
             ".pdf": PDFProcessor(),
             ".docx": DocumentProcessor(),
             ".csv": spreadsheet_processor,
@@ -180,19 +172,16 @@ class MainDocumentProcessor:
                     file_content, filename, file_ext
                 )
 
+            documents = [
+                cleaned for cleaned in (TextUtils.clean_chunk_text(doc) for doc in documents) if cleaned.strip()
+            ]
             if not documents:
                 raise ValueError(f"No content could be extracted from {filename}")
-
-            # Save chunks to files for persistence and debugging
-            chunks_dir = await self.file_manager.save_chunks_to_files(
-                documents, filename
-            )
 
             return {
                 "documents": documents,
                 "metadata": {
                     **extra_metadata,
-                    "chunks_directory": chunks_dir,
                     "processing_timestamp": datetime.now().isoformat(),
                     "chunk_size": Config.File.CHUNK_SIZE(),
                     "chunk_overlap": Config.File.CHUNK_OVERLAP(),

@@ -32,7 +32,7 @@ class ModelDownloader:
             models_dir: Target cache directory; defaults to the configured
                 ``MODELS_DIR``.
         """
-        self._models_dir = models_dir or Config.Database.MODELS_DIR()
+        self._models_dir = models_dir or Config.Paths.MODELS_DIR()
 
     def download_embedding_model(self) -> str:
         """Download the configured sentence-transformers embedding model."""

@@ -10,14 +10,16 @@ metadata call rather than a chat completion.
 # Standard library imports
 import logging
 import threading
-from typing import Any, AsyncIterator, Dict, List, Optional
+from typing import Any, AsyncIterator, Dict, List, Optional, Tuple
 
 # Third-party imports
 from openai import AsyncOpenAI, OpenAI, APIConnectionError, APIStatusError
 
 # Local imports
 from config.settings import Config
+from models.llm import LLMResult, LLMUsage, StreamDelta
 from .base_llm_provider import BaseLLMProvider
+from .prompts import SystemPrompts
 
 logger = logging.getLogger(__name__)
 
@@ -33,8 +35,12 @@ class OpenAIClientProvider(BaseLLMProvider):
     provider and not part of :class:`BaseLLMProvider`.
     """
 
+    name = "openai"
+
     #: Retries performed by the SDK before an error is surfaced.
     MAX_RETRIES = 2
+    #: Free moderation model used by the input guard.
+    MODERATION_MODEL = "omni-moderation-latest"
 
     def __init__(self, api_key: Optional[str] = None):
         """
@@ -154,56 +160,67 @@ class OpenAIClientProvider(BaseLLMProvider):
             kwargs["temperature"] = temperature
         return kwargs
 
-    def complete(self, messages: List[Dict[str, Any]], model: Optional[str] = None) -> str:
+    def _usage(self, model: str, usage: Any) -> Optional[LLMUsage]:
+        """Convert the SDK's ``CompletionUsage`` into :class:`LLMUsage`."""
+        if usage is None:
+            return None
+        return LLMUsage(
+            provider=self.name,
+            model=model,
+            prompt_tokens=int(getattr(usage, "prompt_tokens", 0) or 0),
+            completion_tokens=int(getattr(usage, "completion_tokens", 0) or 0),
+        )
+
+    def _default_kwargs(self, model: Optional[str]) -> Dict[str, Any]:
+        """Completion kwargs for ``model`` (the configured answer model by default)."""
+        return self._completion_kwargs(
+            model or Config.LLM.OPENAI_MODEL(),
+            Config.LLM.OPENAI_MAX_TOKENS(),
+            Config.LLM.OPENAI_TEMPERATURE(),
+            Config.LLM.OPENAI_REASONING_EFFORT(),
+        )
+
+    def complete(self, messages: List[Dict[str, Any]], model: Optional[str] = None) -> LLMResult:
         """
-        Run a blocking chat completion and return the assistant text.
+        Run a blocking chat completion.
 
         Args:
             messages: OpenAI-format message list.
             model: Model override; defaults to ``Config.LLM.OPENAI_MODEL()``.
 
         Returns:
-            The assistant message content, stripped (empty string if none).
+            The stripped assistant text and its token usage.
         """
-        response = self.sync_client.chat.completions.create(
-            messages=messages,  # type: ignore[arg-type]
-            **self._completion_kwargs(
-                model or Config.LLM.OPENAI_MODEL(),
-                Config.LLM.OPENAI_MAX_TOKENS(),
-                Config.LLM.OPENAI_TEMPERATURE(),
-                Config.LLM.OPENAI_REASONING_EFFORT(),
-            ),
-        )
+        kwargs = self._default_kwargs(model)
+        response = self.sync_client.chat.completions.create(messages=messages, **kwargs)  # type: ignore[arg-type]
         content = response.choices[0].message.content
-        return content.strip() if content else ""
+        return LLMResult(content.strip() if content else "", self._usage(kwargs["model"], response.usage))
 
-    async def complete_async(
-        self, messages: List[Dict[str, Any]], model: Optional[str] = None
-    ) -> str:
+    async def complete_async(self, messages: List[Dict[str, Any]], model: Optional[str] = None) -> LLMResult:
         """
-        Run a non-blocking chat completion and return the assistant text.
-
-        Async counterpart of :meth:`complete`, used by callers already running
-        on the event loop (e.g. batch processing) so they don't block it.
+        Run a non-blocking chat completion.
 
         Args:
             messages: OpenAI-format message list.
             model: Model override; defaults to ``Config.LLM.OPENAI_MODEL()``.
 
         Returns:
-            The assistant message content, stripped (empty string if none).
+            The stripped assistant text and its token usage.
         """
-        response = await self.async_client.chat.completions.create(
-            messages=messages,  # type: ignore[arg-type]
-            **self._completion_kwargs(
-                model or Config.LLM.OPENAI_MODEL(),
-                Config.LLM.OPENAI_MAX_TOKENS(),
-                Config.LLM.OPENAI_TEMPERATURE(),
-                Config.LLM.OPENAI_REASONING_EFFORT(),
-            ),
-        )
+        kwargs = self._default_kwargs(model)
+        response = await self.async_client.chat.completions.create(messages=messages, **kwargs)  # type: ignore[arg-type]
         content = response.choices[0].message.content
-        return content.strip() if content else ""
+        return LLMResult(content.strip() if content else "", self._usage(kwargs["model"], response.usage))
+
+    async def moderate(self, text: str) -> bool:
+        """
+        Screen text with OpenAI's moderation endpoint (free of charge).
+
+        Returns:
+            True when the text is flagged as harmful.
+        """
+        response = await self.async_client.moderations.create(model=self.MODERATION_MODEL, input=text)
+        return any(result.flagged for result in response.results)
 
     def transcribe(
         self,
@@ -226,7 +243,7 @@ class OpenAIClientProvider(BaseLLMProvider):
                 ``""`` explicitly to let the model auto-detect instead.
             prompt: Style/vocabulary hint that also steers the output
                 language on ambiguous audio; defaults to
-                ``Config.LLM.TRANSCRIPTION_PROMPT()`` when omitted. Pass
+                ``SystemPrompts.TRANSCRIPTION`` when omitted. Pass
                 ``""`` explicitly to send none.
 
         Returns:
@@ -242,7 +259,7 @@ class OpenAIClientProvider(BaseLLMProvider):
         )
         if resolved_language:
             kwargs["language"] = resolved_language
-        resolved_prompt = prompt if prompt is not None else Config.LLM.TRANSCRIPTION_PROMPT()
+        resolved_prompt = prompt if prompt is not None else SystemPrompts.TRANSCRIPTION
         if resolved_prompt:
             kwargs["prompt"] = resolved_prompt
         text = self.sync_client.audio.transcriptions.create(**kwargs)
@@ -253,68 +270,55 @@ class OpenAIClientProvider(BaseLLMProvider):
         messages: List[Dict[str, Any]],
         tools: Optional[List[Dict[str, Any]]] = None,
         model: Optional[str] = None,
-    ) -> Any:
+    ) -> Tuple[Any, Optional[LLMUsage]]:
         """
         Run a non-streaming chat completion, optionally offering tools to call.
 
-        Unlike :meth:`complete_async`, this returns the raw assistant message
-        instead of just its text, so the caller can inspect ``tool_calls``
-        before deciding whether to execute anything. ``tools`` is omitted
-        from the request entirely when empty, rather than sent as ``[]``.
+        Returns the raw assistant message (not just its text) so the caller can
+        inspect ``tool_calls``. ``tools`` is omitted from the request when empty.
 
         Args:
             messages: OpenAI-format message list.
-            tools: Tool schemas (``{"type": "function", "function": {...}}``),
-                or ``None``/empty to make a plain completion.
+            tools: Tool schemas, or ``None``/empty for a plain completion.
             model: Model override; defaults to ``Config.LLM.OPENAI_MODEL()``.
 
         Returns:
-            The assistant ``message`` object (``.content``, ``.tool_calls``).
+            ``(assistant_message, usage)``.
         """
-        kwargs: Dict[str, Any] = dict(
-            messages=messages,
-            **self._completion_kwargs(
-                model or Config.LLM.OPENAI_MODEL(),
-                Config.LLM.OPENAI_MAX_TOKENS(),
-                Config.LLM.OPENAI_TEMPERATURE(),
-                Config.LLM.OPENAI_REASONING_EFFORT(),
-            ),
-        )
+        kwargs: Dict[str, Any] = dict(messages=messages, **self._default_kwargs(model))
         if tools:
             kwargs["tools"] = tools
             kwargs["tool_choice"] = "auto"
         response = await self.async_client.chat.completions.create(**kwargs)
-        return response.choices[0].message
+        return response.choices[0].message, self._usage(kwargs["model"], response.usage)
 
-    async def stream(
-        self, messages: List[Dict[str, Any]], model: Optional[str] = None
-    ) -> AsyncIterator[str]:
+    async def stream(self, messages: List[Dict[str, Any]], model: Optional[str] = None) -> AsyncIterator[StreamDelta]:
         """
-        Stream a chat completion, yielding text deltas as they arrive.
+        Stream a chat completion.
 
         Args:
             messages: OpenAI-format message list.
             model: Model override; defaults to ``Config.LLM.OPENAI_MODEL()``.
 
         Yields:
-            Non-empty content deltas.
+            Non-empty text deltas, then one delta with the usage reported in
+            the final chunk (``stream_options.include_usage``).
         """
+        kwargs = self._default_kwargs(model)
         response_stream = await self.async_client.chat.completions.create(
             messages=messages,  # type: ignore[arg-type]
             stream=True,
-            **self._completion_kwargs(
-                model or Config.LLM.OPENAI_MODEL(),
-                Config.LLM.OPENAI_MAX_TOKENS(),
-                Config.LLM.OPENAI_TEMPERATURE(),
-                Config.LLM.OPENAI_REASONING_EFFORT(),
-            ),
+            stream_options={"include_usage": True},
+            **kwargs,
         )
         async for chunk in response_stream:
+            if chunk.usage is not None:
+                yield StreamDelta(usage=self._usage(kwargs["model"], chunk.usage))
             if not chunk.choices:
                 continue
             content = chunk.choices[0].delta.content
             if content:
-                yield content
+                yield StreamDelta(text=content)
 
     def close(self) -> None:
         """Close both clients and release their connection pools."""

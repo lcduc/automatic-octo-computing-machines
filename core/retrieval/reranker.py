@@ -38,7 +38,7 @@ class Reranker:
         if model_name is None:
             model_name = Config.RAG.RERANKER_MODEL()
         self._model_name = model_name
-        cache_dir = Config.Database.MODELS_DIR()
+        cache_dir = Config.Paths.MODELS_DIR()
 
         if TRANSFORMERS_AVAILABLE:
             candidates = list(dict.fromkeys([model_name, self._EMERGENCY_FALLBACK_MODEL]))
@@ -119,7 +119,24 @@ class Reranker:
         return CrossEncoderWrapper(model, tokenizer)
 
     def available(self) -> bool:
+        """True when a cross-encoder model is loaded."""
         return self._model is not None
+
+    def score(self, query: str, texts: List[str]) -> Optional[List[float]]:
+        """
+        Cross-encoder relevance of each text to the query, in [0, 1].
+
+        Returns:
+            One score per text, or ``None`` when no model is loaded or scoring
+            failed, so the caller falls back to its own ranking signal.
+        """
+        if self._model is None or not texts:
+            return None
+        try:
+            return [float(value) for value in self._model.predict([(query, text) for text in texts])]
+        except Exception:
+            logger.exception("Cross-encoder scoring failed")
+            return None
 
     def rerank(self, query: str, results: List[Dict[str, Any]], top_k: int) -> List[Dict[str, Any]]:
         if not results:

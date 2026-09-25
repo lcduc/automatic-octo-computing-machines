@@ -8,30 +8,18 @@ tool-calling) never both have to run for the same turn.
 
 # Standard library imports
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 # Local imports
 from config.settings import Config
 from models.intent import IntentType
+from models.llm import LLMUsage
 from .base_llm_provider import BaseLLMProvider
+from .history import recent_history
+from .prompts import SystemPrompts
 from .tools.registry import ToolRegistry
 
 logger = logging.getLogger(__name__)
-
-#: Fixed preamble; the "action" bucket's tool list is appended per instance
-#: from the registry so it never drifts out of sync with what is actually
-#: registered (see :meth:`IntentRouter._build_system_prompt`).
-_SYSTEM_PROMPT_TEMPLATE = (
-    "Bạn là bộ phân loại ý định cho một trợ lý ảo. Với câu hỏi/yêu cầu mới nhất "
-    "của người dùng, xác định đây là:\n"
-    "- \"rag\": câu hỏi cần tra cứu thông tin từ tài liệu/kho tri thức để trả lời.\n"
-    "- \"action\": yêu cầu mà một trong các công cụ sau đây có thể thực hiện "
-    "hoặc trả lời:\n"
-    "{tool_descriptions}\n"
-    "Nếu không công cụ nào phù hợp, hãy trả lời \"rag\".\n"
-    "Chỉ trả lời đúng một từ, \"rag\" hoặc \"action\", không kèm giải thích hay "
-    "định dạng khác."
-)
 
 #: Turns of history included when classifying (most recent last).
 _HISTORY_WINDOW = 6
@@ -59,24 +47,21 @@ class IntentRouter:
             f"  - {schema['function']['name']}: {schema['function']['description']}"
             for schema in tool_registry.schemas()
         )
-        return _SYSTEM_PROMPT_TEMPLATE.format(tool_descriptions=descriptions)
+        return SystemPrompts.INTENT_CLASSIFIER.format(tool_descriptions=descriptions)
 
     def _build_messages(
         self, query: str, history: Optional[List[Dict[str, str]]]
     ) -> List[Dict[str, Any]]:
         """Assemble the system prompt, recent history, and the user's turn."""
-        messages: List[Dict[str, Any]] = [{"role": "system", "content": self._system_prompt}]
-        for message in (history or [])[-_HISTORY_WINDOW:]:
-            if isinstance(message, dict) and "role" in message and "content" in message:
-                messages.append(
-                    {"role": str(message["role"]), "content": str(message["content"])}
-                )
-        messages.append({"role": "user", "content": query})
-        return messages
+        return [
+            {"role": "system", "content": self._system_prompt},
+            *recent_history(history, _HISTORY_WINDOW),
+            {"role": "user", "content": query},
+        ]
 
     async def classify(
         self, query: str, history: Optional[List[Dict[str, str]]] = None
-    ) -> IntentType:
+    ) -> Tuple[IntentType, Optional[LLMUsage]]:
         """
         Classify one turn as :attr:`IntentType.RAG` or :attr:`IntentType.ACTION`.
 
@@ -91,23 +76,23 @@ class IntentRouter:
             history: Prior conversation turns, most recent last.
 
         Returns:
-            The classified intent.
+            ``(intent, usage)`` — usage is ``None`` when no call was made.
         """
         if not self._tool_registry.schemas():
-            return IntentType.RAG
+            return IntentType.RAG, None
 
         try:
-            raw = await self._client_provider.complete_async(
+            result = await self._client_provider.complete_async(
                 self._build_messages(query, history),
                 model=Config.LLM.ACTIVE_LIGHT_MODEL(),
             )
         except Exception:
             logger.exception("Intent classification failed; defaulting to RAG")
-            return IntentType.RAG
+            return IntentType.RAG, None
 
-        normalized = raw.strip().lower()
+        normalized = result.text.strip().lower()
         if normalized.startswith(IntentType.ACTION.value):
-            return IntentType.ACTION
+            return IntentType.ACTION, result.usage
         if not normalized.startswith(IntentType.RAG.value):
-            logger.warning("Unrecognized intent classification output %r; defaulting to RAG", raw)
-        return IntentType.RAG
+            logger.warning("Unrecognized intent classification output %r; defaulting to RAG", result.text)
+        return IntentType.RAG, result.usage

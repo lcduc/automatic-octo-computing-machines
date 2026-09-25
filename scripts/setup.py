@@ -4,6 +4,7 @@ Setup script for the RAG chatbot application.
 Handles environment setup, dependency installation, and initial configuration.
 """
 
+import shutil
 import sys
 import subprocess
 from pathlib import Path
@@ -32,9 +33,6 @@ def create_directories():
     """Create necessary directories."""
     print("Creating directories...")
     directories = [
-        "data/chunks",
-        "data/vectors",
-        "data/temp",
         "data/logs",
         "SSL"
     ]
@@ -45,37 +43,12 @@ def create_directories():
 
 
 def setup_environment():
-    """Setup environment variables."""
+    """Create .env from .env.example, the single source of truth for settings."""
     env_file = Path(".env")
     if not env_file.exists():
-        print("Creating .env file...")
-        env_content = """# RAG Chatbot Configuration
-# Copy this file and update the values as needed
-
-# OpenAI Configuration
-OPENAI_API_KEY=your_openai_api_key_here
-OPENAI_MODEL=gpt-5-mini
-OPENAI_LIGHT_MODEL=gpt-4.1-nano
-
-# Server Configuration
-HOST=0.0.0.0
-PORT=8500
-DEBUG=False
-
-# File Processing
-MAX_FILE_SIZE=52428800
-ALLOWED_EXTENSIONS=.txt,.pdf,.docx,.csv,.xlsx
-
-# RAG Configuration
-TOP_K_RESULTS=5
-SIMILARITY_THRESHOLD=0.7
-
-# Logging
-LOG_LEVEL=INFO
-LOG_TO_FILE=True
-"""
-        env_file.write_text(env_content)
-        print("Created .env file - please update with your API keys")
+        print("Creating .env file from .env.example...")
+        shutil.copyfile(".env.example", env_file)
+        print("Created .env file - please update the secrets and APP_ENV")
     else:
         print(".env file already exists")
 

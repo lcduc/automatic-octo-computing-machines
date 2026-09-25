@@ -24,6 +24,9 @@ _embedding_service_instance = None
 #: keep working for Vietnamese queries even in this degraded path.
 _EMERGENCY_FALLBACK_MODEL = "paraphrase-multilingual-MiniLM-L12-v2"
 
+#: Chunks embedded per forward pass during ingestion (fits comfortably in 12GB VRAM).
+PASSAGE_BATCH_SIZE = 32
+
 
 class EmbeddingService:
     """
@@ -51,7 +54,7 @@ class EmbeddingService:
             logger.info("GPU availability for embeddings: %s", gpu_available)
 
             primary_model = Config.LLM.EMBEDDING_MODEL()
-            cache_folder = Config.Database.MODELS_DIR()
+            cache_folder = Config.Paths.MODELS_DIR()
 
             # Both candidates are multilingual (English + Vietnamese, among
             # others) — the fallback must not silently downgrade to an
@@ -124,6 +127,52 @@ class EmbeddingService:
                 del self._embedding_cache[oldest_key]
 
         return embeddings
+
+    @property
+    def model_name(self) -> str:
+        """Configured embedding model; recorded on every stored chunk embedding."""
+        from config.settings import Config
+
+        return Config.LLM.EMBEDDING_MODEL()
+
+    def embed_passages(self, texts, batch_size: int = PASSAGE_BATCH_SIZE):
+        """
+        Embed knowledge chunks for storage.
+
+        Args:
+            texts: Chunk texts.
+            batch_size: Texts encoded per forward pass.
+
+        Returns:
+            ``np.ndarray`` of shape ``(len(texts), dim)``, L2-normalized float32.
+        """
+        import numpy as np
+
+        if not texts:
+            return np.zeros((0, 0), dtype=np.float32)
+        logger.info("Embedding %d passages", len(texts))
+        vectors = self.get_embedder().encode(
+            list(texts),
+            batch_size=batch_size,
+            convert_to_numpy=True,
+            normalize_embeddings=True,
+            show_progress_bar=False,
+        )
+        return vectors.astype(np.float32)
+
+    def embed_query(self, query: str):
+        """
+        Embed a search query, applying the optional query adapter.
+
+        Returns:
+            1-D L2-normalized float32 vector.
+        """
+        import numpy as np
+
+        vector = np.asarray(self.encode([query], convert_to_numpy=True), dtype=np.float32)
+        vector = np.asarray(self.apply_query_adapter(vector), dtype=np.float32).reshape(-1)
+        norm = float(np.linalg.norm(vector))
+        return vector / norm if norm > 0 else vector
 
     # Query adapter (closed-form) support
     _query_adapter_matrix = None

@@ -1,957 +1,344 @@
 """
-RAG-powered conversation engine.
+RAG chat pipeline: answers one user message as a stream of events.
 
-Orchestrates retrieval, prompt assembly, caching, LLM invocation and confidence
-scoring. The mechanics of each of those steps live in dedicated collaborators
-(:mod:`response_cache`, :mod:`base_llm_provider`, :mod:`response_factory` and
-``ContextAssembler``) so this class stays an orchestrator.
+Order of work, cheapest first, so tokens are only spent when they can help:
+
+1. Guardrails (rules + free moderation): block / small talk / human request.
+2. Query rewrite with history (light model) and hybrid retrieval.
+3. No relevant knowledge -> configured fallback (deny text or handoff), no LLM call.
+4. Answer cache.
+5. Grounded answer streamed from the LLM, then confidence and citations.
+
+The pipeline knows nothing about HTTP or the database; ``ChatService``
+persists what it yields.
 """
 
 # Standard library imports
 import asyncio
 import hashlib
 import logging
-import time
-from typing import Any, AsyncGenerator, Dict, List, Optional, Union
+from typing import AsyncIterator, Dict, List, Optional, Union
 
 # Local imports
 from config.settings import Config
-from core.infrastructure.audit_trail_service import AuditTrailService, get_audit_trail_service
-from models.audit_entry import AuditEntry
+from core.guardrails.input_guard import GuardAction, InputGuard
+from core.retrieval.context_builder import ContextAssembler
+from core.retrieval.knowledge_index import KnowledgeIndex
+from core.retrieval.retriever import ContextRetriever
+from models.chat_turn import (
+    FALLBACK_MODE_HANDOFF,
+    HandoffReason,
+    TurnDelta,
+    TurnOutcome,
+    TurnRequest,
+    TurnResult,
+    TurnUsage,
+)
 from models.intent import IntentType
-from models.responses import ChatResponse, ErrorResponse, StatusEnum
-from .confidence import ConfidenceScorer
+from models.knowledge import RetrievedChunk
+from models.llm import StreamDelta
 from .base_llm_provider import BaseLLMProvider
+from .confidence import ConfidenceScorer
+from .history import recent_history
 from .intent_router import IntentRouter
-from .openai_client import OpenAIClientProvider
-from .provider_factory import LLMProviderFactory
-from .prompts import PromptManager
+from .prompts import AutoReplies, PromptManager
 from .query_rewriter import QueryRewriter
 from .response_cache import ResponseCache
-from .response_factory import ChatResponseFactory
 from .tool_calling_agent import ToolCallingAgent
-from .tools.current_time_tool import CurrentTimeTool
-from .tools.registry import ToolRegistry
-from utils.monitor import get_performance_monitor
-from utils.text_utils import TextUtils
 
 logger = logging.getLogger(__name__)
 
-#: User-facing failure text, kept in one place so wording stays consistent.
-UNAVAILABLE_MESSAGE = (
-    "I apologize, but the chat service is currently unavailable. Please try again later."
-)
-TIMEOUT_MESSAGE = (
-    "The AI service is taking too long to respond. Please try again with a simpler question."
-)
-RATE_LIMIT_MESSAGE = "The AI service is currently busy. Please try again in a moment."
-GENERIC_ERROR_MESSAGE = (
-    "I apologize, but I encountered an error while processing your request. "
-    "Please try again later."
-)
+TurnEvent = Union[TurnDelta, TurnUsage, TurnResult]
 
-#: Upper bound on conversation turns replayed into the prompt.
-MAX_HISTORY_MESSAGES = 20
+#: User-facing failure texts (Vietnamese, like the rest of the conversation).
+
+#: Usage purposes recorded with token usage.
+PURPOSE_ANSWER = "answer"
+PURPOSE_REWRITE = "rewrite"
+PURPOSE_INTENT = "intent"
+PURPOSE_TOOL = "tool"
 
 
 class ChatbotService:
     """
-    RAG chatbot facade: retrieval, caching, generation and confidence scoring.
+    Stateless-per-turn orchestrator shared by all requests.
 
-    A single instance is intended to be shared process-wide; it owns the
-    active LLM provider's pooled clients and a response cache that must not
-    be rebuilt per request.
+    Heavy collaborators (models, provider clients, the index) are injected and
+    shared; per-turn state lives only in local variables of :meth:`run`.
     """
 
     def __init__(
         self,
-        context_retriever=None,
-        llm_provider: Optional[BaseLLMProvider] = None,
-        response_cache: Optional[ResponseCache] = None,
-        audit_trail: Optional[AuditTrailService] = None,
+        llm_provider: BaseLLMProvider,
+        retriever: ContextRetriever,
+        index: KnowledgeIndex,
+        guard: InputGuard,
+        cache: ResponseCache,
+        intent_router: Optional[IntentRouter] = None,
+        tool_agent: Optional[ToolCallingAgent] = None,
     ):
         """
         Args:
-            context_retriever: Retriever used for hybrid search; created lazily
-                from the default implementation when omitted.
-            llm_provider: Owner of the chat-completion backend; built from
-                ``Config.LLM.LLM_PROVIDER()`` via :class:`LLMProviderFactory`
-                when omitted.
-            response_cache: Cache of previously generated answers.
-            audit_trail: Recorder for the per-turn audit log; defaults to the
-                process-wide instance.
+            llm_provider: Active chat-completion provider.
+            retriever: Hybrid retriever over the knowledge snapshot.
+            index: Source of the current knowledge snapshot.
+            guard: Input screening.
+            cache: Answer cache.
+            intent_router: Routes action requests to ``tool_agent``; both
+                ``None`` disables tool calling.
+            tool_agent: Tool-calling engine.
         """
-        from core.retrieval.context_builder import ContextAssembler
-        from core.retrieval.retriever import ContextRetriever
-
-        self.context_retriever = context_retriever or ContextRetriever()
-        self.prompt_manager = PromptManager()
-        self.confidence_scorer = ConfidenceScorer()
-        self.context_assembler = ContextAssembler()
-
-        self._llm_provider = llm_provider or LLMProviderFactory.create()
-        # Voice transcription only exists on OpenAI's API; reuse the active
-        # provider's client when it already is one, otherwise a dedicated
-        # instance is built lazily (see `_transcription_provider`) so a
-        # non-OpenAI LLM_PROVIDER doesn't force an unrelated OpenAI client.
-        self._dedicated_transcription_provider: Optional[OpenAIClientProvider] = None
-        self.query_rewriter = QueryRewriter(self._llm_provider)
-        self._tool_registry = ToolRegistry(tools=[CurrentTimeTool()])
-        self._intent_router = IntentRouter(self._llm_provider, self._tool_registry)
-        self._dedicated_tool_calling_provider: Optional[OpenAIClientProvider] = None
-        self._cache = response_cache or ResponseCache(
-            max_entries=Config.LLM.LLM_CACHE_MAX_ENTRIES(),
-            ttl_seconds=Config.LLM.LLM_CACHE_TTL(),
-        )
-        self._audit_trail = audit_trail or get_audit_trail_service()
-        self._responses = ChatResponseFactory(self.confidence_scorer)
-        self._api_available = self._llm_provider.check_availability()
-        self._performance_monitor = get_performance_monitor()
-
-        # Retrieval (embedding + BM25 + cross-encoder rerank) is CPU/GPU-bound
-        # and synchronous; the async paths below run it in a worker thread so
-        # one slow request cannot stall every other concurrent request's event
-        # loop turn. The semaphore caps how many of those run at once so a
-        # burst of concurrent chats cannot exceed the GPU's memory budget.
-        self._retrieval_semaphore = asyncio.Semaphore(Config.RAG.RETRIEVAL_MAX_CONCURRENCY())
+        self._llm = llm_provider
+        self._retriever = retriever
+        self._index = index
+        self._guard = guard
+        self._cache = cache
+        self._intent_router = intent_router
+        self._tool_agent = tool_agent
+        self._rewriter = QueryRewriter(llm_provider)
+        self._prompts = PromptManager()
+        self._assembler = ContextAssembler()
+        self._confidence = ConfidenceScorer()
+        # Retrieval (embedding + BM25 + cross-encoder) is GPU/CPU-bound; this
+        # bounds concurrent runs so a burst cannot exhaust GPU memory.
+        self._retrieval_slots = asyncio.Semaphore(Config.RAG.RETRIEVAL_MAX_CONCURRENCY())
 
     # ------------------------------------------------------------------
-    # Service state
+    # Public API
     # ------------------------------------------------------------------
 
     @property
-    def api_available(self) -> bool:
-        """Whether the active provider's API was reachable at start-up."""
-        return self._api_available
+    def cache(self) -> ResponseCache:
+        """The answer cache (for stats and clearing from the admin web)."""
+        return self._cache
 
-    def get_service_status(self) -> Dict[str, Any]:
-        """Model configuration and cache counters for monitoring endpoints."""
-        cache_stats = self._cache.get_stats()
-        return {
-            "service_available": self.api_available,
-            "provider": Config.LLM.LLM_PROVIDER(),
-            "model": Config.LLM.ACTIVE_MODEL(),
-            "max_tokens": Config.LLM.OPENAI_MAX_TOKENS(),
-            "cache_size": cache_stats["size"],
-            "cache_hits": cache_stats["hits"],
-            "cache_misses": cache_stats["misses"],
-            "cache_hit_rate": cache_stats["hit_rate"],
-        }
-
-    def clear_cache(self) -> Dict[str, Any]:
-        """Empty the answer cache."""
-        cleared = self._cache.clear()
-        logger.info("Cache cleared: %d entries removed", cleared)
-        return {
-            "message": "Cache cleared successfully",
-            "cleared_entries": cleared,
-            "current_cache_size": 0,
-        }
-
-    def cleanup(self) -> None:
-        """Release pooled HTTP connections held by the LLM clients."""
-        self._llm_provider.close()
-        if self._dedicated_transcription_provider is not None:
-            self._dedicated_transcription_provider.close()
-        if self._dedicated_tool_calling_provider is not None:
-            self._dedicated_tool_calling_provider.close()
-        logger.info("ChatbotService cleanup completed")
-
-    # ------------------------------------------------------------------
-    # Speech-to-text
-    # ------------------------------------------------------------------
-
-    def _transcription_provider(self) -> OpenAIClientProvider:
+    async def run(self, request: TurnRequest) -> AsyncIterator[TurnEvent]:
         """
-        Return an OpenAI provider for transcription, regardless of ``LLM_PROVIDER``.
-
-        Voice transcription only exists on OpenAI's API. When the active
-        chat provider already is an ``OpenAIClientProvider`` it is reused
-        directly; otherwise a dedicated instance is built lazily so choosing
-        Anthropic or Gemini for chat doesn't require an unrelated OpenAI
-        client to also be constructed up front.
-
-        Raises:
-            RuntimeError: ``OPENAI_API_KEY`` is not configured, so
-                transcription cannot work under any provider choice.
-        """
-        if hasattr(self._llm_provider, "transcribe"):
-            return self._llm_provider
-        if self._dedicated_transcription_provider is None:
-            self._dedicated_transcription_provider = OpenAIClientProvider()
-        if not self._dedicated_transcription_provider.is_configured:
-            raise RuntimeError("Transcription requires OPENAI_API_KEY to be configured.")
-        return self._dedicated_transcription_provider
-
-    async def transcribe_audio(
-        self,
-        audio_bytes: bytes,
-        filename: str,
-        content_type: str = "audio/wav",
-    ) -> str:
-        """
-        Transcribe a recorded/uploaded audio clip so it can be used as a query.
-
-        Runs the OpenAI SDK's blocking call in a worker thread via
-        ``asyncio.to_thread`` so it does not stall the event loop for the
-        duration of the upload and transcription. Always uses OpenAI's
-        speech-to-text API regardless of the active chat ``LLM_PROVIDER``
-        (see :meth:`_transcription_provider`).
-
-        Args:
-            audio_bytes: Raw audio file content.
-            filename: Original filename; its extension hints the audio
-                format to the API.
-            content_type: MIME type reported by the client.
-
-        Returns:
-            The transcribed text.
-
-        Raises:
-            RuntimeError: ``OPENAI_API_KEY`` is not configured.
-            openai.APITimeoutError, openai.RateLimitError, Exception: propagated
-                from the API call so callers can map them to user-facing text.
-        """
-        provider = self._transcription_provider()
-        logger.info("Transcribing audio upload %s (%d bytes)", filename, len(audio_bytes))
-        text = await asyncio.to_thread(provider.transcribe, audio_bytes, filename, content_type)
-        logger.debug("Transcription complete: %d chars", len(text))
-        return text
-
-    # ------------------------------------------------------------------
-    # Action engine (tool-calling)
-    # ------------------------------------------------------------------
-
-    def _tool_calling_provider(self) -> OpenAIClientProvider:
-        """
-        Return an OpenAI provider for tool-calling, regardless of ``LLM_PROVIDER``.
-
-        Tool-calling is only implemented against OpenAI's API today (see
-        ``base_llm_provider.py``). When the active chat provider already is
-        an ``OpenAIClientProvider`` it is reused directly; otherwise a
-        dedicated instance is built lazily so choosing Anthropic or Gemini
-        for chat doesn't force an unrelated OpenAI client to also be
-        constructed up front.
-
-        Raises:
-            RuntimeError: ``OPENAI_API_KEY`` is not configured, so
-                tool-calling cannot work under any provider choice.
-        """
-        if hasattr(self._llm_provider, "complete_with_tools_async"):
-            return self._llm_provider
-        if self._dedicated_tool_calling_provider is None:
-            self._dedicated_tool_calling_provider = OpenAIClientProvider()
-        if not self._dedicated_tool_calling_provider.is_configured:
-            raise RuntimeError("Tool-calling requires OPENAI_API_KEY to be configured.")
-        return self._dedicated_tool_calling_provider
-
-    # ------------------------------------------------------------------
-    # Internal helpers
-    # ------------------------------------------------------------------
-
-    @staticmethod
-    def _query_id(query: str) -> str:
-        """Short, stable identifier used to correlate log lines for one query."""
-        return hashlib.md5(query.encode("utf-8")).hexdigest()[:8]
-
-    @staticmethod
-    def _effective_rewritten_query(query: str, search_query: Optional[str]) -> Optional[str]:
-        """``search_query`` when it's a real rewrite, ``None`` when nothing changed."""
-        return search_query if search_query and search_query != query else None
-
-    def _create_error_response(self, query: str, error_msg: str) -> ErrorResponse:
-        """Create the standardized error envelope for a failed query."""
-        return ErrorResponse(
-            status=StatusEnum.ERROR,
-            message=error_msg,
-            error_code="LLM_ERROR",
-            details={"query": query},
-        )
-
-    def _retrieve_context(
-        self,
-        query: str,
-        embeddings,
-        documents,
-        history: Optional[List[Dict[str, str]]] = None,
-    ) -> tuple[str, List[Dict[str, Any]], str]:
-        """
-        Run hybrid search and assemble the prompt context.
-
-        The search string is condensed from ``history`` + ``query`` when
-        history is present, so a follow-up like "còn cái kia thì sao?" is
-        searched as a standalone question instead of literally. The original
-        ``query`` is untouched — only the retrieval input changes.
-
-        Returns:
-            A ``(context, search_results, search_query)`` triple; ``context``
-            and ``search_results`` are empty when RAG is not applicable or
-            retrieval fails. ``search_query`` is what was actually searched
-            for (== ``query`` when there was no history to rewrite from), so
-            callers can record it for auditing.
-        """
-        if documents is None or embeddings is None or len(documents) == 0:
-            logger.debug("RAG disabled: no documents or embeddings provided")
-            return "", [], query
-
-        search_query = self.query_rewriter.rewrite(query, history)
-
-        try:
-            search_results = self.context_retriever.hybrid_search(
-                query=search_query,
-                embeddings=embeddings,
-                documents=documents,
-                k=Config.RAG.RETRIEVAL_TOP_K(),
-                semantic_weight=Config.RAG.SEMANTIC_WEIGHT(),
-            )
-            context = self.context_assembler.build(search_results)
-            logger.info(
-                "Retrieved %d chunks (%d context chars) for query %s",
-                len(search_results),
-                len(context),
-                self._query_id(query),
-            )
-            return context, search_results, search_query
-        except Exception:
-            logger.exception("Context retrieval failed for query %s", self._query_id(query))
-            return "", [], search_query
-
-    async def _retrieve_context_async(
-        self,
-        query: str,
-        embeddings,
-        documents,
-        history: Optional[List[Dict[str, str]]] = None,
-    ) -> tuple[str, List[Dict[str, Any]], str]:
-        """
-        Async wrapper around :meth:`_retrieve_context` for use on the event loop.
-
-        Runs the blocking retrieval work in the default thread pool executor,
-        bounded by ``_retrieval_semaphore``, so concurrent chat requests share
-        the GPU/CPU without one request's retrieval blocking every other
-        request's async I/O in the meantime.
-        """
-        async with self._retrieval_semaphore:
-            return await asyncio.to_thread(
-                self._retrieve_context, query, embeddings, documents, history
-            )
-
-    async def _retrieve_context_timed(
-        self,
-        query: str,
-        embeddings,
-        documents,
-        history: Optional[List[Dict[str, str]]] = None,
-    ) -> tuple[str, List[Dict[str, Any]], str, float]:
-        """
-        Run :meth:`_retrieve_context_async` and report its own wall-clock duration.
-
-        Wrapped so the timing reflects retrieval's actual execution window even
-        when the coroutine is scheduled as a background task (e.g. running
-        concurrently with intent classification) and awaited later — measuring
-        around the ``await`` at the call site would otherwise include however
-        long the caller took to get back to it.
-
-        Returns:
-            The usual ``(context, search_results, search_query)`` triple, plus
-            ``retrieval_ms``.
-        """
-        start = time.perf_counter()
-        context, search_results, search_query = await self._retrieve_context_async(
-            query, embeddings, documents, history
-        )
-        return context, search_results, search_query, (time.perf_counter() - start) * 1000
-
-    def _build_messages(
-        self,
-        query: str,
-        context: str,
-        history: Optional[List[Dict[str, str]]] = None,
-    ) -> List[Dict[str, str]]:
-        """
-        Assemble the OpenAI message list: system prompt, history, user turn.
-
-        The system message is static (see :class:`SystemPrompts`), so it is
-        a stable, cacheable prefix; retrieved context is appended to the
-        user turn instead of the system message so it never invalidates
-        that prefix.
-        """
-        messages: List[Dict[str, str]] = [
-            {
-                "role": "system",
-                "content": self.prompt_manager.get_system_prompt(),
-            }
-        ]
-        if history:
-            for message in history[-MAX_HISTORY_MESSAGES:]:
-                if isinstance(message, dict) and "role" in message and "content" in message:
-                    messages.append(
-                        {"role": str(message["role"]), "content": str(message["content"])}
-                    )
-        messages.append(
-            {"role": "user", "content": self.prompt_manager.build_context_block(str(query), context)}
-        )
-        return messages
-
-    def _complete(
-        self,
-        query: str,
-        context: str,
-        history: Optional[List[Dict[str, str]]] = None,
-    ) -> tuple[str, bool]:
-        """
-        Return an answer for the query, from cache when possible.
-
-        Returns:
-            A ``(response_text, was_cached)`` pair.
-
-        Raises:
-            Exception: propagated from the active provider's API call so
-                callers can map it to user-facing text via :meth:`_map_api_error`.
-        """
-        cache_key = ResponseCache.build_key(query, context, history)
-        cached = self._cache.get(cache_key)
-        if cached is not None:
-            logger.debug("Cache hit for query %s", self._query_id(query))
-            return cached, True
-
-        messages = self._build_messages(query, context, history)
-        response_text = self._llm_provider.complete(messages)
-        self._cache.set(cache_key, response_text)
-        return response_text, False
-
-    async def _complete_async(
-        self,
-        query: str,
-        context: str,
-        history: Optional[List[Dict[str, str]]] = None,
-    ) -> tuple[str, bool]:
-        """Async counterpart of :meth:`_complete`, for callers on the event loop."""
-        cache_key = ResponseCache.build_key(query, context, history)
-        cached = self._cache.get(cache_key)
-        if cached is not None:
-            logger.debug("Cache hit for query %s", self._query_id(query))
-            return cached, True
-
-        messages = self._build_messages(query, context, history)
-        response_text = await self._llm_provider.complete_async(messages)
-        self._cache.set(cache_key, response_text)
-        return response_text, False
-
-    def _score(self, response_text: str, query: str, context: str, search_results):
-        """Compute the confidence breakdown for a generated answer."""
-        return self.confidence_scorer.calculate_confidence(
-            response_text, query, context, search_results or []
-        )
-
-    def _record_audit(
-        self,
-        query: str,
-        response_text: str,
-        confidence,
-        search_results: Optional[List[Dict[str, Any]]],
-        cached: bool,
-        latency_ms: float,
-        success: bool,
-        error: Optional[str] = None,
-        rewritten_query: Optional[str] = None,
-        intent_ms: Optional[float] = None,
-        retrieval_ms: Optional[float] = None,
-        generation_ms: Optional[float] = None,
-    ) -> None:
-        """
-        Record one audit trail entry for an answered (or failed) turn, and feed
-        the live performance monitor with the same stage breakdown.
-
-        Never raises: a logging problem here must not affect the response
-        already produced for the user.
-        """
-        query_id = self._query_id(query)
-        self._performance_monitor.record_stage_timings(
-            latency_ms,
-            query_id=query_id,
-            intent_ms=intent_ms,
-            retrieval_ms=retrieval_ms,
-            generation_ms=generation_ms,
-        )
-
-        if not Config.Audit.ENABLED():
-            return
-        try:
-            confidence_score = confidence.overall_score if confidence is not None else 0.0
-            confidence_level = (
-                self.confidence_scorer.get_confidence_level(confidence_score)
-                if confidence is not None
-                else "Unknown"
-            )
-            entry = AuditEntry(
-                query_id=query_id,
-                query=query,
-                rewritten_query=self._effective_rewritten_query(query, rewritten_query),
-                response=response_text,
-                confidence_score=confidence_score,
-                confidence_level=confidence_level,
-                source_count=len(search_results or []),
-                cached=cached,
-                latency_ms=latency_ms,
-                success=success,
-                error=error,
-                intent_ms=intent_ms,
-                retrieval_ms=retrieval_ms,
-                generation_ms=generation_ms,
-            )
-            self._audit_trail.record(entry)
-        except Exception:
-            logger.exception("Failed to build audit entry for query %s", query_id)
-
-    @staticmethod
-    def _classify_error(exc: Exception) -> str:
-        """
-        Categorize a provider SDK exception without depending on any one
-        SDK's exception hierarchy, so OpenAI, Anthropic and Gemini errors
-        are all mapped to the same set of user-facing categories.
-
-        Returns:
-            One of ``"timeout"``, ``"rate_limit"``, ``"connection"``,
-            ``"status"`` or ``"generic"``.
-        """
-        if isinstance(exc, (ConnectionResetError, OSError)):
-            return "connection"
-        exc_name = type(exc).__name__
-        status_code = getattr(exc, "status_code", None) or getattr(exc, "code", None)
-        if "Timeout" in exc_name:
-            return "timeout"
-        if "RateLimit" in exc_name or status_code == 429:
-            return "rate_limit"
-        if "Connection" in exc_name:
-            return "connection"
-        if status_code is not None:
-            return "status"
-        return "generic"
-
-    @staticmethod
-    def _map_api_error(exc: Exception) -> str:
-        """Translate a provider SDK exception into user-facing text."""
-        category = ChatbotService._classify_error(exc)
-        if category == "timeout":
-            return TIMEOUT_MESSAGE
-        if category == "rate_limit":
-            return RATE_LIMIT_MESSAGE
-        return f"AI service error: {exc}"
-
-    # ------------------------------------------------------------------
-    # Query-only generation
-    # ------------------------------------------------------------------
-
-    def get_response_with_context(
-        self,
-        query: str,
-        context: str,
-        search_results: Optional[List[Dict[str, Any]]] = None,
-    ) -> Union[ChatResponse, ErrorResponse]:
-        """
-        Generate an answer from a pre-built context (no retrieval performed).
-
-        Args:
-            query: User query.
-            context: Context block already assembled by the caller.
-            search_results: Retrieved chunks, used for confidence scoring.
-
-        Returns:
-            A ``ChatResponse`` on success, otherwise an ``ErrorResponse``.
-        """
-        if not self.api_available:
-            return self._create_error_response(query, UNAVAILABLE_MESSAGE)
-
-        start_time = time.perf_counter()
-
-        try:
-            response_text, cached = self._complete(query, context)
-        except Exception as exc:
-            logger.exception("OpenAI call failed for query %s", self._query_id(query))
-            self._record_audit(
-                query, "", None, search_results, cached=False,
-                latency_ms=(time.perf_counter() - start_time) * 1000,
-                success=False, error=str(exc),
-            )
-            return self._create_error_response(query, self._map_api_error(exc))
-
-        try:
-            confidence = self._score(response_text, query, context, search_results)
-            self._record_audit(
-                query, response_text, confidence, search_results, cached=cached,
-                latency_ms=(time.perf_counter() - start_time) * 1000,
-                success=True,
-            )
-            return self._responses.chat_response(
-                query, response_text, confidence, search_results, cached
-            )
-        except Exception:
-            logger.exception("Failed to assemble response for query %s", self._query_id(query))
-            return self._create_error_response(query, GENERIC_ERROR_MESSAGE)
-
-    def get_response(
-        self, query: str, embeddings=None, documents=None
-    ) -> Union[ChatResponse, ErrorResponse]:
-        """
-        Retrieve context for the query and generate an answer.
-
-        Args:
-            query: User query.
-            embeddings: Corpus embeddings for semantic search.
-            documents: Corpus documents aligned with ``embeddings``.
-
-        Returns:
-            A ``ChatResponse`` on success, otherwise an ``ErrorResponse``.
-        """
-        if not self.api_available:
-            return self._create_error_response(query, UNAVAILABLE_MESSAGE)
-
-        context, search_results, _ = self._retrieve_context(query, embeddings, documents)
-        return self.get_response_with_context(query, context, search_results)
-
-    # ------------------------------------------------------------------
-    # Async generation (used by batch processing)
-    # ------------------------------------------------------------------
-
-    async def async_get_response(
-        self, query: str, embeddings=None, documents=None
-    ) -> Dict[str, Any]:
-        """
-        Async, cache-aware, one-shot RAG query — the building block for batches.
-
-        Args:
-            query: User query.
-            embeddings: Corpus embeddings for semantic search.
-            documents: Corpus documents aligned with ``embeddings``.
-
-        Returns:
-            The history payload dict shape, with ``cached`` reflecting cache use.
-        """
-        if not self.api_available:
-            return ChatResponseFactory.history_error_payload(UNAVAILABLE_MESSAGE)
-
-        context, search_results, _ = await self._retrieve_context_async(query, embeddings, documents)
-        try:
-            response_text, cached = await self._complete_async(query, context)
-            confidence = self._score(response_text, query, context, search_results)
-            return self._responses.history_payload(
-                response_text, confidence, search_results, cached
-            )
-        except Exception as exc:
-            logger.exception("Async generation failed for query %s", self._query_id(query))
-            return ChatResponseFactory.history_error_payload(self._map_api_error(exc))
-
-    def _batch_failure(self, query: str, error: str) -> Dict[str, Any]:
-        """Build the batch result entry for a query that could not be answered at all."""
-        return {
-            "query": query,
-            "answer": None,
-            "citations": [],
-            "success": False,
-            "error": error,
-        }
-
-    async def async_get_batch_responses(
-        self, queries: List[str], embeddings=None, documents=None
-    ) -> List[Dict[str, Any]]:
-        """
-        Answer several queries concurrently on the event loop.
-
-        Args:
-            queries: Queries to answer.
-            embeddings: Corpus embeddings for semantic search.
-            documents: Corpus documents aligned with ``embeddings``.
-
-        Returns:
-            One result dict per input query, in the original order.
-        """
-        if not queries:
-            return []
-        if not self.api_available:
-            return [self._batch_failure(query, "Service unavailable") for query in queries]
-
-        logger.info("Processing %d queries concurrently (async)", len(queries))
-        tasks = [self.async_get_response(query, embeddings, documents) for query in queries]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-
-        payloads: List[Dict[str, Any]] = []
-        for query, result in zip(queries, results):
-            if isinstance(result, Exception):
-                logger.error("Error processing query '%s': %s", TextUtils.truncate_text(query, 30), result)
-                payloads.append(self._batch_failure(query, str(result)))
-            else:
-                result["query"] = query
-                payloads.append(result)
-        return payloads
-
-    async def get_response_with_history(
-        self,
-        query: str,
-        embeddings=None,
-        documents=None,
-        history: Optional[List[Dict[str, str]]] = None,
-    ) -> Dict[str, Any]:
-        """
-        Answer a query in one shot, replaying conversation history.
-
-        Non-streaming counterpart of :meth:`stream_response_with_history`:
-        same retrieval/cache/confidence pipeline, but returns the full
-        answer instead of an event stream, so callers get ordinary HTTP
-        status codes on failure instead of an in-band ``error`` event.
-
-        Args:
-            query: User query.
-            embeddings: Corpus embeddings for semantic search.
-            documents: Corpus documents aligned with ``embeddings``.
-            history: Prior conversation turns.
-
-        Returns:
-            The flat ``{answer, confidence, citations, cached}`` payload.
-
-        Raises:
-            RuntimeError: The chat service is currently unavailable.
-            Exception: Propagated from the active provider's API call.
-        """
-        if not self.api_available:
-            raise RuntimeError(UNAVAILABLE_MESSAGE)
-
-        start_time = time.perf_counter()
-        # Kicked off unconditionally, before intent is known: retrieval doesn't
-        # depend on the rag/action decision, so overlapping it with the intent
-        # classification call (when tool-calling is enabled) saves that call's
-        # latency off the critical path for the common "rag" outcome instead of
-        # paying for it strictly before retrieval even starts.
-        retrieval_task = asyncio.create_task(
-            self._retrieve_context_timed(query, embeddings, documents, history)
-        )
-        intent_ms: Optional[float] = None
-
-        if Config.LLM.TOOL_CALLING_ENABLED():
-            intent_start = time.perf_counter()
-            intent = await self._intent_router.classify(query, history)
-            intent_ms = (time.perf_counter() - intent_start) * 1000
-            if intent == IntentType.ACTION:
-                try:
-                    tool_provider = self._tool_calling_provider()
-                except RuntimeError as exc:
-                    logger.warning(
-                        "Tool-calling unavailable (%s); falling back to RAG for this turn", exc
-                    )
-                else:
-                    # The retrieval result won't be used on this branch. Its
-                    # thread-pool work can't actually be interrupted (asyncio
-                    # can only stop *waiting* on a to_thread call, not the
-                    # thread itself), so this only stops us from awaiting it.
-                    retrieval_task.cancel()
-                    gen_start = time.perf_counter()
-                    agent = ToolCallingAgent(tool_provider, self._tool_registry, self.query_rewriter)
-                    chunks = [delta async for delta in agent.stream(query, history)]
-                    generation_ms = (time.perf_counter() - gen_start) * 1000
-                    response_text = "".join(chunks)
-                    self._record_audit(
-                        query, response_text, None, [], cached=False,
-                        latency_ms=(time.perf_counter() - start_time) * 1000,
-                        success=True, rewritten_query=query,
-                        intent_ms=intent_ms, generation_ms=generation_ms,
-                    )
-                    return self._responses.flat_response_payload(
-                        response_text, None, [], cached=False, rewritten_query=None
-                    )
-
-        context, search_results, search_query, retrieval_ms = await retrieval_task
-        rewritten_query = self._effective_rewritten_query(query, search_query)
-
-        try:
-            gen_start = time.perf_counter()
-            response_text, cached = await self._complete_async(query, context, history)
-            generation_ms = (time.perf_counter() - gen_start) * 1000
-        except Exception as exc:
-            logger.exception("Non-streaming generation failed for query %s", self._query_id(query))
-            self._record_audit(
-                query, "", None, search_results, cached=False,
-                latency_ms=(time.perf_counter() - start_time) * 1000,
-                success=False, error=str(exc), rewritten_query=search_query,
-                intent_ms=intent_ms, retrieval_ms=retrieval_ms,
-            )
-            raise
-
-        confidence = self._score(response_text, query, context, search_results)
-        self._record_audit(
-            query, response_text, confidence, search_results, cached=cached,
-            latency_ms=(time.perf_counter() - start_time) * 1000,
-            success=True, rewritten_query=search_query,
-            intent_ms=intent_ms, retrieval_ms=retrieval_ms, generation_ms=generation_ms,
-        )
-        return self._responses.flat_response_payload(
-            response_text, confidence, search_results, cached, rewritten_query=rewritten_query
-        )
-
-    async def stream_response_with_history(
-        self,
-        query: str,
-        embeddings=None,
-        documents=None,
-        history: Optional[List[Dict[str, str]]] = None,
-    ) -> AsyncGenerator[Dict[str, Any], None]:
-        """
-        Stream an answer as JSON events, replaying conversation history.
-
-        Checks the answer cache first (keyed on query + context + history): on
-        a hit the cached text is yielded immediately instead of calling the
-        LLM, which is the only place a repeated question actually saves a
-        request, since this is the sole path the live ``/chat/`` route uses.
-
-        Args:
-            query: User query.
-            embeddings: Corpus embeddings for semantic search.
-            documents: Corpus documents aligned with ``embeddings``.
-            history: Prior conversation turns.
+        Answer one message.
 
         Yields:
-            ``{"type": "delta", "answer": {"text": ...}}`` events as the
-            answer is generated, followed by one ``{"type": "final", ...}``
-            event carrying confidence and citations, or a single
-            ``{"type": "error", "message": ...}`` event when generation fails.
+            ``TurnDelta`` text pieces, ``TurnUsage`` records and exactly one
+            final ``TurnResult``. Never raises for provider/retrieval failures:
+            they end the stream with an ``ERROR`` result carrying a safe message.
         """
-        if not self.api_available:
-            yield self._responses.stream_error_event("Chat service unavailable.")
+        deadline = asyncio.get_running_loop().time() + Config.LLM.TURN_TIMEOUT_SECONDS()
+        streamed: List[str] = []
+        try:
+            async for event in self._run(request, deadline):
+                if isinstance(event, TurnDelta):
+                    streamed.append(event.text)
+                yield event
+        except asyncio.TimeoutError:
+            logger.warning("Chat turn exceeded %ss", Config.LLM.TURN_TIMEOUT_SECONDS())
+            yield TurnResult(TurnOutcome.ERROR, "".join(streamed) or AutoReplies.TIMEOUT, guard_reason="timeout")
+        except Exception as exc:
+            logger.exception("Chat turn failed")
+            message = AutoReplies.BUSY if self._is_rate_limit(exc) else AutoReplies.ERROR
+            yield TurnResult(TurnOutcome.ERROR, "".join(streamed) or message, guard_reason="error")
+
+    # ------------------------------------------------------------------
+    # Stages
+    # ------------------------------------------------------------------
+
+    async def _run(self, request: TurnRequest, deadline: float) -> AsyncIterator[TurnEvent]:
+        """The pipeline proper; exceptions are mapped by :meth:`run`."""
+        policy = request.policy
+        history = recent_history(request.history, Config.Chat.MAX_HISTORY_TURNS() * 2)
+
+        verdict = await self._guard.check(request.query)
+        if verdict.action == GuardAction.BLOCK:
+            logger.info("Message blocked by guardrails (%s)", verdict.reason)
+            yield TurnResult(TurnOutcome.BLOCKED, policy.guard_block_message, guard_reason=verdict.reason)
+            return
+        if verdict.action == GuardAction.GREETING:
+            yield TurnResult(TurnOutcome.SMALLTALK, policy.greeting_message)
+            return
+        if verdict.action == GuardAction.THANKS:
+            yield TurnResult(TurnOutcome.SMALLTALK, policy.thanks_message)
+            return
+        if verdict.action == GuardAction.HUMAN_REQUESTED and policy.fallback_mode == FALLBACK_MODE_HANDOFF:
+            yield TurnResult(
+                TurnOutcome.HANDOFF, policy.handoff_message, handoff_reason=HandoffReason.USER_REQUEST
+            )
             return
 
-        start_time = time.perf_counter()
-        # See get_response_with_history: started unconditionally so a
-        # tool-calling intent check (when enabled) overlaps with retrieval
-        # instead of strictly preceding it.
-        retrieval_task = asyncio.create_task(
-            self._retrieve_context_timed(query, embeddings, documents, history)
-        )
-        intent_ms: Optional[float] = None
-
-        if Config.LLM.TOOL_CALLING_ENABLED():
-            intent_start = time.perf_counter()
-            intent = await self._intent_router.classify(query, history)
-            intent_ms = (time.perf_counter() - intent_start) * 1000
+        if self._intent_router is not None and self._tool_agent is not None:
+            intent, intent_usage = await self._intent_router.classify(request.query, history)
+            if intent_usage is not None:
+                yield TurnUsage(PURPOSE_INTENT, intent_usage)
             if intent == IntentType.ACTION:
-                try:
-                    tool_provider = self._tool_calling_provider()
-                except RuntimeError as exc:
-                    logger.warning(
-                        "Tool-calling unavailable (%s); falling back to RAG for this turn", exc
-                    )
-                else:
-                    # Retrieval's result is unused on this branch; cancelling
-                    # only stops us from awaiting it (asyncio can't interrupt
-                    # the underlying to_thread call itself).
-                    retrieval_task.cancel()
-                    gen_start = time.perf_counter()
-                    action_chunks: List[str] = []
-                    agent = ToolCallingAgent(tool_provider, self._tool_registry, self.query_rewriter)
-                    async for delta in agent.stream(query, history):
-                        action_chunks.append(delta)
-                        yield self._responses.stream_delta_event(delta)
-                    generation_ms = (time.perf_counter() - gen_start) * 1000
-                    self._record_audit(
-                        query, "".join(action_chunks), None, [], cached=False,
-                        latency_ms=(time.perf_counter() - start_time) * 1000,
-                        success=True, rewritten_query=query,
-                        intent_ms=intent_ms, generation_ms=generation_ms,
-                    )
-                    yield {
-                        "type": "final",
-                        "answer": {"text": ""},
-                        "citations": [],
-                        "rewritten_query": None,
-                    }
-                    return
-
-        search_results: List[Dict[str, Any]] = []
-        search_query = query
-        chunks: List[str] = []
-        retrieval_ms: Optional[float] = None
-
-        def record_failure(error_text: str) -> None:
-            """Audit a failed turn, capturing any partial text already streamed out."""
-            self._record_audit(
-                query,
-                "".join(chunks),
-                None,
-                search_results,
-                cached=False,
-                latency_ms=(time.perf_counter() - start_time) * 1000,
-                success=False,
-                error=error_text,
-                rewritten_query=search_query,
-                intent_ms=intent_ms,
-                retrieval_ms=retrieval_ms,
-            )
-
-        try:
-            context, search_results, search_query, retrieval_ms = await retrieval_task
-            rewritten_query = self._effective_rewritten_query(query, search_query)
-
-            cache_key = ResponseCache.build_key(query, context, history)
-            cached_text = self._cache.get(cache_key)
-            if cached_text is not None:
-                logger.debug("Cache hit for query %s", self._query_id(query))
-                confidence = self._score(cached_text, query, context, search_results)
-                self._record_audit(
-                    query,
-                    cached_text,
-                    confidence,
-                    search_results,
-                    cached=True,
-                    latency_ms=(time.perf_counter() - start_time) * 1000,
-                    success=True,
-                    rewritten_query=search_query,
-                    intent_ms=intent_ms,
-                    retrieval_ms=retrieval_ms,
-                    generation_ms=0.0,
-                )
-                yield self._responses.stream_delta_event(cached_text)
-                yield self._responses.stream_final_event(
-                    cached_text, confidence, search_results, cached=True, rewritten_query=rewritten_query
-                )
+                async for event in self._run_tool_agent(request.query, history, deadline):
+                    yield event
                 return
 
-            messages = self._build_messages(query, context, history)
-            gen_start = time.perf_counter()
-            async for delta in self._llm_provider.stream(messages):
-                chunks.append(delta)
-                yield self._responses.stream_delta_event(delta)
-            generation_ms = (time.perf_counter() - gen_start) * 1000
-            response_text = "".join(chunks)
-            self._cache.set(cache_key, response_text)
+        search_query, rewrite_usage = await self._rewriter.rewrite(request.query, history)
+        if rewrite_usage is not None:
+            yield TurnUsage(PURPOSE_REWRITE, rewrite_usage)
+        rewritten = search_query if search_query != request.query else None
 
-            confidence = self._score(response_text, query, context, search_results)
-            self._record_audit(
-                query,
-                response_text,
-                confidence,
-                search_results,
-                cached=False,
-                latency_ms=(time.perf_counter() - start_time) * 1000,
-                success=True,
-                rewritten_query=search_query,
-                intent_ms=intent_ms,
-                retrieval_ms=retrieval_ms,
-                generation_ms=generation_ms,
+        results = await self._retrieve(search_query, request.sources, deadline)
+        matched = [item for item in results if item.matched]
+        if not matched:
+            yield self._fallback(request, rewritten)
+            return
+
+        documents_block = self._assembler.build(results, Config.LLM.MAX_CONTEXT_LENGTH())
+        system_prompt = self._prompts.get_system_prompt(policy.assistant_instructions)
+        cache_key = ResponseCache.build_key(
+            request.query, documents_block, history, self._cache_namespace(system_prompt)
+        )
+        citations = self._citations(matched)
+
+        cached_answer = self._cache.get(cache_key)
+        if cached_answer is not None:
+            yield TurnDelta(cached_answer)
+            yield TurnResult(
+                TurnOutcome.ANSWERED,
+                cached_answer,
+                citations=citations,
+                confidence=self._score(cached_answer, request.query, documents_block, matched),
+                cached=True,
+                model=Config.LLM.ACTIVE_MODEL(),
+                rewritten_query=rewritten,
             )
-            yield self._responses.stream_final_event(
-                response_text, confidence, search_results, cached=False, rewritten_query=rewritten_query
+            return
+
+        messages = [
+            {"role": "system", "content": system_prompt},
+            *history,
+            {"role": "user", "content": self._prompts.build_user_turn(request.query, documents_block)},
+        ]
+        pieces: List[str] = []
+        async for delta in self._with_deadline(self._llm.stream(messages), deadline):
+            if delta.usage is not None:
+                yield TurnUsage(PURPOSE_ANSWER, delta.usage)
+            if delta.text:
+                pieces.append(delta.text)
+                yield TurnDelta(delta.text)
+
+        answer = "".join(pieces).strip()
+        if not answer:
+            # An empty completion (e.g. a provider-side safety block) is no answer.
+            yield self._fallback(request, rewritten)
+            return
+        self._cache.set(cache_key, answer)
+        yield TurnResult(
+            TurnOutcome.ANSWERED,
+            answer,
+            citations=citations,
+            confidence=self._score(answer, request.query, documents_block, matched),
+            model=Config.LLM.ACTIVE_MODEL(),
+            rewritten_query=rewritten,
+        )
+
+    async def _run_tool_agent(
+        self, query: str, history: List[Dict[str, str]], deadline: float
+    ) -> AsyncIterator[TurnEvent]:
+        """Answer an action request through the tool-calling agent."""
+        pieces: List[str] = []
+        async for delta in self._with_deadline(self._tool_agent.stream(query, history), deadline):
+            if delta.usage is not None:
+                yield TurnUsage(PURPOSE_TOOL, delta.usage)
+            if delta.text:
+                pieces.append(delta.text)
+                yield TurnDelta(delta.text)
+        yield TurnResult(TurnOutcome.ANSWERED, "".join(pieces).strip(), model=Config.LLM.ACTIVE_MODEL())
+
+    async def _retrieve(self, query: str, sources, deadline: float) -> List[RetrievedChunk]:
+        """Run hybrid search in a worker thread, bounded by the retrieval slots and the deadline."""
+        snapshot = self._index.snapshot
+        if snapshot.is_empty:
+            return []
+        async with self._retrieval_slots:
+            return await asyncio.wait_for(
+                asyncio.to_thread(
+                    self._retriever.search,
+                    query,
+                    snapshot,
+                    top_k=Config.RAG.RETRIEVAL_TOP_K(),
+                    semantic_weight=Config.RAG.SEMANTIC_WEIGHT(),
+                    threshold=Config.RAG.SIMILARITY_THRESHOLD(),
+                    max_context_chunks=Config.RAG.MAX_CONTEXT_CHUNKS(),
+                    expansion_radius=Config.RAG.CONTEXT_EXPANSION_RADIUS(),
+                    sources=sources,
+                ),
+                timeout=self._remaining(deadline),
             )
-        except Exception as exc:
-            logger.exception("Error during streaming")
-            record_failure(str(exc))
-            category = self._classify_error(exc)
-            if category == "timeout":
-                yield self._responses.stream_error_event(
-                    "Request timeout - the AI service took too long to respond."
-                )
-            elif category == "connection":
-                yield self._responses.stream_error_event(
-                    f"Connection error: Could not reach the AI service. {exc}"
-                )
-            elif category in ("status", "rate_limit"):
-                yield self._responses.stream_error_event(f"API error: {exc}")
-            else:
-                yield self._responses.stream_error_event(str(exc))
+
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _fallback(request: TurnRequest, rewritten: Optional[str]) -> TurnResult:
+        """The configured no-knowledge reply: deny text or a handoff."""
+        policy = request.policy
+        if policy.fallback_mode == FALLBACK_MODE_HANDOFF:
+            return TurnResult(
+                TurnOutcome.HANDOFF,
+                policy.handoff_message,
+                rewritten_query=rewritten,
+                handoff_reason=HandoffReason.NO_KNOWLEDGE,
+            )
+        return TurnResult(TurnOutcome.DENIED, policy.deny_message, rewritten_query=rewritten)
+
+    def _cache_namespace(self, system_prompt: str) -> str:
+        """Model + prompt + knowledge version, so edits invalidate cached answers."""
+        prompt_digest = hashlib.sha256(system_prompt.encode("utf-8")).hexdigest()[:16]
+        return f"{Config.LLM.ACTIVE_MODEL()}|{prompt_digest}|kb{self._index.snapshot.version}"
+
+    @staticmethod
+    def _citations(matched: List[RetrievedChunk]) -> List[Dict[str, object]]:
+        """One citation per matched document, best first."""
+        best: Dict[str, RetrievedChunk] = {}
+        for item in matched:
+            current = best.get(item.chunk.document_id)
+            if current is None or item.relevance > current.relevance:
+                best[item.chunk.document_id] = item
+        ranked = sorted(best.values(), key=lambda item: item.relevance, reverse=True)
+        return [
+            {
+                "document_id": item.chunk.document_id,
+                "chunk_id": item.chunk.chunk_id,
+                "title": item.chunk.document_title,
+                "source": item.chunk.source,
+                "url": item.chunk.metadata.get("url"),
+                "score": round(item.relevance, 3),
+            }
+            for item in ranked
+        ]
+
+    def _score(self, answer: str, query: str, context: str, matched: List[RetrievedChunk]) -> Optional[float]:
+        """Heuristic answer confidence in [0, 1]; ``None`` if scoring failed."""
+        try:
+            breakdown = self._confidence.calculate_confidence(
+                answer, query, context, [{"combined_score": item.relevance} for item in matched]
+            )
+            return round(float(breakdown.overall_score), 3)
+        except Exception:
+            logger.exception("Confidence scoring failed")
+            return None
+
+    @staticmethod
+    def _remaining(deadline: float) -> float:
+        """Seconds left before the turn deadline (raises when already passed)."""
+        remaining = deadline - asyncio.get_running_loop().time()
+        if remaining <= 0:
+            raise asyncio.TimeoutError()
+        return remaining
+
+    async def _with_deadline(self, stream: AsyncIterator[StreamDelta], deadline: float) -> AsyncIterator[StreamDelta]:
+        """Re-yield ``stream``, failing with ``TimeoutError`` if the next item misses the deadline."""
+        iterator = stream.__aiter__()
+        while True:
+            try:
+                item = await asyncio.wait_for(iterator.__anext__(), timeout=self._remaining(deadline))
+            except StopAsyncIteration:
+                return
+            yield item
+
+    @staticmethod
+    def _is_rate_limit(exc: Exception) -> bool:
+        """True for provider 429 errors, regardless of which SDK raised them."""
+        status = getattr(exc, "status_code", None) or getattr(exc, "code", None)
+        return "RateLimit" in type(exc).__name__ or status == 429

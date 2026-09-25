@@ -20,12 +20,16 @@ from google.genai import errors, types
 
 # Local imports
 from config.settings import Config
+from models.llm import LLMResult, LLMUsage, StreamDelta
 from .base_llm_provider import BaseLLMProvider
 
 logger = logging.getLogger(__name__)
 
 #: Gemini's role name for assistant turns; the app's message lists use "assistant".
 _MODEL_ROLE = "model"
+
+#: ``HttpOptions.timeout`` is expressed in milliseconds.
+MILLISECONDS_PER_SECOND = 1000
 
 
 class GeminiClientProvider(BaseLLMProvider):
@@ -36,6 +40,8 @@ class GeminiClientProvider(BaseLLMProvider):
     (``client.models``) and the asyncio surface (``client.aio.models``), so
     unlike the OpenAI/Anthropic providers there is only one client to own.
     """
+
+    name = "gemini"
 
     def __init__(self, api_key: Optional[str] = None):
         """
@@ -57,7 +63,12 @@ class GeminiClientProvider(BaseLLMProvider):
         if self._client is None:
             with self._lock:
                 if self._client is None:
-                    self._client = genai.Client(api_key=self._api_key)
+                    self._client = genai.Client(
+                        api_key=self._api_key,
+                        http_options=types.HttpOptions(
+                            timeout=Config.LLM.GEMINI_TIMEOUT() * MILLISECONDS_PER_SECOND
+                        ),
+                    )
         return self._client
 
     def check_availability(self) -> bool:
@@ -129,68 +140,92 @@ class GeminiClientProvider(BaseLLMProvider):
             max_output_tokens=Config.LLM.GEMINI_MAX_TOKENS(),
         )
 
-    def complete(self, messages: List[Dict[str, Any]], model: Optional[str] = None) -> str:
+    def _usage(self, model: str, metadata: Any) -> Optional[LLMUsage]:
         """
-        Run a blocking chat completion and return the assistant text.
+        Convert ``usage_metadata`` into :class:`LLMUsage`.
+
+        Thinking tokens are billed as output, so they count as completion tokens.
+        """
+        if metadata is None:
+            return None
+        completion = (getattr(metadata, "candidates_token_count", 0) or 0) + (
+            getattr(metadata, "thoughts_token_count", 0) or 0
+        )
+        return LLMUsage(
+            provider=self.name,
+            model=model,
+            prompt_tokens=int(getattr(metadata, "prompt_token_count", 0) or 0),
+            completion_tokens=int(completion),
+        )
+
+    @staticmethod
+    def _safe_text(response: Any) -> str:
+        """
+        Text of a response, or ``""`` when the candidate was blocked.
+
+        ``response.text`` is ``None`` (or raises) for safety-blocked or empty
+        candidates; that must degrade to an empty answer, not a crash.
+        """
+        try:
+            return response.text or ""
+        except Exception:
+            logger.warning("Gemini returned no usable text (blocked or empty candidate)")
+            return ""
+
+    def complete(self, messages: List[Dict[str, Any]], model: Optional[str] = None) -> LLMResult:
+        """
+        Run a blocking chat completion.
 
         Args:
             messages: OpenAI-format message list.
             model: Model override; defaults to ``Config.LLM.GEMINI_MODEL()``.
-
-        Returns:
-            The assistant message text, stripped (empty string if none).
         """
         system_instruction, contents = self._to_contents(messages)
+        resolved_model = model or Config.LLM.GEMINI_MODEL()
         response = self.client.models.generate_content(
-            model=model or Config.LLM.GEMINI_MODEL(),
-            contents=contents,
-            config=self._build_config(system_instruction),
+            model=resolved_model, contents=contents, config=self._build_config(system_instruction)
         )
-        return response.text.strip() if response.text else ""
+        return LLMResult(self._safe_text(response).strip(), self._usage(resolved_model, response.usage_metadata))
 
-    async def complete_async(
-        self, messages: List[Dict[str, Any]], model: Optional[str] = None
-    ) -> str:
+    async def complete_async(self, messages: List[Dict[str, Any]], model: Optional[str] = None) -> LLMResult:
         """
-        Run a non-blocking chat completion and return the assistant text.
+        Run a non-blocking chat completion.
 
         Args:
             messages: OpenAI-format message list.
             model: Model override; defaults to ``Config.LLM.GEMINI_MODEL()``.
-
-        Returns:
-            The assistant message text, stripped (empty string if none).
         """
         system_instruction, contents = self._to_contents(messages)
+        resolved_model = model or Config.LLM.GEMINI_MODEL()
         response = await self.client.aio.models.generate_content(
-            model=model or Config.LLM.GEMINI_MODEL(),
-            contents=contents,
-            config=self._build_config(system_instruction),
+            model=resolved_model, contents=contents, config=self._build_config(system_instruction)
         )
-        return response.text.strip() if response.text else ""
+        return LLMResult(self._safe_text(response).strip(), self._usage(resolved_model, response.usage_metadata))
 
-    async def stream(
-        self, messages: List[Dict[str, Any]], model: Optional[str] = None
-    ) -> AsyncIterator[str]:
+    async def stream(self, messages: List[Dict[str, Any]], model: Optional[str] = None) -> AsyncIterator[StreamDelta]:
         """
-        Stream a chat completion, yielding text deltas as they arrive.
+        Stream a chat completion.
 
         Args:
             messages: OpenAI-format message list.
             model: Model override; defaults to ``Config.LLM.GEMINI_MODEL()``.
 
         Yields:
-            Non-empty text deltas.
+            Non-empty text deltas, then one delta with the last reported usage.
         """
         system_instruction, contents = self._to_contents(messages)
+        resolved_model = model or Config.LLM.GEMINI_MODEL()
         response_stream = await self.client.aio.models.generate_content_stream(
-            model=model or Config.LLM.GEMINI_MODEL(),
-            contents=contents,
-            config=self._build_config(system_instruction),
+            model=resolved_model, contents=contents, config=self._build_config(system_instruction)
         )
+        usage_metadata = None
         async for chunk in response_stream:
-            if chunk.text:
-                yield chunk.text
+            if chunk.usage_metadata is not None:
+                usage_metadata = chunk.usage_metadata
+            text = self._safe_text(chunk)
+            if text:
+                yield StreamDelta(text=text)
+        yield StreamDelta(usage=self._usage(resolved_model, usage_metadata))
 
     def close(self) -> None:
         """

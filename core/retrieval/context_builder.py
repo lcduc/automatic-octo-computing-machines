@@ -1,57 +1,83 @@
 """
-Assembles retrieved chunks into the context string handed to the LLM.
+Renders retrieved chunks into the ``<document>`` blocks handed to the LLM.
 
-The same "label each chunk, join, truncate to budget" logic was previously
-repeated in the chatbot service and the chat service; both now call this.
+Each chunk is labelled with its source category, document title and scalar
+metadata (url, effective date, …) so the model can weigh and cite sources.
+Whole chunks are dropped once the character budget is reached instead of
+cutting one mid-sentence.
 """
 
 # Standard library imports
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 # Local imports
-from config.settings import Config
+from models.knowledge import RetrievedChunk
 
 logger = logging.getLogger(__name__)
 
+#: Metadata values longer than this are not worth spending prompt tokens on.
+MAX_METADATA_VALUE_LENGTH = 200
+#: At most this many metadata attributes are rendered per chunk.
+MAX_METADATA_ATTRIBUTES = 8
+#: Internal keys never shown to the model.
+HIDDEN_METADATA_KEYS = {"filename"}
+
+
+def _attribute(value: Any) -> str:
+    """Render a value safely inside a double-quoted XML-like attribute."""
+    return str(value).replace("&", "&amp;").replace('"', "&quot;").replace("<", "&lt;").replace("\n", " ")
+
 
 class ContextAssembler:
-    """Turns ranked search results into a single, budget-bounded context block."""
+    """Turns ranked chunks into a single, budget-bounded documents block."""
 
-    #: Template applied to each retrieved chunk.
-    CHUNK_TEMPLATE = "[Chunk {index}]\n{document}\n"
+    def _metadata_attributes(self, metadata: Dict[str, Any]) -> str:
+        """Scalar, short metadata rendered as attributes."""
+        rendered = []
+        for key, value in metadata.items():
+            if key in HIDDEN_METADATA_KEYS or not isinstance(value, (str, int, float, bool)):
+                continue
+            text = str(value)
+            if not text or len(text) > MAX_METADATA_VALUE_LENGTH or not key.replace("_", "").isalnum():
+                continue
+            rendered.append(f'{key}="{_attribute(text)}"')
+            if len(rendered) >= MAX_METADATA_ATTRIBUTES:
+                break
+        return (" " + " ".join(rendered)) if rendered else ""
 
-    def build(
-        self,
-        search_results: Optional[List[Dict[str, Any]]],
-        max_length: Optional[int] = None,
-    ) -> str:
+    def render_chunk(self, number: int, item: RetrievedChunk) -> str:
+        """One ``<document>`` element for a chunk."""
+        chunk = item.chunk
+        # A chunk containing a closing tag must not be able to end its own element.
+        body = chunk.content.replace("</document", "<\\/document")
+        return (
+            f'<document id="{number}" source="{_attribute(chunk.source)}" '
+            f'title="{_attribute(chunk.document_title)}"{self._metadata_attributes(chunk.metadata)}>\n'
+            f"{body}\n</document>"
+        )
+
+    def build(self, results: List[RetrievedChunk], max_length: int) -> str:
         """
-        Build the context string for a set of retrieved chunks.
+        Build the documents block.
 
         Args:
-            search_results: Ranked chunks, each with ``index`` and ``document``.
-            max_length: Character budget; falls back to ``MAX_CONTEXT_LENGTH``.
+            results: Chunks in the order they should be read.
+            max_length: Character budget; the first chunk is truncated only if
+                it alone exceeds the budget.
 
         Returns:
-            The joined context, truncated to the budget. Empty when there are
-            no results.
+            The rendered block (empty when there are no results).
         """
-        if not search_results:
-            return ""
-
-        budget = max_length if max_length is not None else Config.LLM.MAX_CONTEXT_LENGTH()
-        chunks = [
-            self.CHUNK_TEMPLATE.format(
-                index=result.get("index"), document=result.get("document", "")
-            )
-            for result in search_results
-        ]
-        context = "\n".join(chunks)
-
-        if budget > 0 and len(context) > budget:
-            logger.debug(
-                "Context truncated: %d -> %d characters", len(context), budget
-            )
-            context = context[:budget]
-        return context
+        rendered: List[str] = []
+        used = 0
+        for number, item in enumerate(results, start=1):
+            block = self.render_chunk(number, item)
+            if max_length > 0 and used + len(block) > max_length:
+                if not rendered:
+                    rendered.append(block[:max_length])
+                logger.debug("Context budget reached after %d of %d chunks", len(rendered), len(results))
+                break
+            rendered.append(block)
+            used += len(block) + 1
+        return "\n".join(rendered)

@@ -39,21 +39,23 @@ class ResponseCache:
     @staticmethod
     def build_key(
         query: str,
-        context: str = "",
-        history: Optional[List[Dict[str, str]]] = None,
+        context: str,
+        history: Optional[List[Dict[str, str]]],
+        namespace: str,
     ) -> str:
         """
         Build a deterministic cache key.
 
-        The context and history are part of the key: the same question against a
-        different corpus or conversation must not reuse a previous answer.
+        Everything that can change the answer is part of the key: the query,
+        the retrieved context, the full history (roles included) and a
+        ``namespace`` identifying the model, prompt and knowledge version, so
+        an edit to any of them never serves a stale answer.
         """
-        history_digest = ""
-        if history:
-            joined = "".join(str(message.get("content", "")) for message in history)
-            history_digest = hashlib.md5(joined.encode("utf-8")).hexdigest()[:8]
-        raw = f"{query.strip().lower()}|{context}|{history_digest}"
-        return hashlib.md5(raw.encode("utf-8")).hexdigest()
+        history_part = "".join(
+            f"{message.get('role', '')}{message.get('content', '')}" for message in (history or [])
+        )
+        raw = "".join((namespace, query.strip().lower(), context, history_part))
+        return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
     def get(self, key: str) -> Optional[str]:
         """Return the cached answer for ``key``, or ``None`` when absent/expired."""
@@ -101,7 +103,8 @@ class ResponseCache:
     @property
     def size(self) -> int:
         """Number of entries currently held."""
-        return len(self._entries)
+        with self._lock:
+            return len(self._entries)
 
     def get_stats(self) -> Dict[str, Any]:
         """Hit/miss counters and hit rate for monitoring endpoints."""

@@ -16,6 +16,7 @@ from anthropic import Anthropic, AsyncAnthropic, APIConnectionError, APIStatusEr
 
 # Local imports
 from config.settings import Config
+from models.llm import LLMResult, LLMUsage, StreamDelta
 from .base_llm_provider import BaseLLMProvider
 
 logger = logging.getLogger(__name__)
@@ -29,6 +30,8 @@ class AnthropicClientProvider(BaseLLMProvider):
     ``system`` parameter rather than a ``role: "system"`` message, so every
     call site here splits it out of the incoming OpenAI-format message list.
     """
+
+    name = "anthropic"
 
     #: Retries performed by the SDK before an error is surfaced.
     MAX_RETRIES = 2
@@ -123,76 +126,82 @@ class AnthropicClientProvider(BaseLLMProvider):
             return str(messages[0].get("content", "")), list(messages[1:])
         return None, list(messages)
 
-    def complete(self, messages: List[Dict[str, Any]], model: Optional[str] = None) -> str:
+    def _usage(self, model: str, usage: Any) -> Optional[LLMUsage]:
+        """Convert the SDK's ``Usage`` into :class:`LLMUsage`."""
+        if usage is None:
+            return None
+        return LLMUsage(
+            provider=self.name,
+            model=model,
+            prompt_tokens=int(getattr(usage, "input_tokens", 0) or 0),
+            completion_tokens=int(getattr(usage, "output_tokens", 0) or 0),
+        )
+
+    def _result(self, model: str, response: Any) -> LLMResult:
+        """Extract the first text block and the usage of a ``Message``."""
+        text = next((block.text for block in response.content if block.type == "text"), "")
+        return LLMResult(text.strip() if text else "", self._usage(model, response.usage))
+
+    def complete(self, messages: List[Dict[str, Any]], model: Optional[str] = None) -> LLMResult:
         """
-        Run a blocking chat completion and return the assistant text.
+        Run a blocking chat completion.
 
         Args:
             messages: OpenAI-format message list.
             model: Model override; defaults to ``Config.LLM.ANTHROPIC_MODEL()``.
-
-        Returns:
-            The assistant message text, stripped (empty string if none).
         """
         system, rest = self._split_system(messages)
+        resolved_model = model or Config.LLM.ANTHROPIC_MODEL()
         response = self.sync_client.messages.create(
-            model=model or Config.LLM.ANTHROPIC_MODEL(),
+            model=resolved_model,
             max_tokens=Config.LLM.ANTHROPIC_MAX_TOKENS(),
             system=system,
             messages=rest,
         )
-        text = next((block.text for block in response.content if block.type == "text"), "")
-        return text.strip() if text else ""
+        return self._result(resolved_model, response)
 
-    async def complete_async(
-        self, messages: List[Dict[str, Any]], model: Optional[str] = None
-    ) -> str:
+    async def complete_async(self, messages: List[Dict[str, Any]], model: Optional[str] = None) -> LLMResult:
         """
-        Run a non-blocking chat completion and return the assistant text.
-
-        Async counterpart of :meth:`complete`, used by callers already
-        running on the event loop (e.g. batch processing).
+        Run a non-blocking chat completion.
 
         Args:
             messages: OpenAI-format message list.
             model: Model override; defaults to ``Config.LLM.ANTHROPIC_MODEL()``.
-
-        Returns:
-            The assistant message text, stripped (empty string if none).
         """
         system, rest = self._split_system(messages)
+        resolved_model = model or Config.LLM.ANTHROPIC_MODEL()
         response = await self.async_client.messages.create(
-            model=model or Config.LLM.ANTHROPIC_MODEL(),
+            model=resolved_model,
             max_tokens=Config.LLM.ANTHROPIC_MAX_TOKENS(),
             system=system,
             messages=rest,
         )
-        text = next((block.text for block in response.content if block.type == "text"), "")
-        return text.strip() if text else ""
+        return self._result(resolved_model, response)
 
-    async def stream(
-        self, messages: List[Dict[str, Any]], model: Optional[str] = None
-    ) -> AsyncIterator[str]:
+    async def stream(self, messages: List[Dict[str, Any]], model: Optional[str] = None) -> AsyncIterator[StreamDelta]:
         """
-        Stream a chat completion, yielding text deltas as they arrive.
+        Stream a chat completion.
 
         Args:
             messages: OpenAI-format message list.
             model: Model override; defaults to ``Config.LLM.ANTHROPIC_MODEL()``.
 
         Yields:
-            Non-empty text deltas.
+            Non-empty text deltas, then one delta with the final message's usage.
         """
         system, rest = self._split_system(messages)
+        resolved_model = model or Config.LLM.ANTHROPIC_MODEL()
         async with self.async_client.messages.stream(
-            model=model or Config.LLM.ANTHROPIC_MODEL(),
+            model=resolved_model,
             max_tokens=Config.LLM.ANTHROPIC_MAX_TOKENS(),
             system=system,
             messages=rest,
         ) as stream:
             async for text in stream.text_stream:
                 if text:
-                    yield text
+                    yield StreamDelta(text=text)
+            final_message = await stream.get_final_message()
+        yield StreamDelta(usage=self._usage(resolved_model, final_message.usage))
 
     def close(self) -> None:
         """Close both clients and release their connection pools."""

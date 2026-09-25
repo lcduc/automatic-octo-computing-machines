@@ -261,6 +261,20 @@ class TextUtils:
         return without_marks
 
     @staticmethod
+    def tokenize_for_search(text: str) -> List[str]:
+        """
+        Keyword-search tokens: lower-cased, accent-free, punctuation stripped.
+
+        Accents are removed so a query typed without diacritics ("hop dong")
+        still matches the document text ("hợp đồng").
+        """
+        if not text:
+            return []
+        folded = TextUtils.strip_vietnamese_accents(text.lower())
+        folded = re.sub(r"[^\w\s]", " ", folded)
+        return folded.split()
+
+    @staticmethod
     def clean_chunk_text(text: str) -> str:
         """
         Remove empty lines and table border lines from a chunk.

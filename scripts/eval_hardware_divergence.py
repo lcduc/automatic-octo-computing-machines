@@ -118,7 +118,7 @@ def main() -> None:
         queries = [item["query"] for item in json.load(f)]
 
     evaluator = HardwareDivergenceEvaluator(
-        model_name=Config.LLM.EMBEDDING_MODEL(), cache_folder=Config.Database.MODELS_DIR()
+        model_name=Config.LLM.EMBEDDING_MODEL(), cache_folder=Config.Paths.MODELS_DIR()
     )
     report = evaluator.evaluate(queries)
     print_report(report)
