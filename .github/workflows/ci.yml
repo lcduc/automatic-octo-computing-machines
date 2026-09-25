@@ -81,28 +81,6 @@ jobs:
       - name: Run tests
         run: pytest
 
-  web:
-    name: Web frontend (lint, types, build)
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    defaults:
-      run:
-        working-directory: frontends/vieclamhatinh
-    steps:
-      - uses: actions/checkout@v7
-
-      - uses: actions/setup-node@v5
-        with:
-          node-version: 24
-          cache: npm
-          cache-dependency-path: frontends/vieclamhatinh/package-lock.json
-
-      - run: npm ci
-      - run: npx next typegen
-      - run: npx tsc --noEmit
-      - run: npm run lint
-      - run: npm run build
-
   audit:
     name: Dependency audit (pip-audit)
     runs-on: ubuntu-latest

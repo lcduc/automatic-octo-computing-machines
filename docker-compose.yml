@@ -4,8 +4,8 @@
 #   web              -> api :8500 (FastAPI, GPU)      [internal network only]
 #   api              -> postgres :5432 (pgvector)     [internal network only]
 #
-# Configuration: `.env` (backend + database) and `frontends/vieclamhatinh/.env`
-# (web). See docs/DEPLOYMENT.md.
+# Configuration: `.env` (backend + database; `FRONTEND` picks the client folder
+# under frontends/) and `frontends/<client>/.env` (web). See docs/DEPLOYMENT.md.
 
 name: chatbot
 
@@ -56,9 +56,9 @@ services:
       - /tmp:size=512m
 
   web:
-    build: ./frontends/vieclamhatinh
+    build: ./frontends/${FRONTEND:?set FRONTEND in .env to a folder under frontends/}
     restart: unless-stopped
-    env_file: ./frontends/vieclamhatinh/.env
+    env_file: ./frontends/${FRONTEND}/.env
     environment:
       BACKEND_URL: http://api:8500
     depends_on:

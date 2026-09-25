@@ -70,7 +70,7 @@ core/guardrails/        PII redactor, input guard
 core/storage/           SQLAlchemy tables, repositories, connection pool
 core/document_processing/  Docling / OCR parsing
 migrations/             Alembic schema migrations
-frontends/vieclamhatinh/   Next.js widget + admin web for this client
+frontends/<client>/       per-client frontend (widget + admin web), consumes the API
 app.py                  internal Streamlit demo of the chat API
 docs/DEPLOYMENT.md      VPS deployment, embedding, backups, operations
 ```
@@ -82,7 +82,7 @@ See [docs/DEPLOYMENT.md#local-development](docs/DEPLOYMENT.md#local-development)
 ```bash
 ruff check .
 pytest                                  # unit tests; integration tests need TEST_DATABASE_URL
-cd frontends/vieclamhatinh && npm run lint && npx tsc --noEmit && npm run build
+cd frontends/<client> && npm run lint && npx tsc --noEmit && npm run build
 ```
 
 API documentation: `http://localhost:8500/docs` (disabled when `APP_ENV=production`).

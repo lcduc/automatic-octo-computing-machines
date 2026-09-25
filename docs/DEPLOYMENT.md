@@ -49,13 +49,14 @@ git clone <repo> chatbot && cd chatbot
 # 1. Backend + database settings
 cp .env.example .env
 #   set: POSTGRES_PASSWORD, ADMIN_JWT_SECRET, OPENAI_API_KEY (or another provider),
-#        CHAT_DOMAIN=chat.example.com, CORS_ORIGINS=https://chat.example.com
+#        CHAT_DOMAIN=chat.example.com, CORS_ORIGINS=https://chat.example.com,
+#        FRONTEND=<client>   (folder under frontends/)
 python3 -c "import secrets; print(secrets.token_hex(32))"   # for ADMIN_JWT_SECRET
 
 # 2. Web settings (the API key comes in step 4)
-cp frontends/vieclamhatinh/.env.example frontends/vieclamhatinh/.env
+cp frontends/<client>/.env.example frontends/<client>/.env
 #   set: VISITOR_COOKIE_SECRET (openssl rand -hex 32)
-#        WIDGET_ALLOWED_PARENTS="https://vieclamhatinh.vn https://www.vieclamhatinh.vn"
+#        WIDGET_ALLOWED_PARENTS="https://example.com https://www.example.com"
 
 # 3. Start everything (the first build downloads models; allow ~20-40 minutes)
 docker compose up -d --build
@@ -63,15 +64,15 @@ docker compose logs -f api        # wait for "Chatbot API ready"
 
 # 4. Create the first admin account and the web frontend's API key
 docker compose exec api python -m scripts.manage create-admin --email you@example.com --role owner
-docker compose exec api python -m scripts.manage create-api-key --name "vieclamhatinh web"
-#   put the printed key in frontends/vieclamhatinh/.env as CHATBOT_API_KEY, then:
+docker compose exec api python -m scripts.manage create-api-key --name "client web"
+#   put the printed key in frontends/<client>/.env as CHATBOT_API_KEY, then:
 docker compose up -d web
 ```
 
 Open `https://chat.example.com/admin`, sign in, and add knowledge
 (**Tri thức** → *Tải tệp lên* / *Soạn nội dung*).
 
-## Embedding the chat on vieclamhatinh.vn
+## Embedding the chat on the client site
 
 Add one line before `</body>` on every page that should show the chat:
 
@@ -134,7 +135,7 @@ cp .env.example .env    # APP_ENV=development, POSTGRES_HOST=localhost, POSTGRES
 alembic upgrade head
 python main.py          # API on :8500, docs on /docs
 
-cd frontends/vieclamhatinh && npm ci
+cd frontends/<client> && npm ci
 cp .env.example .env.local && npm run dev   # web on :3000, /embed-demo shows the widget
 ```
 

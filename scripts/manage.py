@@ -4,7 +4,7 @@ Operator CLI for first-time setup.
 Usage (from the repository root, with the venv active):
 
     python -m scripts.manage create-admin --email you@example.com --role owner
-    python -m scripts.manage create-api-key --name "vieclamhatinh web"
+    python -m scripts.manage create-api-key --name "client web"
 
 The admin password is prompted for (never passed on the command line). The
 API key is printed once; put it in the frontend's ``CHATBOT_API_KEY``.
