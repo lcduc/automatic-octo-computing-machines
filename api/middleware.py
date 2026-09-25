@@ -1,282 +1,164 @@
 """
-Custom middleware for the FastAPI application.
-Provides request logging, security headers, rate limiting, and error handling.
+App-wide HTTP middleware, written as plain ASGI so streaming responses and
+``contextvars`` (the request id used by logging) behave correctly.
+
+Registered by ``main.py`` in this order (outermost first): CORS, request
+context, security headers, body size limit, per-IP rate limit.
 """
 
 # Standard library imports
-import asyncio
-import hmac
+import json
 import logging
+import re
 import time
 import uuid
-from typing import Callable, Dict, List
-
-# Third-party imports
-from fastapi import Request, Response
-from starlette.middleware.base import BaseHTTPMiddleware
+from typing import Iterable, Tuple
 
 # Local imports
 from config.settings import Config
+from utils.request_context import request_id_var
 
 logger = logging.getLogger(__name__)
 
-
-class RequestLoggingMiddleware(BaseHTTPMiddleware):
-    """
-    Middleware to log all requests and responses with timing information.
-    Provides comprehensive request tracking for monitoring and debugging.
-    """
-
-    async def dispatch(self, request: Request, call_next: Callable) -> Response:
-        start_time = time.time()
-        request_id = uuid.uuid4().hex[:8]
-        client_host = request.client.host if request.client else "unknown"
-
-        logger.info(
-            "-> %s %s client=%s request_id=%s",
-            request.method,
-            request.url.path,
-            client_host,
-            request_id,
-        )
-
-        response = await call_next(request)
-        process_time = time.time() - start_time
-
-        logger.info(
-            "<- %s %s status=%s duration=%.3fs request_id=%s",
-            request.method,
-            request.url.path,
-            response.status_code,
-            process_time,
-            request_id,
-        )
-
-        response.headers["X-Process-Time"] = f"{process_time:.3f}"
-        response.headers["X-Request-ID"] = request_id
-        return response
+#: Incoming ``X-Request-ID`` values accepted as-is (e.g. from the Next.js server).
+REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9\-]{8,64}$")
+#: Paths never rate limited or logged per request (health probes).
+QUIET_PATH_PREFIXES = ("/health",)
+#: Interactive API docs need inline scripts/styles, so they get a looser CSP.
+DOCS_PATH_PREFIXES = ("/docs", "/redoc", "/openapi.json")
+#: Allowance above ``MAX_FILE_SIZE`` for multipart framing and form fields.
+BODY_OVERHEAD_BYTES = 1024 * 1024
+HSTS_VALUE = "max-age=31536000; includeSubDomains"
 
 
-class SecurityHeadersMiddleware(BaseHTTPMiddleware):
-    """
-    Middleware to add security headers for enhanced application security.
-    Implements common security best practices for web applications.
-    """
-
-    async def dispatch(self, request: Request, call_next: Callable) -> Response:
-        response = await call_next(request)
-
-        # Add security headers to prevent common attacks
-        response.headers["X-Content-Type-Options"] = "nosniff"
-        response.headers["X-Frame-Options"] = "DENY"
-        response.headers["X-XSS-Protection"] = "1; mode=block"
-        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-
-        return response
+def _header(scope, name: bytes) -> str:
+    """First value of a request header, decoded, or ``""``."""
+    for key, value in scope.get("headers", []):
+        if key == name:
+            return value.decode("latin-1")
+    return ""
 
 
-class RateLimitingMiddleware(BaseHTTPMiddleware):
-    """
-    Sliding-window rate limiting per client IP plus a concurrency ceiling.
-
-    Counters are per worker process; with more than one Uvicorn worker the
-    effective limits are multiplied by the worker count. Use a shared store
-    (e.g. Redis) or an edge proxy if a cluster-wide limit is required.
-    """
-
-    #: Idle clients are dropped from the tracking map after this many windows.
-    STALE_CLIENT_WINDOWS = 2
-    #: Tracked client IPs are pruned once the map grows past this size.
-    PRUNE_THRESHOLD = 10_000
-
-    def __init__(self, app, max_requests: int = 100, window_seconds: int = 60, max_concurrent: int = 10):
-        """
-        Args:
-            app: Wrapped ASGI application.
-            max_requests: Requests allowed per client IP per window.
-            window_seconds: Sliding window width in seconds.
-            max_concurrent: In-flight requests allowed in this process.
-        """
-        super().__init__(app)
-        self.max_requests = max_requests
-        self.window_seconds = window_seconds
-        self.max_concurrent = max_concurrent
-        self._request_times: Dict[str, List[float]] = {}
-        self._semaphore = asyncio.Semaphore(max_concurrent)
-
-    def _prune_stale_clients(self, now: float) -> None:
-        """Drop tracking entries for clients idle for several windows."""
-        cutoff = now - self.window_seconds * self.STALE_CLIENT_WINDOWS
-        stale = [ip for ip, times in self._request_times.items() if not times or times[-1] < cutoff]
-        for ip in stale:
-            del self._request_times[ip]
-
-    async def dispatch(self, request: Request, call_next: Callable) -> Response:
-        client_ip = request.client.host if request.client else "unknown"
-        now = time.time()
-
-        # Bound memory: without this the tracking map grows once per unique IP.
-        if len(self._request_times) > self.PRUNE_THRESHOLD:
-            self._prune_stale_clients(now)
-
-        window_start = now - self.window_seconds
-        recent = [t for t in self._request_times.get(client_ip, []) if t > window_start]
-
-        if len(recent) >= self.max_requests:
-            self._request_times[client_ip] = recent
-            logger.warning("Rate limit exceeded for %s", client_ip)
-            return Response(
-                content="Rate limit exceeded",
-                status_code=429,
-                headers={"Retry-After": str(self.window_seconds)},
-            )
-
-        if self._semaphore.locked():
-            logger.warning("Concurrent request limit reached (%d)", self.max_concurrent)
-            return Response(
-                content="Server busy, too many concurrent requests. Please try again later.",
-                status_code=503,
-                headers={"Retry-After": "5"},
-            )
-
-        recent.append(now)
-        self._request_times[client_ip] = recent
-
-        async with self._semaphore:
-            response = await call_next(request)
-            response.headers["X-RateLimit-Limit"] = str(self.max_requests)
-            response.headers["X-RateLimit-Remaining"] = str(
-                max(0, self.max_requests - len(recent))
-            )
-            response.headers["X-RateLimit-Reset"] = str(int(now + self.window_seconds))
-            return response
+async def _send_json(send, status: int, body: dict, extra_headers: Iterable[Tuple[bytes, bytes]] = ()) -> None:
+    """Send a complete JSON response from inside a middleware."""
+    payload = json.dumps(body).encode("utf-8")
+    headers = [(b"content-type", b"application/json"), (b"content-length", str(len(payload)).encode())]
+    await send({"type": "http.response.start", "status": status, "headers": headers + list(extra_headers)})
+    await send({"type": "http.response.body", "body": payload})
 
 
-class APIKeyMiddleware(BaseHTTPMiddleware):
-    """
-    Optional shared-secret check via the ``X-API-Key`` header.
+class RequestContextMiddleware:
+    """Binds a request id to the task (for logs), echoes it, and logs one line per request."""
 
-    Only installed when ``API_KEY`` is set (see ``setup_middleware``) — on a
-    private VPS reachable only over a VPN/internal network this is often
-    unnecessary, so it stays fully opt-in rather than a mandatory auth system.
-    Health checks and API docs are exempt so monitoring and manual review keep
-    working without a key.
-    """
+    def __init__(self, app):
+        self.app = app
 
-    #: Paths reachable without a key even when one is configured.
-    EXEMPT_PATHS = frozenset({"/", "/docs", "/redoc", "/openapi.json"})
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+        incoming = _header(scope, b"x-request-id")
+        request_id = incoming if REQUEST_ID_PATTERN.match(incoming) else uuid.uuid4().hex
+        token = request_id_var.set(request_id)
+        started = time.perf_counter()
+        status_holder = {"status": 500}
 
-    def __init__(self, app, api_key: str):
-        """
-        Args:
-            app: Wrapped ASGI application.
-            api_key: Expected secret value; never empty (caller checks first).
-        """
-        super().__init__(app)
-        self._api_key = api_key
+        async def send_with_id(message):
+            if message["type"] == "http.response.start":
+                status_holder["status"] = message["status"]
+                message.setdefault("headers", []).append((b"x-request-id", request_id.encode()))
+            await send(message)
 
-    async def dispatch(self, request: Request, call_next: Callable) -> Response:
-        if request.url.path in self.EXEMPT_PATHS:
-            return await call_next(request)
-
-        provided = request.headers.get("X-API-Key", "")
-        if not hmac.compare_digest(provided, self._api_key):
-            logger.warning("Rejected request to %s: missing/invalid API key", request.url.path)
-            return Response(content="Invalid or missing API key", status_code=401)
-
-        return await call_next(request)
-
-
-class ErrorHandlingMiddleware(BaseHTTPMiddleware):
-    """
-    Middleware to handle and log unhandled errors gracefully.
-    Prevents application crashes and provides consistent error responses.
-    """
-
-    async def dispatch(self, request: Request, call_next: Callable) -> Response:
         try:
-            return await call_next(request)
-        except Exception:
-            request_id = uuid.uuid4().hex[:8]
-            logger.exception(
-                "Unhandled error in %s %s request_id=%s",
-                request.method,
-                request.url.path,
-                request_id,
-            )
-            # Generic body: never leak internals to the caller.
-            return Response(
-                content="Internal server error",
-                status_code=500,
-                headers={"Content-Type": "text/plain", "X-Request-ID": request_id},
-            )
+            await self.app(scope, receive, send_with_id)
+        finally:
+            if not scope["path"].startswith(QUIET_PATH_PREFIXES):
+                logger.info(
+                    "%s %s -> %d in %.0f ms",
+                    scope["method"],
+                    scope["path"],
+                    status_holder["status"],
+                    (time.perf_counter() - started) * 1000,
+                )
+            request_id_var.reset(token)
 
 
-class CacheControlMiddleware(BaseHTTPMiddleware):
-    """
-    Middleware to add appropriate cache control headers.
-    Optimizes caching for static content while preventing API response caching.
-    """
+class SecurityHeadersMiddleware:
+    """Adds defensive headers to every response."""
 
-    def __init__(self, app, static_max_age: int = 3600, api_max_age: int = 0):
-        super().__init__(app)
-        self.static_max_age = static_max_age
-        self.api_max_age = api_max_age
+    def __init__(self, app):
+        self.app = app
+        self._hsts = Config.Server.IS_PRODUCTION()
 
-    async def dispatch(self, request: Request, call_next: Callable) -> Response:
-        response = await call_next(request)
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+        is_docs = scope["path"].startswith(DOCS_PATH_PREFIXES)
 
-        # Set cache headers based on content type and path
-        if request.url.path.startswith("/static/"):
-            # Static content - allow caching for performance
-            response.headers["Cache-Control"] = f"public, max-age={self.static_max_age}"
-        elif request.url.path.startswith("/docs") or request.url.path.startswith(
-            "/redoc"
-        ):
-            # Documentation - allow caching
-            response.headers["Cache-Control"] = f"public, max-age={self.static_max_age}"
-        else:
-            # API endpoints - no cache to ensure fresh data
-            response.headers["Cache-Control"] = (
-                f"no-cache, no-store, max-age={self.api_max_age}"
-            )
+        async def send_with_headers(message):
+            if message["type"] == "http.response.start":
+                headers = message.setdefault("headers", [])
+                headers.extend(
+                    [
+                        (b"x-content-type-options", b"nosniff"),
+                        (b"x-frame-options", b"DENY"),
+                        (b"referrer-policy", b"strict-origin-when-cross-origin"),
+                        (b"permissions-policy", b"camera=(), microphone=(), geolocation=()"),
+                    ]
+                )
+                if not is_docs:
+                    headers.append((b"content-security-policy", b"default-src 'none'; frame-ancestors 'none'"))
+                if self._hsts:
+                    headers.append((b"strict-transport-security", HSTS_VALUE.encode()))
+            await send(message)
 
-        return response
+        await self.app(scope, receive, send_with_headers)
 
 
-def setup_middleware(
-    app, enable_rate_limiting: bool = False, enable_request_logging: bool = True
-) -> None:
-    """
-    Register the application middleware stack.
+class BodySizeLimitMiddleware:
+    """Rejects request bodies larger than the upload limit (declared or streamed)."""
 
-    Args:
-        app: FastAPI application to configure.
-        enable_rate_limiting: Enable per-IP rate limiting and the concurrency cap.
-        enable_request_logging: Log one line per request with its duration.
-    """
-    if enable_request_logging:
-        app.add_middleware(RequestLoggingMiddleware)
-        logger.info("Request logging middleware enabled")
+    def __init__(self, app):
+        self.app = app
+        self._max_bytes = Config.File.MAX_FILE_SIZE() + BODY_OVERHEAD_BYTES
 
-    app.add_middleware(SecurityHeadersMiddleware)
-    app.add_middleware(CacheControlMiddleware)
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+        declared = _header(scope, b"content-length")
+        if declared.isdigit() and int(declared) > self._max_bytes:
+            return await _send_json(send, 413, {"detail": "Request body too large"})
 
-    if enable_rate_limiting:
-        app.add_middleware(
-            RateLimitingMiddleware,
-            max_requests=Config.Server.RATE_LIMIT_MAX_REQUESTS(),
-            window_seconds=Config.Server.RATE_LIMIT_WINDOW_SECONDS(),
-            max_concurrent=Config.Server.RATE_LIMIT_MAX_CONCURRENT(),
-        )
-        logger.info("Rate limiting middleware enabled")
+        received = {"bytes": 0}
 
-    api_key = Config.Server.API_KEY()
-    if api_key:
-        app.add_middleware(APIKeyMiddleware, api_key=api_key)
-        logger.info("API key middleware enabled")
-    else:
-        logger.info("API key middleware disabled (no API_KEY configured)")
+        async def limited_receive():
+            message = await receive()
+            if message["type"] == "http.request":
+                received["bytes"] += len(message.get("body", b""))
+                if received["bytes"] > self._max_bytes:
+                    raise ValueError("Request body too large")
+            return message
 
-    app.add_middleware(ErrorHandlingMiddleware)
-    logger.info("Middleware stack configured")
+        await self.app(scope, limited_receive, send)
+
+
+class IpRateLimitMiddleware:
+    """Per-client-IP request ceiling across all endpoints except health probes."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http" or scope["path"].startswith(QUIET_PATH_PREFIXES):
+            return await self.app(scope, receive, send)
+        container = getattr(scope["app"].state, "container", None)
+        client = scope.get("client")
+        if container is not None and client:
+            retry_after = container.rate_limiter.hit(f"ip:{client[0]}", Config.Security.RATE_LIMIT_IP_PER_MINUTE())
+            if retry_after is not None:
+                return await _send_json(
+                    send,
+                    429,
+                    {"detail": "Too many requests"},
+                    [(b"retry-after", str(retry_after).encode())],
+                )
+        await self.app(scope, receive, send)

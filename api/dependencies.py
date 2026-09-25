@@ -1,100 +1,106 @@
 """
-FastAPI dependency providers.
+FastAPI dependency providers: the service container and caller authentication.
 
-Retrieval and LLM components own multi-hundred-megabyte models and pooled HTTP
-connections, so they are built once per process by :class:`ServiceContainer` and
-shared across requests. Only the thin, per-request services are constructed on
-each call.
+* Public chat routes require ``X-API-Key`` (a key with the ``chat`` scope,
+  held by the frontend's server) plus ``X-End-User-Id`` (the visitor).
+* Admin routes require ``Authorization: Bearer <admin session token>`` and a
+  role allowed for the route.
 """
 
 # Standard library imports
-import logging
-import threading
-from typing import Optional
+import re
+from typing import Callable
+
+# Third-party imports
+from fastapi import Depends, Header, HTTPException, Request, status
 
 # Local imports
-from core.agent import ChatbotService
-from core.retrieval import ContextRetriever
-from services import ChatService, DocumentService, UploadService
+from core.storage.tables.access_tables import ROLE_EDITOR, ROLE_OWNER, ROLE_VIEWER, SCOPE_CHAT
+from models.caller import ChatCaller
+from services.auth_service import AdminPrincipal
+from utils.request_context import current_request_id
+from .container import AppContainer
 
-logger = logging.getLogger(__name__)
+#: Visitor ids are opaque tokens minted by the frontend (never e-mails/phones).
+END_USER_ID_PATTERN = re.compile(r"^[A-Za-z0-9_\-:.]{8,128}$")
+
+#: Roles allowed by each admin permission level.
+READ_ROLES = (ROLE_OWNER, ROLE_EDITOR, ROLE_VIEWER)
+WRITE_ROLES = (ROLE_OWNER, ROLE_EDITOR)
+OWNER_ROLES = (ROLE_OWNER,)
 
 
-class ServiceContainer:
+def get_container(request: Request) -> AppContainer:
+    """The process-wide service container built at start-up."""
+    return request.app.state.container
+
+
+def client_ip(request: Request) -> str:
+    """Client address (already resolved from trusted ``X-Forwarded-For`` by Uvicorn)."""
+    return request.client.host if request.client else "unknown"
+
+
+async def require_client_key(
+    x_api_key: str = Header("", alias="X-API-Key"),
+    container: AppContainer = Depends(get_container),
+):
     """
-    Lazily builds and caches the expensive, stateless-per-request collaborators.
+    Authenticate a frontend by API key alone (for visitor-independent calls).
 
-    Instances are created on first use inside the running event loop, which
-    keeps any loop-bound primitives attached to the loop that will use them.
+    Raises:
+        HTTPException: 401 for a missing or invalid key.
+    """
+    key = await container.auth.verify_api_key(x_api_key)
+    if key is None:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid or missing API key")
+    return key
+
+
+async def require_chat_caller(
+    request: Request,
+    x_api_key: str = Header("", alias="X-API-Key"),
+    x_end_user_id: str = Header("", alias="X-End-User-Id"),
+    container: AppContainer = Depends(get_container),
+) -> ChatCaller:
+    """
+    Authenticate a public chat request.
+
+    Raises:
+        HTTPException: 401 for a missing/invalid key, 403 for a key without the
+            chat scope, 400 for a missing or malformed visitor id.
+    """
+    key = await container.auth.verify_api_key(x_api_key)
+    if key is None:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid or missing API key")
+    if SCOPE_CHAT not in key.scopes:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "API key is not allowed to chat")
+    if not END_USER_ID_PATTERN.match(x_end_user_id or ""):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "X-End-User-Id header is missing or malformed")
+    return ChatCaller(
+        api_key_id=key.id, end_user_id=x_end_user_id, client_ip=client_ip(request), request_id=current_request_id()
+    )
+
+
+def require_admin(roles=READ_ROLES) -> Callable:
+    """
+    Build a dependency admitting admins whose role is in ``roles``.
+
+    Args:
+        roles: Allowed roles, e.g. :data:`WRITE_ROLES`.
     """
 
-    def __init__(self):
-        self._context_retriever: Optional[ContextRetriever] = None
-        self._chatbot_service: Optional[ChatbotService] = None
-        # RLock, not Lock: `chatbot_service` acquires this lock and, while
-        # still holding it, reads `self.context_retriever` — a plain Lock
-        # would deadlock a thread against itself on the very first request.
-        self._lock = threading.RLock()
+    async def dependency(
+        authorization: str = Header("", alias="Authorization"),
+        container: AppContainer = Depends(get_container),
+    ) -> AdminPrincipal:
+        scheme, _, token = authorization.partition(" ")
+        principal = await container.auth.verify_token(token) if scheme.lower() == "bearer" and token else None
+        if principal is None:
+            raise HTTPException(
+                status.HTTP_401_UNAUTHORIZED, "Not signed in", headers={"WWW-Authenticate": "Bearer"}
+            )
+        if principal.role not in roles:
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "Your role does not allow this action")
+        return principal
 
-    @property
-    def context_retriever(self) -> ContextRetriever:
-        """Shared hybrid-search retriever (owns the cross-encoder reranker)."""
-        if self._context_retriever is None:
-            with self._lock:
-                if self._context_retriever is None:
-                    logger.info("Initializing shared ContextRetriever")
-                    self._context_retriever = ContextRetriever()
-        return self._context_retriever
-
-    @property
-    def chatbot_service(self) -> ChatbotService:
-        """Shared LLM service (owns pooled OpenAI clients and the answer cache)."""
-        if self._chatbot_service is None:
-            with self._lock:
-                if self._chatbot_service is None:
-                    logger.info("Initializing shared ChatbotService")
-                    self._chatbot_service = ChatbotService(
-                        context_retriever=self.context_retriever
-                    )
-        return self._chatbot_service
-
-    def shutdown(self) -> None:
-        """Release resources held by the cached services."""
-        if self._chatbot_service is not None:
-            self._chatbot_service.cleanup()
-            self._chatbot_service = None
-        self._context_retriever = None
-
-
-_container: Optional[ServiceContainer] = None
-_container_lock = threading.Lock()
-
-
-def get_service_container() -> ServiceContainer:
-    """Get the process-wide service container."""
-    global _container
-    if _container is None:
-        with _container_lock:
-            if _container is None:
-                _container = ServiceContainer()
-    return _container
-
-
-def get_document_service() -> DocumentService:
-    """Get document service instance for document processing and management."""
-    return DocumentService()
-
-
-def get_chat_service() -> ChatService:
-    """
-    Get a chat service backed by the shared retrieval and LLM components.
-
-    The ``ChatService`` wrapper itself is cheap and per-request, which keeps its
-    conversation buffer scoped to a single caller.
-    """
-    return ChatService(chatbot_service=get_service_container().chatbot_service)
-
-
-def get_upload_service() -> UploadService:
-    """Get upload service instance for file upload and processing."""
-    return UploadService()
+    return dependency
