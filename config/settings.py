@@ -1,93 +1,40 @@
 """
 Centralized configuration for the RAG chatbot.
 
-Every setting is read from the environment through one of the typed helpers
-below. Each environment variable is defined in exactly one place; the grouped
-classes (``File``, ``RAG``, …) are namespaced views over those definitions, so
-there is no risk of two accessors disagreeing on a default.
+Every setting is read from the environment through the typed helpers in
+:mod:`config.env`. Each environment variable is defined in exactly one place;
+the grouped classes (``LLM``, ``RAG``, …) are namespaced views over those
+definitions, collected under :class:`Config`. Platform settings (database,
+server, security, chat policy) live in :mod:`config.platform_settings`.
 """
 
 # Standard library imports
 import logging
 import os
+from pathlib import Path
 from typing import List, Optional
 
 # Third-party imports
 from dotenv import load_dotenv
 
+# Local imports
+from .env import env_bool, env_float, env_int, env_list, env_str
+from .platform_settings import ChatConfig, DatabaseConfig, SecurityConfig, ServerConfig
+
 load_dotenv()
 
 logger = logging.getLogger(__name__)
 
-
-def env_str(name: str, default: str) -> str:
-    """Read a string environment variable."""
-    return os.getenv(name, default)
+#: Shortest admin JWT secret accepted in production (bytes of entropy ≈ chars/2 for hex).
+MIN_JWT_SECRET_LENGTH = 32
 
 
-def env_int(name: str, default: int) -> int:
-    """Read an integer environment variable, falling back on malformed input."""
-    raw = os.getenv(name)
-    if raw is None:
-        return default
-    try:
-        return int(raw)
-    except ValueError:
-        logger.warning("Invalid integer for %s=%r; using default %s", name, raw, default)
-        return default
-
-
-def env_float(name: str, default: float) -> float:
-    """Read a float environment variable, falling back on malformed input."""
-    raw = os.getenv(name)
-    if raw is None:
-        return default
-    try:
-        return float(raw)
-    except ValueError:
-        logger.warning("Invalid float for %s=%r; using default %s", name, raw, default)
-        return default
-
-
-def env_bool(name: str, default: bool) -> bool:
-    """Read a boolean environment variable (``true/1/yes/on`` are truthy)."""
-    raw = os.getenv(name)
-    if raw is None:
-        return default
-    return raw.strip().lower() in {"true", "1", "yes", "on"}
-
-
-def env_list(name: str, default: str) -> List[str]:
-    """Read a comma-separated environment variable into a list."""
-    return [item.strip() for item in os.getenv(name, default).split(",") if item.strip()]
-
-
-class DatabaseConfig:
-    """Storage locations for chunks, vectors and logs."""
-
-    @staticmethod
-    def CHUNKS_DIR() -> str:
-        """Directory holding extracted document chunks."""
-        return env_str("CHUNKS_DIR", "data/chunks")
-
-    @staticmethod
-    def VECTORS_DIR() -> str:
-        """Directory holding the vector store artifacts."""
-        return env_str("VECTORS_DIR", "data/vectors")
-
-    @staticmethod
-    def TEMP_DIR() -> str:
-        """Scratch directory for uploads and the persistent cache."""
-        return env_str("TEMP_DIR", "data/temp")
-
-    @staticmethod
-    def VECTOR_STORE_PATH() -> str:
-        """Base path for the vector store; the HDF5/FAISS names derive from it."""
-        return env_str("VECTOR_STORE_PATH", "data/vectors/vector_store.pkl")
+class PathConfig:
+    """Local directories the application writes to."""
 
     @staticmethod
     def LOG_DIR() -> str:
-        """Directory for rotating application logs."""
+        """Directory for rotating JSON application logs."""
         return env_str("LOG_DIR", "data/logs")
 
     @staticmethod
@@ -95,13 +42,9 @@ class DatabaseConfig:
         """
         Local cache directory for downloaded ML models.
 
-        Kept inside the project root (rather than the user/OS-wide Hugging Face
-        cache) so the weights baked into a deployment are visible and reviewable
-        on disk, e.g. `docker exec ... ls /app/model_weights`.
-
-        Named distinctly from the ``models/`` Python package (data classes)
-        so this cache directory's contents can be gitignored wholesale
-        without also swallowing new files added to that package.
+        Kept inside the project root (rather than the OS-wide Hugging Face
+        cache) so the weights of a deployment are visible and reviewable on
+        disk. Named distinctly from the ``models/`` Python package.
         """
         return env_str("MODELS_DIR", "model_weights")
 
@@ -145,9 +88,9 @@ class LLMConfig:
         return LLMConfig.OPENAI_API_KEY()
 
     @staticmethod
-    def OPENAI_API_KEY():
+    def OPENAI_API_KEY() -> Optional[str]:
         """API key; ``None`` when unset so callers can degrade gracefully."""
-        return os.getenv("OPENAI_API_KEY")
+        return os.getenv("OPENAI_API_KEY") or None
 
     @staticmethod
     def OPENAI_MODEL() -> str:
@@ -164,11 +107,10 @@ class LLMConfig:
         """
         Route chat turns through ``IntentRouter``/``ToolCallingAgent``.
 
-        Off switch for the action engine: every turn otherwise pays for an
-        extra intent-classification call, so this can disable that without a
-        redeploy if it needs to be turned off in production.
+        Every turn otherwise pays for an extra intent-classification call, so
+        this can disable the action engine without a redeploy.
         """
-        return env_bool("TOOL_CALLING_ENABLED", True)
+        return env_bool("TOOL_CALLING_ENABLED", False)
 
     @staticmethod
     def EMBEDDING_MODEL() -> str:
@@ -178,7 +120,7 @@ class LLMConfig:
     @staticmethod
     def MAX_CONTEXT_LENGTH() -> int:
         """Character budget for the retrieved context block."""
-        return env_int("MAX_CONTEXT_LENGTH", 5000)
+        return env_int("MAX_CONTEXT_LENGTH", 6000)
 
     @staticmethod
     def OPENAI_MAX_TOKENS() -> int:
@@ -200,14 +142,10 @@ class LLMConfig:
         """
         Reasoning depth for ``gpt-5*`` models.
 
-        One of ``none/minimal/low/medium/high/xhigh/max``, but which of those
-        are actually accepted is model-dependent and enforced server-side:
-        ``gpt-5-mini`` (the default ``OPENAI_MODEL``) rejects ``none``/``xhigh``/
-        ``max`` with a 400 ``unsupported_value`` error and only accepts
-        ``minimal``/``low``/``medium``/``high`` (verified against the live API).
-        ``minimal`` is the lowest-latency option for this model family - there
-        is no true "no reasoning" mode. Ignored for non-reasoning models like
-        the light model - see ``OpenAIClientProvider._completion_kwargs``.
+        Which values are accepted is model-dependent and enforced server-side
+        (``gpt-5-mini`` accepts ``minimal``/``low``/``medium``/``high``).
+        Ignored for non-reasoning models - see
+        ``OpenAIClientProvider._completion_kwargs``.
         """
         return env_str("OPENAI_REASONING_EFFORT", "low")
 
@@ -223,26 +161,13 @@ class LLMConfig:
 
     @staticmethod
     def TRANSCRIPTION_LANGUAGE() -> str:
-        """
-        ISO-639-1 language hint for voice queries; empty string lets the
-        model auto-detect instead.
-        """
+        """ISO-639-1 language hint for voice queries; empty lets the model auto-detect."""
         return env_str("TRANSCRIPTION_LANGUAGE", "vi")
-
-    @staticmethod
-    def TRANSCRIPTION_PROMPT() -> str:
-        """
-        Style/vocabulary prompt for voice queries; empty string sends none.
-        """
-        return env_str(
-            "TRANSCRIPTION_PROMPT",
-            "Đây là câu hỏi bằng tiếng Việt, được hỏi trong một cuộc trò chuyện với chatbot hỗ trợ tra cứu tài liệu.",
-        )
 
     @staticmethod
     def ANTHROPIC_API_KEY() -> Optional[str]:
         """API key; ``None`` when unset so callers can degrade gracefully."""
-        return os.getenv("ANTHROPIC_API_KEY")
+        return os.getenv("ANTHROPIC_API_KEY") or None
 
     @staticmethod
     def ANTHROPIC_MODEL() -> str:
@@ -251,7 +176,7 @@ class LLMConfig:
 
     @staticmethod
     def ANTHROPIC_LIGHT_MODEL() -> str:
-        """Cheaper model for lightweight judgment calls (query rewriting, intent classification)."""
+        """Cheaper model for lightweight judgment calls."""
         return env_str("ANTHROPIC_LIGHT_MODEL", "claude-haiku-4-5")
 
     @staticmethod
@@ -267,7 +192,7 @@ class LLMConfig:
     @staticmethod
     def GEMINI_API_KEY() -> Optional[str]:
         """API key; ``None`` when unset so callers can degrade gracefully."""
-        return os.getenv("GEMINI_API_KEY")
+        return os.getenv("GEMINI_API_KEY") or None
 
     @staticmethod
     def GEMINI_MODEL() -> str:
@@ -276,7 +201,7 @@ class LLMConfig:
 
     @staticmethod
     def GEMINI_LIGHT_MODEL() -> str:
-        """Cheaper model for lightweight judgment calls (query rewriting, intent classification)."""
+        """Cheaper model for lightweight judgment calls."""
         return env_str("GEMINI_LIGHT_MODEL", "gemini-3.5-flash-lite")
 
     @staticmethod
@@ -300,20 +225,9 @@ class LLMConfig:
         return env_int("LLM_CACHE_MAX_ENTRIES", 1000)
 
     @staticmethod
-    def LLM_CACHE_MAX_SIZE() -> int:
-        """Maximum entries held by the smart (similarity-matching) cache."""
-        return env_int("LLM_CACHE_MAX_SIZE", 100)
-
-    @staticmethod
-    def CHAT_BATCH_MAX_QUERIES() -> int:
-        """
-        Maximum queries accepted by one ``POST /chat/batch`` request.
-
-        Batch items run concurrently on the event loop (bounded for GPU work by
-        ``RETRIEVAL_MAX_CONCURRENCY``); this cap is a basic sanity/DoS limit on
-        request size, not a performance tuning knob.
-        """
-        return env_int("CHAT_BATCH_MAX_QUERIES", 20)
+    def TURN_TIMEOUT_SECONDS() -> int:
+        """Hard deadline for one whole chat turn (retrieval + all LLM calls)."""
+        return env_int("TURN_TIMEOUT_SECONDS", 90)
 
 
 class FileConfig:
@@ -327,22 +241,12 @@ class FileConfig:
     @staticmethod
     def ALLOWED_EXTENSIONS() -> List[str]:
         """
-        File extensions accepted by the upload endpoint.
+        File extensions accepted by the knowledge upload endpoint.
 
         The legacy Office binary formats ``.doc`` and ``.xls`` are deliberately
         absent. Save such files as ``.docx``/``.xlsx`` before uploading.
         """
-        return env_list("ALLOWED_EXTENSIONS", ".txt,.pdf,.docx,.csv,.xlsx")
-
-    @staticmethod
-    def MAX_FILES_PER_BATCH() -> int:
-        """Maximum files accepted in one upload request."""
-        return env_int("MAX_FILES_PER_BATCH", 10)
-
-    @staticmethod
-    def MAX_TOTAL_BATCH_SIZE() -> int:
-        """Combined byte size limit across one upload batch."""
-        return env_int("MAX_TOTAL_BATCH_SIZE", 209_715_200)
+        return env_list("ALLOWED_EXTENSIONS", ".txt,.md,.pdf,.docx,.csv,.xlsx")
 
     @staticmethod
     def MAX_AUDIO_FILE_SIZE() -> int:
@@ -359,106 +263,20 @@ class FileConfig:
         """Characters shared between consecutive chunks."""
         return env_int("CHUNK_OVERLAP", 0)
 
-    # Storage paths are owned by DatabaseConfig; these are namespaced aliases.
-    TEMP_DIR = DatabaseConfig.TEMP_DIR
-    CHUNKS_DIR = DatabaseConfig.CHUNKS_DIR
-    VECTORS_DIR = DatabaseConfig.VECTORS_DIR
-    VECTOR_STORE_PATH = DatabaseConfig.VECTOR_STORE_PATH
-
-
-class ServerConfig:
-    """HTTP server, CORS and rate-limiting settings."""
-
-    @staticmethod
-    def HOST() -> str:
-        """Bind address."""
-        return env_str("HOST", "0.0.0.0")
-
-    @staticmethod
-    def PORT() -> int:
-        """Bind port."""
-        return env_int("PORT", 8500)
-
-    @staticmethod
-    def DEBUG() -> bool:
-        """Enable FastAPI debug mode and Uvicorn auto-reload."""
-        return env_bool("DEBUG", False)
-
-    @staticmethod
-    def UVICORN_WORKERS() -> int:
-        """Worker process count."""
-        return env_int("UVICORN_WORKERS", 1)
-
-    @staticmethod
-    def CORS_ORIGINS() -> List[str]:
-        """Allowed CORS origins; ``*`` permits any origin."""
-        origins = os.getenv("CORS_ORIGINS", "*")
-        return ["*"] if origins.strip() == "*" else env_list("CORS_ORIGINS", "*")
-
-    @staticmethod
-    def CORS_ALLOW_CREDENTIALS() -> bool:
-        """
-        Whether cross-origin credentials are accepted.
-
-        Defaults to ``False``: paired with the default ``CORS_ORIGINS=*`` this
-        would be the classic wildcard-plus-credentials misconfiguration. Nothing
-        here authenticates via cookies today (the optional ``API_KEY`` travels in
-        an ``X-API-Key`` header, which is not a CORS credential), so turn this on
-        only alongside an explicit origin list.
-        """
-        return env_bool("CORS_ALLOW_CREDENTIALS", False)
-
-    @staticmethod
-    def RATE_LIMIT_ENABLED() -> bool:
-        """Enable the per-IP rate limiting middleware."""
-        return env_bool("RATE_LIMIT_ENABLED", False)
-
-    @staticmethod
-    def RATE_LIMIT_MAX_REQUESTS() -> int:
-        """Requests allowed per client IP inside the sliding window."""
-        return env_int("RATE_LIMIT_MAX_REQUESTS", 100)
-
-    @staticmethod
-    def RATE_LIMIT_WINDOW_SECONDS() -> int:
-        """Width of the rate limiting sliding window, in seconds."""
-        return env_int("RATE_LIMIT_WINDOW_SECONDS", 60)
-
-    @staticmethod
-    def RATE_LIMIT_MAX_CONCURRENT() -> int:
-        """Concurrent in-flight requests allowed per worker process."""
-        return env_int("RATE_LIMIT_MAX_CONCURRENT", 10)
-
-    @staticmethod
-    def DESTRUCTIVE_CLEANUP_ENABLED() -> bool:
-        """
-        Allow ``POST /cleanup/`` to wipe chunks, vectors, temp files and logs.
-
-        Off by default: this endpoint has no confirmation step and no
-        authorization check of its own, so leaving it reachable is a standing
-        "delete the whole knowledge base" button. Enable only for maintenance
-        windows.
-        """
-        return env_bool("DESTRUCTIVE_CLEANUP_ENABLED", False)
-
-    @staticmethod
-    def API_KEY() -> str:
-        """
-        Optional shared-secret key required via the ``X-API-Key`` header.
-
-        Empty (the default) disables the check entirely — appropriate when the
-        service is only reachable on a private network/VPN. Set a value to
-        require every request to present it.
-        """
-        return env_str("API_KEY", "")
-
 
 class RAGConfig:
     """Retrieval, ranking and context-expansion behaviour."""
 
     @staticmethod
     def SIMILARITY_THRESHOLD() -> float:
-        """Minimum fused score a chunk must reach to be considered."""
-        return env_float("SIMILARITY_THRESHOLD", 0.7)
+        """
+        Minimum relevance a chunk needs to count as a match.
+
+        Applied to the reranker score when reranking is on, otherwise to the
+        fused hybrid score. A turn with no chunk above it takes the fallback
+        path (deny / hand off) without calling the LLM.
+        """
+        return env_float("SIMILARITY_THRESHOLD", 0.3)
 
     @staticmethod
     def RERANKING_ENABLED() -> bool:
@@ -467,13 +285,13 @@ class RAGConfig:
 
     @staticmethod
     def QUERY_ADAPTER_PATH() -> str:
-        """Path of the saved query adapter matrix (NumPy ``.npy``)."""
-        return env_str("QUERY_ADAPTER_PATH", "data/vectors/query_adapter.npy")
+        """Path of the saved query adapter matrix (NumPy ``.npy``); optional."""
+        return env_str("QUERY_ADAPTER_PATH", "data/query_adapter.npy")
 
     @staticmethod
     def RETRIEVAL_TOP_K() -> int:
         """Chunks returned by hybrid search before context expansion."""
-        return env_int("RETRIEVAL_TOP_K", 3)
+        return env_int("RETRIEVAL_TOP_K", 4)
 
     @staticmethod
     def SEMANTIC_WEIGHT() -> float:
@@ -483,107 +301,43 @@ class RAGConfig:
     @staticmethod
     def MAX_CONTEXT_CHUNKS() -> int:
         """Hard cap on chunks included after context expansion."""
-        return env_int("MAX_CONTEXT_CHUNKS", 5)
+        return env_int("MAX_CONTEXT_CHUNKS", 6)
 
     @staticmethod
-    def MIN_CONTEXT_CHUNKS() -> int:
-        """Chunks padded in when retrieval returns too few results."""
-        return env_int("MIN_CONTEXT_CHUNKS", 2)
+    def CONTEXT_EXPANSION_RADIUS() -> int:
+        """Neighbour chunks of the same document pulled in on each side of a hit (0 disables)."""
+        return env_int("CONTEXT_EXPANSION_RADIUS", 1)
 
     @staticmethod
     def RERANKER_MODEL() -> str:
         """
         Cross-encoder model used for reranking.
 
-        Defaults to a multilingual model (not the common English-only
-        ms-marco-MiniLM) because the corpus and queries are a mix of English
-        and Vietnamese.
+        Defaults to a multilingual model because the corpus and queries are a
+        mix of English and Vietnamese.
         """
         return env_str("RERANKER_MODEL", "jinaai/jina-reranker-v2-base-multilingual")
 
     @staticmethod
     def RETRIEVAL_MAX_CONCURRENCY() -> int:
         """
-        Concurrent in-flight hybrid-search+rerank operations allowed per process.
+        Concurrent hybrid-search+rerank operations allowed per process.
 
-        Embedding and cross-encoder inference are CPU/GPU-bound and run off the
-        event loop in a worker thread; this bounds how many run at once so a
-        burst of concurrent chat requests cannot exhaust a single GPU's memory
-        (tuned for a 12GB card by default). Raise it if running CPU-only or on a
-        larger GPU.
+        Embedding and cross-encoder inference are GPU-bound and run in a worker
+        thread; this bounds how many run at once so a burst of chats cannot
+        exhaust the GPU's memory (tuned for a 12GB card by default).
         """
         return env_int("RETRIEVAL_MAX_CONCURRENCY", 4)
 
-    @staticmethod
-    def CONTEXT_EXPANSION_ENABLED() -> bool:
-        """Include chunks adjacent to each hit from the same source document."""
-        return env_bool("CONTEXT_EXPANSION_ENABLED", True)
-
-    @staticmethod
-    def CONTEXT_EXPANSION_RADIUS() -> int:
-        """Neighbour chunks pulled in on each side of a hit."""
-        return env_int("CONTEXT_EXPANSION_RADIUS", 1)
-
-    @staticmethod
-    def USE_FAISS_INDEX() -> bool:
-        """Use the FAISS index for semantic search when one is available."""
-        return env_bool("USE_FAISS_INDEX", True)
-
-    @staticmethod
-    def VIETNAMESE_PREPROCESSING_ENABLED() -> bool:
-        """Apply Vietnamese-specific query preprocessing."""
-        return env_bool("VIETNAMESE_PREPROCESSING_ENABLED", True)
-
-    @staticmethod
-    def CLEAN_SPECIAL_CHARS() -> bool:
-        """Strip special characters during preprocessing."""
-        return env_bool("CLEAN_SPECIAL_CHARS", True)
-
-    @staticmethod
-    def EXTRACT_CONTENT_WORDS() -> bool:
-        """Keep only content words during preprocessing."""
-        return env_bool("EXTRACT_CONTENT_WORDS", True)
-
-    # The embedding model is owned by LLMConfig; this is a namespaced alias.
     EMBEDDING_MODEL = LLMConfig.EMBEDDING_MODEL
-
-
-class ChatConfig:
-    """Conversation mode settings."""
-
-    @staticmethod
-    def CHAT_MODE() -> str:
-        """``query_only`` or ``with_history``."""
-        return env_str("CHAT_MODE", "with_history")
-
-    @staticmethod
-    def ENABLE_HISTORY() -> bool:
-        """Whether conversation history is replayed into the prompt."""
-        return ChatConfig.CHAT_MODE().strip().lower() == "with_history"
-
-    @staticmethod
-    def MAX_HISTORY_TURNS() -> int:
-        """
-        Maximum prior question/answer pairs replayed into the prompt.
-
-        History is supplied by the caller on each request (no server-side
-        session store); this is a server-side cap applied regardless of what
-        the caller sends, so a misbehaving client cannot blow the context
-        budget. One turn = one user message + one assistant reply, so the
-        default of 10 turns means up to 20 prior messages are replayed.
-        """
-        return env_int("MAX_HISTORY_TURNS", 10)
 
 
 class OCRConfig:
     """
     OCR settings for scanned/image-only documents.
 
-    Three engines are available (see ``core/document_processing/engine_selector.py``):
-    PP-OCRv6 (local, CPU), PaddleOCR-VL (local, GPU) and Datalab's hosted
-    Surya OCR (online). Both local engines are multilingual and need no
-    per-language configuration; ``OCR_PROVIDER`` picks between local
-    (GPU/CPU auto-detected) and the online engine.
+    See ``core/document_processing/engine_selector.py`` for the engines:
+    PP-OCRv6 (local CPU), PaddleOCR-VL (local GPU), Datalab Surya (online).
     """
 
     @staticmethod
@@ -603,17 +357,12 @@ class OCRConfig:
 
     @staticmethod
     def OCR_MAX_CONCURRENT_FILES() -> int:
-        """PDF files OCR'd in parallel across the process."""
+        """Files processed (parsed/OCR'd) in parallel across the process."""
         return env_int("OCR_MAX_CONCURRENT_FILES", 1)
 
     @staticmethod
     def OCR_PROVIDER() -> str:
-        """
-        Which OCR engine to use: ``auto`` (local, GPU/CPU auto-detected) or
-        ``datalab`` (online, via Datalab's Surya OCR API — requires
-        ``DATALAB_API_KEY``). Falls back to ``auto`` if ``datalab`` is
-        selected without a key configured.
-        """
+        """``auto`` (local, GPU/CPU auto-detected) or ``datalab`` (needs ``DATALAB_API_KEY``)."""
         return env_str("OCR_PROVIDER", "auto")
 
     @staticmethod
@@ -623,77 +372,18 @@ class OCRConfig:
 
 
 class LoggingConfig:
-    """Log level, destination and rotation policy."""
+    """Log level and destination."""
 
     @staticmethod
     def LOG_LEVEL() -> str:
         """Root logger level name."""
         return env_str("LOG_LEVEL", "INFO")
 
-    @staticmethod
-    def LOG_TO_FILE() -> bool:
-        """Write logs to a rotating file in addition to stderr."""
-        return env_bool("LOG_TO_FILE", True)
-
-    @staticmethod
-    def LOG_MAX_SIZE() -> int:
-        """Size at which a log file is rotated, in bytes."""
-        return env_int("LOG_MAX_SIZE", 10_485_760)
-
-    @staticmethod
-    def LOG_BACKUP_COUNT() -> int:
-        """Rotated log files retained on disk."""
-        return env_int("LOG_BACKUP_COUNT", 5)
-
-    @staticmethod
-    def REQUEST_LOGGING_ENABLED() -> bool:
-        """Log one line per HTTP request with its duration."""
-        return env_bool("REQUEST_LOGGING_ENABLED", True)
-
-    LOG_DIR = DatabaseConfig.LOG_DIR
-
-
-class ConfidenceConfig:
-    """Weights of the answer-confidence signals (should sum to 1.0)."""
-
-    @staticmethod
-    def CONFIDENCE_SCORING_ENABLED() -> bool:
-        """Compute confidence scores for generated answers."""
-        return env_bool("CONFIDENCE_SCORING_ENABLED", True)
-
-    @staticmethod
-    def CONFIDENCE_CONTEXT_WEIGHT() -> float:
-        """Weight of context alignment."""
-        return env_float("CONFIDENCE_CONTEXT_WEIGHT", 0.40)
-
-    @staticmethod
-    def CONFIDENCE_LENGTH_WEIGHT() -> float:
-        """Weight of response-length appropriateness."""
-        return env_float("CONFIDENCE_LENGTH_WEIGHT", 0.20)
-
-    @staticmethod
-    def CONFIDENCE_COHERENCE_WEIGHT() -> float:
-        """Weight of semantic coherence."""
-        return env_float("CONFIDENCE_COHERENCE_WEIGHT", 0.30)
-
-    @staticmethod
-    def CONFIDENCE_UNCERTAINTY_WEIGHT() -> float:
-        """Weight of uncertainty-marker detection."""
-        return env_float("CONFIDENCE_UNCERTAINTY_WEIGHT", 0.10)
+    LOG_DIR = PathConfig.LOG_DIR
 
 
 class HealthConfig:
-    """Thresholds used to classify overall service health."""
-
-    @staticmethod
-    def SERVICE_SUCCESS_RATE_THRESHOLD() -> float:
-        """Success-rate percentage below which the service is 'degraded'."""
-        return env_float("SERVICE_SUCCESS_RATE_THRESHOLD", 80.0)
-
-    @staticmethod
-    def SERVICE_MIN_REQUESTS_FOR_HEALTH() -> int:
-        """Requests required before the success rate is meaningful."""
-        return env_int("SERVICE_MIN_REQUESTS_FOR_HEALTH", 10)
+    """Thresholds used by the live performance monitor."""
 
     @staticmethod
     def SLOW_REQUEST_THRESHOLD_MS() -> float:
@@ -701,60 +391,59 @@ class HealthConfig:
         return env_float("SLOW_REQUEST_THRESHOLD_MS", 8000.0)
 
 
-class AuditConfig:
-    """Durable per-turn chat audit trail (query, response, confidence, sources)."""
-
-    @staticmethod
-    def ENABLED() -> bool:
-        """Record one audit entry per answered chat turn."""
-        return env_bool("AUDIT_TRAIL_ENABLED", True)
-
-    @staticmethod
-    def LOG_PATH() -> str:
-        """JSON-Lines file the audit trail is appended to."""
-        return env_str("AUDIT_TRAIL_PATH", os.path.join(DatabaseConfig.LOG_DIR(), "audit_trail.jsonl"))
-
-
 class Config:
     """Namespaced access point for every configuration group."""
 
+    Paths = PathConfig
     Database = DatabaseConfig
     LLM = LLMConfig
     File = FileConfig
     Server = ServerConfig
+    Security = SecurityConfig
     RAG = RAGConfig
     Chat = ChatConfig
     OCR = OCRConfig
     Logging = LoggingConfig
-    Confidence = ConfidenceConfig
     Health = HealthConfig
-    Audit = AuditConfig
 
     @staticmethod
-    def validate() -> bool:
+    def problems() -> List[str]:
         """
-        Validate critical settings and create the directories the app writes to.
+        Settings that are unsafe or missing for a real deployment.
 
         Returns:
-            True when an OpenAI API key is present, False otherwise. Directories
-            are created either way so ingestion still works without a key.
+            Human-readable problem descriptions; empty when all is well.
         """
-        from utils.file_manager import FileManager
-
-        directories = [
-            DatabaseConfig.CHUNKS_DIR(),
-            DatabaseConfig.VECTORS_DIR(),
-            DatabaseConfig.TEMP_DIR(),
-            os.path.dirname(DatabaseConfig.VECTOR_STORE_PATH()),
-        ]
-        for directory in directories:
-            if directory:
-                FileManager.ensure_directory_exists(directory)
-
-        if not LLMConfig.ACTIVE_API_KEY():
-            logger.warning(
-                "No API key set for the active LLM_PROVIDER=%r; chat functionality will not work.",
-                LLMConfig.LLM_PROVIDER(),
+        issues: List[str] = []
+        if len(SecurityConfig.ADMIN_JWT_SECRET()) < MIN_JWT_SECRET_LENGTH:
+            issues.append(
+                f"ADMIN_JWT_SECRET must be at least {MIN_JWT_SECRET_LENGTH} characters "
+                "(generate one with: python -c \"import secrets; print(secrets.token_hex(32))\")"
             )
-            return False
-        return True
+        if not DatabaseConfig.POSTGRES_PASSWORD() and not os.getenv("DATABASE_URL"):
+            issues.append("POSTGRES_PASSWORD is empty")
+        if "*" in SecurityConfig.CORS_ORIGINS():
+            issues.append("CORS_ORIGINS must list explicit origins, not '*'")
+        if not LLMConfig.ACTIVE_API_KEY():
+            issues.append(f"No API key set for LLM_PROVIDER={LLMConfig.LLM_PROVIDER()!r}")
+        if ChatConfig.FALLBACK_MODE() not in {"deny", "handoff"}:
+            issues.append("FALLBACK_MODE must be 'deny' or 'handoff'")
+        return issues
+
+    @staticmethod
+    def validate() -> None:
+        """
+        Check the configuration at start-up.
+
+        In production any problem is fatal; in development each one is logged
+        as a warning so a local run still starts.
+
+        Raises:
+            RuntimeError: ``APP_ENV=production`` and :meth:`problems` is non-empty.
+        """
+        Path(PathConfig.LOG_DIR()).mkdir(parents=True, exist_ok=True)
+        issues = Config.problems()
+        if issues and ServerConfig.IS_PRODUCTION():
+            raise RuntimeError("Refusing to start with an unsafe configuration: " + "; ".join(issues))
+        for issue in issues:
+            logger.warning("Configuration problem: %s", issue)
