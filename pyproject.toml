@@ -25,26 +25,12 @@ ignore = [
 # "module level import not at top of file" rule cannot hold.
 "main.py" = ["E402"]
 "app.py" = ["E402"]
-# Same reason: load_dotenv() must run before config.settings reads the env.
-"setting.py" = ["E402"]
-# The manual CLI test scripts insert the project root on sys.path before
-# importing project modules, same E402 situation.
-"test/test_chunk_ranking.py" = ["E402"]
-"test/test_model_response.py" = ["E402"]
-"test/test_rag_process.py" = ["E402"]
-"scripts/formatting_pipeline_demo.py" = ["E402"]
+# These CLI scripts insert the project root on sys.path before importing
+# project modules, same E402 situation.
 "scripts/eval_rag.py" = ["E402"]
+"scripts/manage.py" = ["E402"]
 
 [tool.pytest.ini_options]
 testpaths = ["test"]
-# test_chunk_ranking / test_model_response / test_rag_process are manual CLI
-# diagnostics (they need a populated vector store and downloaded models), not
-# automated suites — they define no test functions, so they are excluded from
-# collection to keep their heavy imports out of the test run.
-addopts = [
-    "--ignore=test/test_chunk_ranking.py",
-    "--ignore=test/test_model_response.py",
-    "--ignore=test/test_rag_process.py",
-]
 # All async tests carry an explicit @pytest.mark.asyncio, matching strict mode.
 asyncio_mode = "strict"

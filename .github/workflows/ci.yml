@@ -34,6 +34,20 @@ jobs:
     name: Tests (pytest)
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # Integration tests (test/integration) run against a real pgvector database.
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: chatbot
+          POSTGRES_PASSWORD: chatbot_ci
+          POSTGRES_DB: chatbot_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U chatbot" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgresql+asyncpg://chatbot:chatbot_ci@localhost:5432/chatbot_test
     steps:
       - uses: actions/checkout@v7
 
@@ -58,8 +72,36 @@ jobs:
       # No secrets are configured: every setting in config/settings.py falls
       # back to a safe default, and the suites stub out their LLM clients, so
       # the tests run fully offline.
+      # The migration history must apply cleanly to an empty database.
+      - name: Check migrations
+        env:
+          DATABASE_URL: ${{ env.TEST_DATABASE_URL }}
+        run: alembic upgrade head && alembic downgrade base && alembic upgrade head
+
       - name: Run tests
         run: pytest
+
+  web:
+    name: Web frontend (lint, types, build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontends/vieclamhatinh
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontends/vieclamhatinh/package-lock.json
+
+      - run: npm ci
+      - run: npx next typegen
+      - run: npx tsc --noEmit
+      - run: npm run lint
+      - run: npm run build
 
   audit:
     name: Dependency audit (pip-audit)

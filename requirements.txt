@@ -8,13 +8,21 @@ python-multipart==0.0.32
 httpx==0.28.1
 aiofiles==24.1.0
 
+# --- Database (PostgreSQL + pgvector) ---
+sqlalchemy[asyncio]==2.0.54
+asyncpg==0.31.0
+alembic==1.20.0
+pgvector==0.5.0
+
+# --- Auth ---
+pyjwt==2.15.0
+
 # --- LLM providers --- (select via LLM_PROVIDER=openai|anthropic|gemini)
 openai==1.57.0
 anthropic==0.121.0
 google-genai==2.17.0
 
 # --- Retrieval / embeddings ---
-faiss-cpu==1.15.0
 sentence-transformers==5.6.1
 transformers==4.53.3
 accelerate==1.14.0
@@ -23,7 +31,6 @@ einops==0.8.2
 rank-bm25==0.2.2
 numpy==1.26.4
 scikit-learn==1.5.2
-h5py==3.16.0
 
 # --- Document processing ---
 docling==2.94.0
@@ -40,7 +47,7 @@ PyMuPDF==1.28.0
 # --- OCR ---
 paddleocr==3.7.0
 
-# --- Frontend ---
+# --- Internal demo UI (app.py); client frontends live in frontends/ ---
 streamlit==1.61.1
 
 # --- Runtime / config ---

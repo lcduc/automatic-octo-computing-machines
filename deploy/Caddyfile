@@ -1,0 +1,13 @@
+# Public entry point: free automatic HTTPS (Let's Encrypt) for the chat domain,
+# proxied to the Next.js server (widget, embed.js, admin web). The FastAPI
+# backend and PostgreSQL are never exposed to the internet.
+{$CHAT_DOMAIN} {
+	encode zstd gzip
+	request_body {
+		max_size 60MB
+	}
+	reverse_proxy web:3000 {
+		# Stream Server-Sent Events (chat answers, live usage) without buffering.
+		flush_interval -1
+	}
+}

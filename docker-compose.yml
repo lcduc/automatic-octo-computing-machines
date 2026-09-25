@@ -1,36 +1,87 @@
+# One-command deployment on a single VPS:   docker compose up -d --build
+#
+#   caddy  :80/:443  -> web :3000 (Next.js: widget, embed.js, admin web)
+#   web              -> api :8500 (FastAPI, GPU)      [internal network only]
+#   api              -> postgres :5432 (pgvector)     [internal network only]
+#
+# Configuration: `.env` (backend + database) and `frontends/vieclamhatinh/.env`
+# (web). See docs/DEPLOYMENT.md.
+
+name: chatbot
+
 services:
-  rag-chatbot:
+  postgres:
+    image: pgvector/pgvector:pg17
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    # Reachable from the host only (for backups / psql), never from outside.
+    ports:
+      - "127.0.0.1:5432:5432"
+
+  api:
     build:
       context: .
-      dockerfile: Dockerfile
-    ports:
-      - "8500:8500"
-
-    command: ["start.sh"]
-
-    # All configuration comes from .env (see .env.example for the full list).
-    # A previous explicit `environment:` pass-through list is intentionally gone:
-    # it drifted from config/settings.py and silently dropped new variables.
-    env_file:
-      - .env
-
-    # Bind mounts must be writable by the 'app' user inside the container
+      args:
+        TORCH_INDEX: ${TORCH_INDEX:-cu126}
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      POSTGRES_HOST: postgres
+      # Only the web container can reach the API, so its forwarded client IPs are trusted.
+      FORWARDED_ALLOW_IPS: "*"
+    depends_on:
+      postgres:
+        condition: service_healthy
     volumes:
       - ./data:/app/data
-      - ./SSL:/app/SSL:ro
+    # GPU for embeddings / reranking / OCR. Needs the NVIDIA Container Toolkit
+    # on the host; remove this block (and build with TORCH_INDEX=cpu) without a GPU.
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:size=512m
 
+  web:
+    build: ./frontends/vieclamhatinh
     restart: unless-stopped
-
-    # Matches the Dockerfile: try HTTPS (self-signed tolerated), fall back to HTTP
-    healthcheck:
-      test: ["CMD-SHELL", "curl -fsSk https://localhost:8500/ || curl -fsS http://localhost:8500/"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 90s
-
+    env_file: ./frontends/vieclamhatinh/.env
+    environment:
+      BACKEND_URL: http://api:8500
+    depends_on:
+      api:
+        condition: service_healthy
     security_opt:
       - no-new-privileges:true
 
-    tmpfs:
-      - /tmp:noexec,nosuid,size=100m
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - web
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:

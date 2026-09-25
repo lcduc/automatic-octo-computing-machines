@@ -18,8 +18,11 @@
   
   # Python deps
   COPY requirements.txt .
-  # CPU Torch (comment out and use cu118 if you really want GPU)
-  RUN pip install --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+  # Torch wheel index: CUDA 12.6 by default so the embedding model and the
+  # reranker run on the VPS GPU; build with --build-arg TORCH_INDEX=cpu on a
+  # machine without an NVIDIA GPU.
+  ARG TORCH_INDEX=cu126
+  RUN pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/${TORCH_INDEX}
   # PaddlePaddle backs the OCR engines (core/document_processing/ocr). Pinned
   # to 3.2.0, NOT the latest 3.3.x: paddlepaddle 3.3.0's oneDNN/PIR CPU
   # executor is broken for text detection (upstream bug, PaddlePaddle/Paddle
@@ -60,12 +63,12 @@
   WORKDIR /app
   COPY --chown=app:app . .
   
-  # TLS-aware launcher in PATH (no need to know WORKDIR)
+  # Launcher in PATH (runs migrations, then the API)
   COPY start.sh /usr/local/bin/start.sh
   RUN chmod 0755 /usr/local/bin/start.sh
   
   # Data dirs & permissions
-  RUN mkdir -p data/chunks data/vectors data/temp logs scripts model_weights \
+  RUN mkdir -p data/logs logs scripts model_weights \
    && chown -R app:app data logs scripts model_weights
 
   USER app
@@ -80,12 +83,11 @@
 
   EXPOSE 8500
 
-  # Healthcheck: try HTTPS (-k for self-signed), fallback to HTTP.
-  # start-period covers first-boot model downloads from Hugging Face when the
-  # weights were not baked into the image by the build step above.
-  HEALTHCHECK --interval=30s --timeout=10s --start-period=90s --retries=3 \
-    CMD curl -fsSk https://localhost:8500/ || curl -fsS http://localhost:8500/ || exit 1
-  
-  # Use the launcher (enables HTTPS if certs are readable)
+  # Ready once the database answers and the models are loaded; start-period
+  # covers model loading (and first-boot downloads if weights were not baked in).
+  HEALTHCHECK --interval=30s --timeout=10s --start-period=180s --retries=3 \
+    CMD curl -fsS http://localhost:8500/health/ready || exit 1
+
+  # Applies database migrations, then starts the API (single worker).
   CMD ["start.sh"]
   

@@ -65,3 +65,12 @@ data/temp/*
 *.bin
 *.safetensors
 model_weights/
+
+# Secrets and components that are not part of the API image
+SSL/
+*.pem
+*.key
+frontends/
+deploy/
+.claude/
+.codegraph/
