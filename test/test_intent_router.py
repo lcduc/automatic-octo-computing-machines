@@ -6,6 +6,7 @@ from core.agent.intent_router import IntentRouter
 from core.agent.tools.base import BaseTool
 from core.agent.tools.registry import ToolRegistry
 from models.intent import IntentType
+from models.llm import LLMResult
 
 
 class _DummyTool(BaseTool):
@@ -39,7 +40,7 @@ class _StubClientProvider:
         self.calls.append(messages)
         if self.raise_error:
             raise RuntimeError("simulated API failure")
-        return self.response
+        return LLMResult(self.response)
 
 
 def _router_with_tool(client: _StubClientProvider) -> IntentRouter:
@@ -51,7 +52,7 @@ async def test_classifies_question_as_rag():
     client = _StubClientProvider(response="rag")
     router = _router_with_tool(client)
 
-    result = await router.classify("Chính sách nghỉ phép của công ty là gì?")
+    result, _usage = await router.classify("Chính sách nghỉ phép của công ty là gì?")
 
     assert result == IntentType.RAG
     assert len(client.calls) == 1
@@ -62,7 +63,7 @@ async def test_classifies_command_as_action():
     client = _StubClientProvider(response="action")
     router = _router_with_tool(client)
 
-    result = await router.classify("Bây giờ là mấy giờ?")
+    result, _usage = await router.classify("Bây giờ là mấy giờ?")
 
     assert result == IntentType.ACTION
 
@@ -72,7 +73,7 @@ async def test_output_is_case_and_whitespace_insensitive():
     client = _StubClientProvider(response="  Action \n")
     router = _router_with_tool(client)
 
-    result = await router.classify("Bây giờ là mấy giờ?")
+    result, _usage = await router.classify("Bây giờ là mấy giờ?")
 
     assert result == IntentType.ACTION
 
@@ -82,7 +83,7 @@ async def test_unrecognized_output_defaults_to_rag():
     client = _StubClientProvider(response="tôi không chắc")
     router = _router_with_tool(client)
 
-    result = await router.classify("một câu hỏi bất kỳ")
+    result, _usage = await router.classify("một câu hỏi bất kỳ")
 
     assert result == IntentType.RAG
 
@@ -92,7 +93,7 @@ async def test_client_error_defaults_to_rag():
     client = _StubClientProvider(raise_error=True)
     router = _router_with_tool(client)
 
-    result = await router.classify("một câu hỏi bất kỳ")
+    result, _usage = await router.classify("một câu hỏi bất kỳ")
 
     assert result == IntentType.RAG
 
@@ -133,7 +134,7 @@ async def test_no_tools_registered_defaults_to_rag_without_calling_llm():
     client = _StubClientProvider(response="action")  # would mislead if it were ever read
     router = IntentRouter(client, ToolRegistry(tools=[]))
 
-    result = await router.classify("Bây giờ là mấy giờ?")
+    result, _usage = await router.classify("Bây giờ là mấy giờ?")
 
     assert result == IntentType.RAG
     assert client.calls == []

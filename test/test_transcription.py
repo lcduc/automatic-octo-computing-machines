@@ -1,11 +1,10 @@
-"""Unit tests for voice-query transcription across the OpenAIClientProvider,
-ChatbotService and ChatService layers."""
+"""Unit tests for voice-query transcription: OpenAIClientProvider and TranscriptionService."""
 
 import pytest
 
-from core.agent.chatbot import ChatbotService
 from core.agent.openai_client import OpenAIClientProvider
-from services.chat_service import ChatService
+from services.errors import ServiceUnavailableError
+from services.transcription_service import TranscriptionService
 
 
 class _FakeTranscriptions:
@@ -115,70 +114,22 @@ def test_transcribe_returns_empty_string_for_empty_response():
 
 
 # ---------------------------------------------------------------------------
-# ChatbotService.transcribe_audio
+# TranscriptionService
 # ---------------------------------------------------------------------------
 
 
-class _StubClientProvider:
-    """Fake OpenAIClientProvider that records transcribe() calls."""
+@pytest.mark.asyncio
+async def test_transcription_service_delegates_to_provider():
+    transcriptions = _FakeTranscriptions(response="xin chào")
+    service = TranscriptionService(_provider_with_fake_transcriptions(transcriptions))
 
-    def __init__(self, response: str = "transcribed text", available: bool = True):
-        self.response = response
-        self.available = available
-        self.calls = []
-
-    def check_availability(self) -> bool:
-        return self.available
-
-    def transcribe(self, audio_bytes, filename, content_type):
-        self.calls.append((audio_bytes, filename, content_type))
-        return self.response
+    assert await service.transcribe(b"raw", "clip.webm", "audio/webm") == "xin chào"
+    assert transcriptions.calls[0]["file"] == ("clip.webm", b"raw", "audio/webm")
 
 
 @pytest.mark.asyncio
-async def test_chatbot_service_transcribe_audio_delegates_to_client_provider():
-    client = _StubClientProvider(response="what is the refund policy")
-    service = ChatbotService(context_retriever=object(), llm_provider=client)
-
-    result = await service.transcribe_audio(b"raw-bytes", "voice.wav", "audio/wav")
-
-    assert result == "what is the refund policy"
-    assert client.calls == [(b"raw-bytes", "voice.wav", "audio/wav")]
-
-
-# ---------------------------------------------------------------------------
-# ChatService.transcribe_audio
-# ---------------------------------------------------------------------------
-
-
-class _StubChatbotService:
-    def __init__(self, response: str = "transcribed", available: bool = True):
-        self.response = response
-        self.api_available = available
-        self.calls = []
-
-    async def transcribe_audio(self, audio_bytes, filename, content_type):
-        self.calls.append((audio_bytes, filename, content_type))
-        return self.response
-
-
-@pytest.mark.asyncio
-async def test_chat_service_transcribe_audio_delegates_when_available():
-    chatbot = _StubChatbotService(response="hello there")
-    service = ChatService(chatbot_service=chatbot)
-
-    result = await service.transcribe_audio(b"raw", "clip.wav", "audio/wav")
-
-    assert result == "hello there"
-    assert chatbot.calls == [(b"raw", "clip.wav", "audio/wav")]
-
-
-@pytest.mark.asyncio
-async def test_chat_service_transcribe_audio_raises_when_unavailable():
-    chatbot = _StubChatbotService(available=False)
-    service = ChatService(chatbot_service=chatbot)
-
-    with pytest.raises(RuntimeError):
-        await service.transcribe_audio(b"raw", "clip.wav", "audio/wav")
-
-    assert chatbot.calls == []
+async def test_transcription_service_unavailable_without_openai_key():
+    with pytest.raises(ServiceUnavailableError):
+        await TranscriptionService(None).transcribe(b"raw", "clip.webm", "audio/webm")
+    with pytest.raises(ServiceUnavailableError):
+        await TranscriptionService(OpenAIClientProvider(api_key="")).transcribe(b"raw", "clip.webm", "audio/webm")

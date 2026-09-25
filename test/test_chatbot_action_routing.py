@@ -1,152 +1,95 @@
-"""Unit tests for ChatbotService's intent-based routing to ToolCallingAgent."""
+"""Unit tests for the chat pipeline's intent-based routing to the tool-calling agent."""
 
 import types
+import uuid
 
+import numpy as np
 import pytest
 
 from core.agent.chatbot import ChatbotService
-from core.infrastructure.audit_trail_service import AuditTrailService
+from core.agent.intent_router import IntentRouter
+from core.agent.response_cache import ResponseCache
+from core.agent.tool_calling_agent import ToolCallingAgent
+from core.agent.query_rewriter import QueryRewriter
+from core.agent.tools.current_time_tool import CurrentTimeTool
+from core.agent.tools.registry import ToolRegistry
+from core.guardrails.input_guard import InputGuard
+from core.retrieval.knowledge_index import KnowledgeSnapshot
+from core.retrieval.retriever import ContextRetriever
+from core.storage.knowledge_repository import IndexRow
+from models.chat_turn import ChatPolicy, TurnOutcome, TurnRequest, TurnResult, TurnUsage
+from models.llm import LLMResult, LLMUsage, StreamDelta
+
+POLICY = ChatPolicy("deny", "DENY", "HANDOFF", "BLOCKED", "HELLO", "WELCOME")
 
 
 class _StubProvider:
-    """Fake LLM provider covering intent classification, tool-calling and streaming."""
+    """Fake provider covering intent classification, tool-calling and streaming."""
 
-    def __init__(self, intent_text: str = "rag", decision_message=None, stream_chunks=None):
+    name = "stub"
+
+    def __init__(self, intent_text: str):
         self.intent_text = intent_text
-        self.decision_message = decision_message or types.SimpleNamespace(
-            content="", tool_calls=[]
-        )
-        self.stream_chunks = stream_chunks or ["ok"]
-        self.complete_async_calls = []
-        self.complete_with_tools_calls = []
-        self.stream_calls = []
-
-    def check_availability(self) -> bool:
-        return True
+        self.tool_decisions = 0
+        self.stream_calls = 0
 
     async def complete_async(self, messages, model=None):
-        self.complete_async_calls.append(messages)
-        return self.intent_text
+        return LLMResult(self.intent_text, LLMUsage("stub", "light", 3, 1))
 
     async def complete_with_tools_async(self, messages, tools=None, model=None):
-        self.complete_with_tools_calls.append({"messages": messages, "tools": tools})
-        return self.decision_message
+        self.tool_decisions += 1
+        return types.SimpleNamespace(content="Bây giờ là 10:00.", tool_calls=[]), LLMUsage("stub", "main", 20, 5)
 
     async def stream(self, messages, model=None):
-        self.stream_calls.append(messages)
-        for chunk in self.stream_chunks:
-            yield chunk
+        self.stream_calls += 1
+        yield StreamDelta(text="Câu trả lời từ tài liệu.")
+        yield StreamDelta(usage=LLMUsage("stub", "main", 50, 10))
 
 
-class _StubRetriever:
-    """Fake retriever returning fixed, pre-built search results."""
-
-    def __init__(self, results):
-        self._results = results
-
-    def hybrid_search(self, query, embeddings, documents, k, semantic_weight):
-        return self._results
+class _Embeddings:
+    def embed_query(self, query):
+        return np.array([1.0, 0.0], dtype=np.float32)
 
 
-@pytest.mark.asyncio
-async def test_action_intent_uses_tool_calling_agent_and_skips_rag():
-    decision_message = types.SimpleNamespace(content="It's 10am.", tool_calls=[])
-    provider = _StubProvider(intent_text="action", decision_message=decision_message)
-    service = ChatbotService(context_retriever=object(), llm_provider=provider)
-
-    deltas = [delta async for delta in service.stream_response_with_history("what time is it?")]
-
-    assert deltas == [
-        {"type": "delta", "answer": {"text": "It's 10am."}},
-        {"type": "final", "answer": {"text": ""}, "citations": [], "rewritten_query": None},
-    ]
-    assert len(provider.complete_async_calls) == 1  # IntentRouter.classify
-    assert len(provider.complete_with_tools_calls) == 1  # ToolCallingAgent decision call
-    assert provider.stream_calls == []  # RAG generation never reached
-
-
-@pytest.mark.asyncio
-async def test_rag_intent_leaves_existing_rag_flow_untouched(tmp_path):
-    provider = _StubProvider(intent_text="rag", stream_chunks=["hello ", "there"])
-    # Dedicated audit log so this test's turn never lands in the real
-    # data/logs/audit_trail.jsonl - this path runs the turn to completion,
-    # which triggers ChatbotService._record_audit.
-    audit_trail = AuditTrailService(log_path=str(tmp_path / "audit_trail.jsonl"))
-    service = ChatbotService(
-        context_retriever=object(), llm_provider=provider, audit_trail=audit_trail
+class _Index:
+    snapshot = KnowledgeSnapshot.build(
+        [IndexRow(uuid.uuid4(), uuid.uuid4(), 0, "Chính sách nghỉ phép 12 ngày", [1.0, 0.0], {}, "Nội quy", {}, None,
+                  "general", 1.0)],
+        version=1,
     )
 
-    events = [event async for event in service.stream_response_with_history("hi")]
 
-    assert events[:2] == [
-        {"type": "delta", "answer": {"text": "hello "}},
-        {"type": "delta", "answer": {"text": "there"}},
-    ]
-    assert len(events) == 3
-    final_event = events[2]
-    assert final_event["type"] == "final"
-    assert final_event["answer"]["text"] == ""
-    assert final_event["answer"]["cached"] is False
-    assert "confidence" in final_event["answer"]
-    assert final_event["citations"] == []  # no documents were provided, so no RAG results
-    assert len(provider.complete_async_calls) == 1  # IntentRouter.classify only
-    assert provider.complete_with_tools_calls == []  # tool-calling never invoked
-    assert len(provider.stream_calls) == 1
-
-
-@pytest.mark.asyncio
-async def test_rag_intent_streams_citations_for_retrieved_sources(tmp_path):
-    results = [
-        {
-            "document": "doc a text",
-            "combined_score": 0.9,
-            "index": 0,
-            "source_id": "doc_a",
-            "source_name": "doc_a.pdf",
-            "source_type": "file",
-        },
-        {
-            "document": "doc b text",
-            "combined_score": 0.7,
-            "index": 1,
-            "source_id": "doc_b",
-            "source_name": "doc_b.pdf",
-            "source_type": "file",
-        },
-    ]
-    provider = _StubProvider(intent_text="rag", stream_chunks=["answer"])
-    audit_trail = AuditTrailService(log_path=str(tmp_path / "audit_trail.jsonl"))
-    service = ChatbotService(
-        context_retriever=_StubRetriever(results), llm_provider=provider, audit_trail=audit_trail
+def _pipeline(provider):
+    registry = ToolRegistry(tools=[CurrentTimeTool()])
+    return ChatbotService(
+        llm_provider=provider,
+        retriever=ContextRetriever(_Embeddings(), reranker=None),
+        index=_Index(),
+        guard=InputGuard(),
+        cache=ResponseCache(10, 60),
+        intent_router=IntentRouter(provider, registry),
+        tool_agent=ToolCallingAgent(provider, registry, QueryRewriter(provider)),
     )
 
-    events = [
-        event
-        async for event in service.stream_response_with_history(
-            "hi", embeddings=object(), documents=["doc a text", "doc b text"]
-        )
-    ]
 
-    final_event = events[-1]
-    assert final_event["type"] == "final"
-    assert final_event["citations"] == [
-        {"source": "doc_a.pdf", "type": "file", "score": 0.9, "chunk_id": "unknown"},
-        {"source": "doc_b.pdf", "type": "file", "score": 0.7, "chunk_id": "unknown"},
-    ]
+async def _run(pipeline, query):
+    events = [e async for e in pipeline.run(TurnRequest(query=query, history=[], policy=POLICY))]
+    assert isinstance(events[-1], TurnResult)
+    return events
 
 
 @pytest.mark.asyncio
-async def test_tool_calling_disabled_skips_intent_classification(monkeypatch):
-    monkeypatch.setenv("TOOL_CALLING_ENABLED", "false")
-    provider = _StubProvider(intent_text="action", stream_chunks=["ok"])
-    service = ChatbotService(context_retriever=object(), llm_provider=provider)
+async def test_action_intent_is_answered_by_the_tool_agent():
+    provider = _StubProvider("action")
+    events = await _run(_pipeline(provider), "Bây giờ là mấy giờ?")
+    assert events[-1].outcome == TurnOutcome.ANSWERED and events[-1].text == "Bây giờ là 10:00."
+    assert provider.tool_decisions == 1 and provider.stream_calls == 0
+    assert [e.purpose for e in events if isinstance(e, TurnUsage)] == ["intent", "tool"]
 
-    generator = service.stream_response_with_history("hi")
-    try:
-        first_event = await generator.__anext__()
-    finally:
-        await generator.aclose()
 
-    assert first_event == {"type": "delta", "answer": {"text": "ok"}}
-    assert provider.complete_async_calls == []  # classify() never called
-    assert provider.complete_with_tools_calls == []
+@pytest.mark.asyncio
+async def test_rag_intent_uses_retrieval_and_streaming():
+    provider = _StubProvider("rag")
+    events = await _run(_pipeline(provider), "chính sách nghỉ phép")
+    assert events[-1].citations[0]["title"] == "Nội quy"
+    assert provider.tool_decisions == 0 and provider.stream_calls == 1

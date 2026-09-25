@@ -7,13 +7,14 @@ import pytest
 from core.agent.tool_calling_agent import ToolCallingAgent
 from core.agent.tools.base import BaseTool
 from core.agent.tools.registry import ToolRegistry
+from models.llm import StreamDelta
 
 
 class _StubQueryRewriter:
     """No-op rewriter so agent tests aren't coupled to QueryRewriter's own behavior."""
 
-    def rewrite(self, query, history):
-        return query
+    async def rewrite(self, query, history):
+        return query, None
 
 
 class _EchoTool(BaseTool):
@@ -79,16 +80,16 @@ class _StubClientProvider:
 
     async def complete_with_tools_async(self, messages, tools=None):
         self.decision_calls.append({"messages": messages, "tools": tools})
-        return self.decision_message
+        return self.decision_message, None
 
     async def stream(self, messages):
         self.stream_calls.append(messages)
         for chunk in self.stream_chunks:
-            yield chunk
+            yield StreamDelta(text=chunk)
 
 
 async def _collect(agen):
-    return [item async for item in agen]
+    return [item.text async for item in agen if item.text]
 
 
 # --- ToolRegistry ------------------------------------------------------------
@@ -180,14 +181,12 @@ async def test_malformed_tool_arguments_reported_as_error_not_raised():
 
 
 @pytest.mark.asyncio
-async def test_agent_error_yields_single_error_chunk():
+async def test_agent_error_propagates_instead_of_streaming_raw_text():
     class _RaisingClientProvider:
         async def complete_with_tools_async(self, messages, tools=None):
             raise RuntimeError("simulated failure")
 
     agent = ToolCallingAgent(_RaisingClientProvider(), ToolRegistry(tools=[]), _StubQueryRewriter())
 
-    deltas = await _collect(agent.stream("hi"))
-
-    assert len(deltas) == 1
-    assert deltas[0].startswith("[ERROR]")
+    with pytest.raises(RuntimeError):
+        await _collect(agent.stream("hi"))
