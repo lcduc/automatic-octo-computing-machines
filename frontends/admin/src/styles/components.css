@@ -621,6 +621,11 @@ pre {
   gap: 6px;
   min-width: 0;
 }
+fieldset.field {
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
 .field__label {
   font-size: 12px;
   font-weight: 600;

@@ -252,14 +252,21 @@ export interface Settings {
   max_context_chunks: number;
 }
 
+/** Scopes a server-to-server API key can carry (backend: core/storage/tables/access_tables.py). */
+export const API_KEY_SCOPES = ["chat", "documents:write", "conversations:read", "admin:read"] as const;
+export type ApiKeyScope = (typeof API_KEY_SCOPES)[number];
+
 export interface ApiKey {
   id: string;
   name: string;
   key_prefix: string;
-  scopes: string[];
+  scopes: ApiKeyScope[];
   created_at: string;
   last_used_at: string | null;
   revoked_at: string | null;
+  expires_at: string | null;
+  rate_limit_per_minute: number;
+  rotated_from_id: string | null;
 }
 
 export interface ApiKeyCreated extends ApiKey {
