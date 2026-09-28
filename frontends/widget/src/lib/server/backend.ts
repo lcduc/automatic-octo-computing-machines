@@ -7,13 +7,24 @@
  */
 import { backendUrl, bffServiceToken } from "./config";
 
-/** Headers forwarded from the incoming request to the backend. */
+/** Longest host token relayed to the backend. */
+const MAX_AUTHORIZATION_LENGTH = 4096;
+
+/**
+ * Headers forwarded from the incoming request to the backend: the visitor IP,
+ * a request id, and a signed-in host user's `Authorization: Bearer` token,
+ * relayed unchanged (the backend verifies it).
+ */
 function forwardedHeaders(incoming: Request): Record<string, string> {
   const headers: Record<string, string> = {
     "X-Request-ID": crypto.randomUUID().replace(/-/g, ""),
   };
   const forwardedFor = incoming.headers.get("x-forwarded-for");
   if (forwardedFor) headers["X-Forwarded-For"] = forwardedFor;
+  const authorization = incoming.headers.get("authorization");
+  if (authorization?.startsWith("Bearer ") && authorization.length <= MAX_AUTHORIZATION_LENGTH) {
+    headers["Authorization"] = authorization;
+  }
   return headers;
 }
 
