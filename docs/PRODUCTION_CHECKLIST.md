@@ -97,10 +97,10 @@ Single-tenant env vars (minimum): `HOST_ORIGIN`, `HOST_AUTH_MODE` (`rs256` | `hs
 
 - [x] WID-01 `embed.js` loader: host adds one `<script>`; loader injects launcher bubble + iframe (isolates widget from host CSS)
 - [x] WID-02 CSP `frame-ancestors 'self' ${HOST_ORIGIN}` on chat app (X-Frame-Options cannot allowlist; use CSP)
-- [~] WID-03 `postMessage` with exact `targetOrigin = HOST_ORIGIN` (never `*`); verify `event.origin === HOST_ORIGIN` on receive — loader checks origin; iframe still posts with `*`
-- [~] WID-04 No cookie auth for logged-in users inside the iframe. The anonymous visitor ID is a signed, partitioned (CHIPS) HttpOnly cookie set by the BFF; the host JWT is held in memory and sent as `Authorization: Bearer` to the BFF, which forwards it to FastAPI — anonymous part done
-- [~] WID-05 Widget API requests from another origin are rejected (BFF `Origin`/`Sec-Fetch-Site` check); FastAPI is unreachable from browsers — GET routes unchecked
-- [ ] WID-06 Host events handled: `login`, `logout`, `token_refresh` pushed into iframe
+- [x] WID-03 `postMessage` with exact `targetOrigin = HOST_ORIGIN` (never `*`); verify `event.origin === HOST_ORIGIN` on receive — both sides, plus `event.source` checks (vitest suites for the bridge and embed.js)
+- [x] WID-04 No cookie auth for logged-in users inside the iframe. The anonymous visitor ID is a signed, partitioned (CHIPS) HttpOnly cookie set by the BFF; the host JWT is held in memory and sent as `Authorization: Bearer` to the BFF, which forwards it to FastAPI
+- [x] WID-05 Widget API requests from another origin are rejected (BFF `Origin`/`Sec-Fetch-Site` check on every route); FastAPI is unreachable from browsers
+- [x] WID-06 Host events handled: `login`, `logout`, `token_refresh` pushed into iframe (`Chatbot.login()/logout()`, `ChatbotConfig.getToken`)
 - [~] WID-07 Mobile: full-screen on small viewports; input not hidden by keyboard (test iOS Safari) — full-screen ≤480px; no keyboard handling / iOS test
 - [~] WID-08 UI: streaming, Markdown, tables, clickable citations, stop/regenerate, thumbs up/down + comment, example questions on empty state — no tables, no regenerate
 - [~] WID-09 WCAG 2.2 basics: contrast (SC 1.4.3), keyboard operable (SC 2.1.1), labeled controls — disclaimer text fails 1.4.3
@@ -116,11 +116,11 @@ Single-tenant env vars (minimum): `HOST_ORIGIN`, `HOST_AUTH_MODE` (`rs256` | `hs
 - [~] ID-04 Access: public documents + public tools only — true only because nothing private exists yet
 
 ### Logged-in (host passes identity)
-- [ ] ID-05 Host backend mints short-lived JWT (5–15 min): `sub`, `tier`, `iss`, `aud`, `exp`, `jti`. Host frontend passes it via `postMessage`. `HOST_AUTH_MODE=rs256` (default; JWKS or PEM) \| `hs256` (fallback, startup warning) \| `none` (anonymous-only)
-- [ ] ID-06 Verify signature (RS256 via JWKS/public key — host secret never on our server), `exp`, `iss`, `aud`; reject replayed `jti` within TTL
-- [ ] ID-07 Refresh: iframe requests new token from parent before expiry
-- [ ] ID-08 Anonymous → logged-in upgrade attaches current conversation to user
-- [ ] ID-09 Logout clears token and hides private history immediately
+- [x] ID-05 Host backend mints short-lived JWT (5–15 min): `sub`, `tier`, `iss`, `aud`, `exp`, `jti`. Host frontend passes it via `postMessage`. `HOST_AUTH_MODE=rs256` (default; JWKS or PEM) \| `hs256` (fallback, startup warning) \| `none` (anonymous-only) — host-sdk snippets for Node/PHP/Python verified against the backend
+- [x] ID-06 Verify signature (RS256 via JWKS/public key — host secret never on our server), `exp`, `iss`, `aud`; reject replayed `jti` within TTL — a `jti` is bound to the first browser that presents it; lifetime capped at 15 min; algorithm pinned
+- [x] ID-07 Refresh: iframe requests new token from parent before expiry (60 s margin; one retry on `invalid_token`)
+- [x] ID-08 Anonymous → logged-in upgrade attaches current conversation to user
+- [x] ID-09 Logout clears token and hides private history immediately (widget clears it; the API refuses it to anonymous callers)
 
 ### Tier gating
 - [ ] ID-10 Tool list filtered by tier before every LLM call (Invariant 3)
