@@ -58,11 +58,12 @@ endpoints.
 
 | Header | Required | Value |
 |---|---|---|
-| `X-API-Key` | always | A key with the `chat` scope, created in the admin web (*Tài khoản & khoá API*) or with `python -m scripts.manage create-api-key`. Shown once; stored hashed. |
+| `X-API-Key` | server-to-server integrations | A key with the `chat` scope, created in the admin web (*Tài khoản & khoá API*) or with `python -m scripts.manage create-api-key`. Shown once; stored hashed. |
+| `X-Service-Token` | our own chat widget server | Its installer-generated `BFF_SERVICE_TOKEN`, used instead of an API key. |
 | `X-End-User-Id` | all routes except `/widget/config` | An opaque, stable id for the visitor, 8–128 of `A-Z a-z 0-9 _ - : .`. Never an e-mail or phone number. Conversations are only visible to the visitor id that created them. |
 
-The chat widget's server keeps the key in `CHATBOT_API_KEY` and derives the visitor id from a signed
-cookie; browsers never see either.
+The chat widget's server authenticates with `X-Service-Token` and derives the visitor id from a signed
+cookie; browsers never see either. API keys are for server-to-server integrations only.
 
 ### Admin API
 
