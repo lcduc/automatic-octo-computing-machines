@@ -66,6 +66,7 @@ cp .env.example .env
 #   set: POSTGRES_PASSWORD, ADMIN_JWT_SECRET, OPENAI_API_KEY (or another provider),
 #        CHAT_DOMAIN=chat.example.com, CORS_ORIGINS=https://chat.example.com,
 #        FRONTEND=<client>   (folder under frontends/)
+#   every other setting keeps its default from config/settings.py; add a line to override one
 python3 -c "import secrets; print(secrets.token_hex(32))"   # for ADMIN_JWT_SECRET
 
 # 2. Web settings (the API key comes in step 4)
@@ -150,7 +151,7 @@ docker run -d --name chatbot-pg -e POSTGRES_USER=chatbot -e POSTGRES_PASSWORD=de
 python -m venv venv && source venv/bin/activate      # Windows: venv\Scripts\Activate.ps1
 pip install torch torchvision --index-url https://download.pytorch.org/whl/cu126
 pip install -r requirements.txt
-cp .env.example .env    # APP_ENV=development, POSTGRES_HOST=localhost, POSTGRES_PASSWORD=dev
+cp .env.example .env    # APP_ENV=development, POSTGRES_PASSWORD=dev (host defaults to localhost)
 alembic upgrade head
 python main.py          # API on :8500, docs on /docs; parses uploads in-process
                         # (INGESTION_WORKER=embedded). To mirror production, set

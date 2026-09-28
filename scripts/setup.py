@@ -43,7 +43,7 @@ def create_directories():
 
 
 def setup_environment():
-    """Create .env from .env.example, the single source of truth for settings."""
+    """Create .env from .env.example (the settings a deployment must fill in; the rest have code defaults)."""
     env_file = Path(".env")
     if not env_file.exists():
         print("Creating .env file from .env.example...")

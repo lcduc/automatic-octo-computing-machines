@@ -31,6 +31,10 @@ services:
     image: pgvector/pgvector:pg17
     restart: unless-stopped
     env_file: .env
+    # Same defaults as config/platform_settings.py, so .env only needs the password.
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-chatbot}
+      POSTGRES_USER: ${POSTGRES_USER:-chatbot}
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
