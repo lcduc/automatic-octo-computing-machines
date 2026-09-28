@@ -108,10 +108,23 @@ services:
     security_opt:
       - no-new-privileges:true
 
+  # Admin web (static SPA), served on ADMIN_DOMAIN only; shared by every client deployment.
+  admin:
+    build: ./frontends/admin
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          memory: 128m
+
   caddy:
     image: caddy:2
     restart: unless-stopped
     env_file: .env
+    environment:
+      ADMIN_DOMAIN: ${ADMIN_DOMAIN:?set ADMIN_DOMAIN in .env (the admin web's own domain)}
     ports:
       - "80:80"
       - "443:443"
@@ -121,6 +134,7 @@ services:
       - caddy_config:/config
     depends_on:
       - web
+      - admin
 
 volumes:
   pgdata:

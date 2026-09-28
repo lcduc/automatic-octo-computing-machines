@@ -1,13 +1,42 @@
-# Public entry point: free automatic HTTPS (Let's Encrypt) for the chat domain,
-# proxied to the Next.js server (widget, embed.js, admin web). The FastAPI
-# backend and PostgreSQL are never exposed to the internet.
+# Public entry point: free automatic HTTPS (Let's Encrypt) for both domains.
+# The FastAPI backend and PostgreSQL are never exposed to the internet as a whole.
+
+# Chat domain: the client frontend (widget, embed.js), proxied to its Next.js server.
 {$CHAT_DOMAIN} {
 	encode zstd gzip
 	request_body {
 		max_size 60MB
 	}
 	reverse_proxy web:3000 {
-		# Stream Server-Sent Events (chat answers, live usage) without buffering.
+		# Stream Server-Sent Events (chat answers) without buffering.
 		flush_interval -1
+	}
+}
+
+# Admin domain: the admin web on its own origin, sharing nothing with the chat
+# (checklist Invariant 7). Only the admin API is reachable here, same-origin, so
+# the HttpOnly session cookie never needs CORS.
+{$ADMIN_DOMAIN} {
+	encode zstd gzip
+	request_body {
+		max_size 60MB
+	}
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		Content-Security-Policy "default-src 'self'; img-src 'self' data:; font-src 'self'; style-src 'self'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'"
+		X-Frame-Options "DENY"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		-Server
+	}
+	handle /api/v1/admin/* {
+		reverse_proxy api:8500 {
+			# The live usage feed is Server-Sent Events.
+			flush_interval -1
+		}
+	}
+	handle {
+		reverse_proxy admin:80
 	}
 }

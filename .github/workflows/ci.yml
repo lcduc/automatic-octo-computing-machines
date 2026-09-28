@@ -81,6 +81,28 @@ jobs:
       - name: Run tests
         run: pytest
 
+  admin-web:
+    name: Admin web (lint, types, tests, build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontends/admin
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontends/admin/package-lock.json
+
+      - run: npm ci --no-audit --no-fund
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
   audit:
     name: Dependency audit (pip-audit)
     runs-on: ubuntu-latest
