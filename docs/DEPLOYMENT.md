@@ -9,14 +9,17 @@ docker compose up -d --build
 | Service            | What it is                                              | Exposed            |
 |--------------------|---------------------------------------------------------|--------------------|
 | `caddy`            | HTTPS entry point (free Let's Encrypt certificate)      | ports 80/443       |
-| `web`              | Next.js: chat widget, `embed.js`, admin web, BFF routes | internal only      |
+| `web`              | Next.js: chat widget, `embed.js`, BFF routes            | internal only      |
+| `admin`            | Admin web (static SPA), served on `ADMIN_DOMAIN`         | internal only      |
 | `api`              | FastAPI: RAG pipeline, admin API (GPU)                  | internal only      |
 | `ingestion-worker` | Parses, OCRs and embeds uploaded files (same image)     | not exposed        |
 | `postgres`         | PostgreSQL 17 + pgvector: all data and embeddings       | `127.0.0.1` only   |
 
-The browser only talks to Caddy → `web`. The chat API key lives on the `web`
-server, never in the browser. The API and database are unreachable from the
-internet.
+The browser only talks to Caddy. On `CHAT_DOMAIN` Caddy proxies to `web`; the
+chat API key lives on the `web` server, never in the browser. On `ADMIN_DOMAIN`
+Caddy serves the admin web and proxies only `/api/v1/admin/*` to the API, so the
+admin session (an HttpOnly cookie) never meets the embeddable chat. The rest of
+the API and the database are unreachable from the internet.
 
 Uploads never run inside the API. `api` stores the file in `data/uploads/` and
 queues the document (status `processing`, answered with `202`); `ingestion-worker`
@@ -64,8 +67,9 @@ git clone <repo> chatbot && cd chatbot
 # 1. Backend + database settings
 cp .env.example .env
 #   set: POSTGRES_PASSWORD, ADMIN_JWT_SECRET, OPENAI_API_KEY (or another provider),
-#        CHAT_DOMAIN=chat.example.com, CORS_ORIGINS=https://chat.example.com,
-#        FRONTEND=<client>   (folder under frontends/)
+#        CHAT_DOMAIN=chat.example.com, ADMIN_DOMAIN=admin.example.com,
+#        CORS_ORIGINS=https://chat.example.com, FRONTEND=<client>   (folder under frontends/)
+#   both domains need a DNS record pointing at this server
 #   every other setting keeps its default from config/settings.py; add a line to override one
 python3 -c "import secrets; print(secrets.token_hex(32))"   # for ADMIN_JWT_SECRET
 
@@ -85,8 +89,10 @@ docker compose exec api python -m scripts.manage create-api-key --name "client w
 docker compose up -d web
 ```
 
-Open `https://chat.example.com/admin`, sign in, and add knowledge
-(**Tri thức** → *Tải tệp lên* / *Soạn nội dung*).
+Open `https://admin.example.com`, sign in, and add knowledge
+(**Kho tri thức** → *Tải tệp lên* / *Soạn nội dung*). Pick a chunking strategy per
+upload (e.g. *Văn bản pháp luật* for laws); tick *Giữ lại để kiểm tra* to check the
+chunks before the assistant uses them.
 
 ## Embedding the chat on the client site
 
@@ -133,14 +139,16 @@ docker compose exec -T postgres pg_restore -U chatbot -d chatbot --clean < backu
 
 | Task                               | Where                                                        |
 |------------------------------------|--------------------------------------------------------------|
-| Switch *deny* ↔ *handoff* fallback | Admin → Cấu hình → Cách trợ lý ảo trả lời (applies immediately) |
+| Switch *deny* ↔ *handoff* fallback | Admin → Cấu hình → Cách trả lời (applies immediately)          |
+| Change chat model / retrieval tuning | Admin → Cấu hình → Mô hình & truy xuất (tested before saving; *Về mặc định* restores `.env`) |
+| See who changed what               | Admin → Nhật ký thao tác (owners; append-only)                 |
 | Answer handed-off visitors         | Admin → Chuyển nhân viên                                      |
 | Find knowledge gaps                | Admin → Đánh giá (👎 first), Hội thoại filtered by *Không có thông tin* |
 | Token usage / live activity        | Admin → Tổng quan                                             |
 | Logs (PII already masked)          | Admin → Nhật ký hệ thống, or `docker compose logs api`        |
 | Upload / OCR logs                  | `docker compose logs ingestion-worker` (file: `data/logs/worker/`) |
 | Uploads slow or stuck `processing` | `docker compose ps ingestion-worker` and its logs; raise `WORKER_CPUS`/`WORKER_MEMORY` if it is being OOM-killed |
-| Rotate the web's API key           | Admin → Cấu hình → Khoá API: create new, update `.env`, `docker compose up -d web`, revoke old |
+| Rotate the web's API key           | Admin → Tài khoản & khoá API: create new, update `.env`, `docker compose up -d web`, revoke old |
 | Change embedding model             | Set `EMBEDDING_MODEL`, then `docker compose up -d --force-recreate api ingestion-worker`: stale chunks are re-embedded when `api` starts |
 
 ## Local development

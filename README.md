@@ -3,8 +3,10 @@
 A knowledge-grounded Vietnamese chatbot product:
 
 - **Chat widget** embeddable on any website with one `<script>` tag.
-- **Admin web** for the client's staff: knowledge base, conversations, feedback,
-  handoffs, live token usage, logs and settings.
+- **Admin web** (`frontends/admin`, its own domain) for the client's staff:
+  knowledge base with chunking strategies, conversations, feedback, handoffs,
+  live token usage, logs, settings (incl. live model and retrieval tuning),
+  accounts and an append-only audit log.
 - **FastAPI backend**: hybrid retrieval over PostgreSQL + pgvector, grounded answers
   streamed from OpenAI, Anthropic or Gemini.
 
@@ -51,11 +53,16 @@ Everything runs on one VPS with `docker compose up -d` (see
 
 ## Security
 
-- **Browser access:** browsers only reach the Next.js server. Its routes hold
-  the chat API key and sign an anonymous visitor cookie, so no secrets are in
-  the page. The widget iframe may only be framed by allow-listed sites.
+- **Browser access:** on the chat domain browsers only reach the Next.js server.
+  Its routes hold the chat API key and sign an anonymous visitor cookie, so no
+  secrets are in the page. The widget iframe may only be framed by allow-listed
+  sites. The admin web lives on a separate domain that cannot be framed.
 - **API access:** per-frontend API keys (hashed, revocable) and admin accounts
-  with owner/editor/viewer roles (JWT).
+  with owner / editor / support agent / viewer roles. Admin sessions are an
+  HttpOnly, SameSite=Strict cookie; cookie-authenticated writes also need an
+  `X-Admin-Request` header.
+- **Audit log:** every admin write and sign-in attempt is recorded (secrets
+  redacted) in an append-only table that PostgreSQL itself refuses to change.
 - **Rate limits:** per visitor and per IP, a daily token budget per visitor,
   and a cap on concurrent generations.
 - **CORS:** the backend accepts only listed origins.
@@ -76,7 +83,8 @@ core/guardrails/        PII redactor, input guard
 core/storage/           SQLAlchemy tables, repositories, connection pool
 core/document_processing/  Docling / OCR parsing
 migrations/             Alembic schema migrations
-frontends/<client>/       per-client frontend (widget + admin web), consumes the API
+frontends/<client>/       per-client frontend (chat widget), consumes the API
+frontends/admin/          admin web shared by every deployment (Vite + React)
 app.py                  internal Streamlit demo of the chat API
 docs/DEPLOYMENT.md      VPS deployment, embedding, backups, operations
 ```
