@@ -48,7 +48,7 @@ PyMuPDF==1.28.0
 paddleocr==3.7.0
 
 # --- Internal demo UI (app.py); client frontends live in frontends/ ---
-streamlit==1.61.1
+streamlit==1.64.0
 
 # --- Runtime / config ---
 python-dotenv==1.2.3
