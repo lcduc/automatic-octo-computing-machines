@@ -58,9 +58,9 @@ class IngestionService:
             worker then records the parse failure on the document.
         """
         try:
-            import fitz  # PyMuPDF
+            import pymupdf
 
-            with fitz.open(stream=content, filetype="pdf") as document:
+            with pymupdf.open(stream=content, filetype="pdf") as document:
                 return document.page_count
         except Exception:
             logger.exception("Could not count the pages of an uploaded PDF")

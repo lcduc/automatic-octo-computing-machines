@@ -35,9 +35,9 @@ def test_pp_ocr_pipeline_is_built_with_the_thread_cap(monkeypatch):
 
 
 def test_pdf_pages_are_counted_and_unreadable_files_give_none():
-    import fitz
+    import pymupdf
 
-    with fitz.open() as document:
+    with pymupdf.open() as document:
         for _ in range(4):
             document.new_page()
         pdf = document.tobytes()

@@ -142,9 +142,9 @@ async def test_pdf_over_the_page_limit_is_refused(kb, monkeypatch):
 
 def _pdf_with_pages(count: int) -> bytes:
     """A minimal PDF with ``count`` blank pages."""
-    import fitz
+    import pymupdf
 
-    with fitz.open() as document:
+    with pymupdf.open() as document:
         for _ in range(count):
             document.new_page()
         return document.tobytes()
