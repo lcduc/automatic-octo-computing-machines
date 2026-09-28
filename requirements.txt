@@ -16,6 +16,8 @@ pgvector==0.5.0
 
 # --- Auth ---
 pyjwt==2.15.0
+# RS256 verification of host-site tokens (PyJWT's crypto backend).
+cryptography==50.0.0
 
 # --- LLM providers --- (select via LLM_PROVIDER=openai|anthropic|gemini)
 openai==1.57.0

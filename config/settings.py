@@ -19,6 +19,7 @@ from dotenv import load_dotenv
 
 # Local imports
 from .env import env_bool, env_float, env_int, env_list, env_str
+from .identity_settings import HostAuthConfig
 from .notification_settings import ALERT_CHANNELS, SMTP_SECURITY_MODES, AlertConfig, SmtpConfig
 from .platform_settings import ChatConfig, DatabaseConfig, SecurityConfig, ServerConfig
 
@@ -438,6 +439,7 @@ class Config:
     Health = HealthConfig
     Alerts = AlertConfig
     Smtp = SmtpConfig
+    HostAuth = HostAuthConfig
 
     @staticmethod
     def problems() -> List[str]:
@@ -471,6 +473,7 @@ class Config:
             issues.append(f"ALERT_CHANNEL must be one of {', '.join(ALERT_CHANNELS)} (or empty)")
         if SmtpConfig.SMTP_SECURITY() not in SMTP_SECURITY_MODES:
             issues.append(f"SMTP_SECURITY must be one of {', '.join(SMTP_SECURITY_MODES)}")
+        issues.extend(HostAuthConfig.problems())
         return issues
 
     @staticmethod
@@ -490,3 +493,8 @@ class Config:
             raise RuntimeError("Refusing to start with an unsafe configuration: " + "; ".join(issues))
         for issue in issues:
             logger.warning("Configuration problem: %s", issue)
+        if HostAuthConfig.HOST_AUTH_MODE() == "hs256":
+            logger.warning(
+                "HOST_AUTH_MODE=hs256: this server holds the secret that signs host tokens; "
+                "switch to rs256 once the host backend can sign with RSA"
+            )
