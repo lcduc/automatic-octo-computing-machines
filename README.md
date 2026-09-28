@@ -75,7 +75,8 @@ Everything runs on one VPS with `docker compose up -d` (see
 ```text
 main.py                 FastAPI wiring (middleware, routers, lifespan)
 worker.py               ingestion worker: parses/OCRs queued uploads outside the API
-api/                    routes (v1 public + admin), schemas, dependencies, middleware
+api/                    routes (v1 public + admin), schemas, dependencies
+middleware/             app-wide ASGI middleware, one class per file (only main.py imports it)
 services/               use cases: chat, knowledge, ingestion, auth, settings, usage…
 core/agent/             LLM providers (usage-reporting), chat pipeline, prompts, tools
 core/retrieval/         embeddings, reranker, in-memory knowledge index, retriever

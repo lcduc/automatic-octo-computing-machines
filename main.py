@@ -31,7 +31,7 @@ configure_uvicorn_for_windows()
 
 from api.container import AppContainer  # noqa: E402
 from api.error_handlers import register_error_handlers  # noqa: E402
-from api.middleware import (  # noqa: E402
+from middleware import (  # noqa: E402
     AdminAuditMiddleware,
     BodySizeLimitMiddleware,
     IpRateLimitMiddleware,
