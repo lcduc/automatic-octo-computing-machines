@@ -31,6 +31,13 @@ telegram_chat_id = "-1001234567890"
 # smtp_password = "..."
 # smtp_from = "chatbot@example.com"
 
+# [host_auth]
+# How the host site's signed-in users are recognised. Default: rs256 with a key
+# pair generated here; the private key is handed over in handover/host-integration.zip.
+# mode = "rs256"                          # rs256 | hs256 | none (anonymous-only)
+# jwks_url = "https://www.example.com/.well-known/jwks.json"   # use the host's own keys instead
+# tiers = "user,premium"                  # values the host may send in the tier claim
+
 # [env]
 # Extra backend settings written verbatim into .env, e.g. tuning for this client.
 # OPENAI_MODEL = "gpt-5-mini"

@@ -151,6 +151,24 @@ in **Cấu hình → Giao diện khung chat**. The widget stores only an anonymo
 signed visitor cookie (partitioned, so it keeps working as browsers phase out
 third-party cookies).
 
+## Signed-in users of the host site
+
+With `host_auth.mode = "rs256"` (the default) the installer generates a signing
+key pair: the public key stays on the box (`secrets/host_jwt_public.pem`, read by
+the API) and the private key is written only to `handover/host-integration.zip`,
+together with ready-to-use token snippets for Node, PHP and Python, the host page
+wiring and a README (all pre-filled with this box's issuer, audience and domains).
+Give the zip to the host site's developers, then delete it from the box.
+
+The host backend mints a 10-minute token for its signed-in user; the host page
+hands it to `embed.js`, the widget keeps it in memory and sends it with every call,
+and the API verifies it (`HOST_AUTH_MODE`, `iss`, `aud`, `exp`, lifetime ≤ 15 min,
+`tier`). A token is bound to the browser that first used it. A conversation that
+a signed-in user took part in is theirs alone from then on; after logout the
+browser no longer sees it. `mode = "hs256"` shares a generated secret instead
+(a startup warning reminds you to move to rs256); `mode = "none"` keeps every
+visitor anonymous.
+
 ## Client deployments
 
 `main` carries a generic chat widget in `frontends/widget`. For a client, branch off `main`
