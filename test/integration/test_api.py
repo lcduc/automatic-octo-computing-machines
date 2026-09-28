@@ -40,6 +40,8 @@ class FakeLLM:
         pass
 
     async def complete_async(self, messages, model=None):
+        if model and model.startswith("missing-"):
+            raise ValueError(f"The model {model} does not exist")
         return LLMResult(messages[-1]["content"].replace("Câu hỏi tiếp theo: ", ""), LLMUsage("fake", "light", 5, 5))
 
     async def stream(self, messages, model=None):
@@ -291,3 +293,105 @@ def test_chunking_strategies_preview_and_rechunk(client):
     viewer = {"Authorization": f"Bearer {token}"}
     assert client.get("/api/v1/admin/knowledge/chunking/strategies", headers=viewer).status_code == 200
     assert client.post(f"{url}/chunking/preview", json={"chunking": {"strategy": "auto"}}, headers=viewer).status_code == 403
+
+
+def _cookie_login(client, email=ADMIN_EMAIL, password=ADMIN_PASSWORD):
+    response = client.post("/api/v1/admin/auth/login", json={"email": email, "password": password})
+    assert response.status_code == 200, response.text
+    return response
+
+
+def test_cookie_session_needs_the_csrf_header_for_writes_and_logout_clears_it(client):
+    login = _cookie_login(client)
+    cookie = login.headers["set-cookie"].lower()
+    assert "admin_session=" in cookie and "httponly" in cookie and "samesite=strict" in cookie
+    assert "path=/api/v1/admin" in cookie
+
+    assert client.get("/api/v1/admin/auth/me").json()["email"] == ADMIN_EMAIL
+    body = {"greeting_message": "Xin chào!"}
+    assert client.patch("/api/v1/admin/settings", json=body).status_code == 403
+    assert client.patch("/api/v1/admin/settings", json=body, headers={"X-Admin-Request": "1"}).status_code == 200
+
+    assert client.post("/api/v1/admin/auth/logout").status_code == 200
+    assert client.get("/api/v1/admin/auth/me").status_code == 401
+
+
+def test_admin_writes_and_sign_ins_are_audited_without_secrets(client):
+    admin = _admin_headers(client)
+    client.cookies.clear()
+    assert client.post("/api/v1/admin/auth/login", json={"email": ADMIN_EMAIL, "password": "wrong-password"}).status_code == 401
+    client.patch("/api/v1/admin/settings", json={"thanks_message": "Cảm ơn!"}, headers=admin)
+    created = client.post(
+        "/api/v1/admin/users", json={"email": "agent@example.test", "password": "agent-password-1", "role": "support_agent"},
+        headers=admin,
+    )
+    assert created.status_code == 201
+
+    entries = client.get("/api/v1/admin/audit", headers=admin).json()["items"]
+    by_path = {(e["method"], e["path"], e["status_code"]): e for e in entries}
+    settings_entry = by_path[("PATCH", "/api/v1/admin/settings", 200)]
+    assert settings_entry["actor_email"] == ADMIN_EMAIL and settings_entry["actor_role"] == "owner"
+    assert settings_entry["request_body"] == {"thanks_message": "Cảm ơn!"}
+    assert settings_entry["response_body"]["thanks_message"] == "Cảm ơn!"
+    user_entry = by_path[("POST", "/api/v1/admin/users", 201)]
+    assert user_entry["request_body"]["password"] == "***"
+    failed = by_path[("POST", "/api/v1/admin/auth/login", 401)]
+    assert failed["actor_email"] == ADMIN_EMAIL and failed["request_body"]["password"] == "***"
+    assert by_path[("POST", "/api/v1/admin/auth/login", 200)]["response_body"]["access_token"] == "***"
+
+    async def tamper():
+        db = Database(TEST_DATABASE_URL, pool_size=1)
+        db.connect()
+        try:
+            async with db.engine.begin() as connection:
+                await connection.execute(text("UPDATE admin_audit_log SET actor_email = 'someone-else'"))
+        finally:
+            await db.close()
+
+    with pytest.raises(Exception, match="append-only"):
+        asyncio.run(tamper())
+
+
+def test_support_agent_works_handoffs_but_cannot_change_knowledge_or_read_audit(client):
+    admin = _admin_headers(client)
+    client.post(
+        "/api/v1/admin/users", json={"email": "agent@example.test", "password": "agent-password-1", "role": "support_agent"},
+        headers=admin,
+    )
+    client.patch("/api/v1/admin/settings", json={"fallback_mode": "handoff"}, headers=admin)
+    done = _chat(client, "cho tôi gặp nhân viên tư vấn")[-1]
+    assert done["outcome"] == "handoff"
+
+    token = client.post(
+        "/api/v1/admin/auth/login", json={"email": "agent@example.test", "password": "agent-password-1"}
+    ).json()["access_token"]
+    agent = {"Authorization": f"Bearer {token}"}
+    handoff_id = client.get("/api/v1/admin/handoffs", headers=agent).json()["items"][0]["id"]
+    assert client.patch(f"/api/v1/admin/handoffs/{handoff_id}", json={"status": "in_progress"}, headers=agent).status_code == 200
+    denied = client.post(
+        "/api/v1/admin/knowledge/documents/text", json={"source": "FAQ", "title": "x", "content": "y"}, headers=agent
+    )
+    assert denied.status_code == 403
+    assert client.get("/api/v1/admin/audit", headers=agent).status_code == 403
+
+
+def test_models_and_retrieval_settings_apply_live_and_reset_to_defaults(client):
+    admin = _admin_headers(client)
+    client.post(
+        "/api/v1/admin/knowledge/documents/text",
+        json={"source": "FAQ", "title": "Giờ làm việc", "content": "Văn phòng mở cửa từ 8 giờ sáng các ngày trong tuần"},
+        headers=admin,
+    )
+    assert _chat(client, "văn phòng mở cửa mấy giờ")[-1]["outcome"] == "answered"
+
+    rejected = client.patch("/api/v1/admin/settings", json={"chat_model": "missing-model-9"}, headers=admin)
+    assert rejected.status_code == 400 and "Model not available" in rejected.text
+    defaults = client.get("/api/v1/admin/settings/defaults", headers=admin).json()
+    assert client.get("/api/v1/admin/settings", headers=admin).json()["chat_model"] == defaults["chat_model"]
+    assert client.patch("/api/v1/admin/settings", json={"chat_model": "fake-main-2"}, headers=admin).status_code == 200
+
+    client.patch("/api/v1/admin/settings", json={"similarity_threshold": 1.0}, headers=admin)
+    assert _chat(client, "văn phòng mở cửa lúc mấy giờ vậy")[-1]["outcome"] == "denied"
+    reset = client.delete("/api/v1/admin/settings/similarity_threshold", headers=admin).json()
+    assert reset["similarity_threshold"] == defaults["similarity_threshold"]
+    assert _chat(client, "văn phòng mở cửa lúc mấy giờ vậy")[-1]["outcome"] == "answered"

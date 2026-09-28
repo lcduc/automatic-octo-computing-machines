@@ -70,7 +70,7 @@ def _parser() -> argparse.ArgumentParser:
     commands = parser.add_subparsers(dest="command", required=True)
     admin = commands.add_parser("create-admin", help="Create an admin account for the management web")
     admin.add_argument("--email", required=True)
-    admin.add_argument("--role", choices=["owner", "editor", "viewer"], default="owner")
+    admin.add_argument("--role", choices=["owner", "editor", "viewer", "support_agent"], default="owner")
     key = commands.add_parser("create-api-key", help="Issue an API key for a chat frontend")
     key.add_argument("--name", required=True)
     return parser

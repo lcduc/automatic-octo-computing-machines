@@ -21,7 +21,8 @@ SCOPE_CHAT = "chat"
 ROLE_OWNER = "owner"
 ROLE_EDITOR = "editor"
 ROLE_VIEWER = "viewer"
-ADMIN_ROLES = (ROLE_OWNER, ROLE_EDITOR, ROLE_VIEWER)
+ROLE_SUPPORT_AGENT = "support_agent"
+ADMIN_ROLES = (ROLE_OWNER, ROLE_EDITOR, ROLE_VIEWER, ROLE_SUPPORT_AGENT)
 
 
 class ApiKey(Base):
@@ -49,7 +50,8 @@ class AdminUser(Base):
     id: Mapped[uuid.UUID] = uuid_pk()
     email: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
-    #: ``owner`` (everything), ``editor`` (knowledge + settings), ``viewer`` (read-only).
+    #: ``owner`` (everything), ``editor`` (knowledge + settings), ``support_agent``
+    #: (reads everything, works handoffs), ``viewer`` (read-only).
     role: Mapped[str] = mapped_column(String(16), nullable=False, default=ROLE_VIEWER)
     disabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[datetime] = created_at_column()

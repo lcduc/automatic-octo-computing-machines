@@ -17,7 +17,7 @@ persists what it yields.
 import asyncio
 import hashlib
 import logging
-from typing import AsyncIterator, Dict, List, Optional, Union
+from typing import Any, AsyncIterator, Callable, Dict, List, Optional, Union
 
 # Local imports
 from config.settings import Config
@@ -27,6 +27,7 @@ from core.retrieval.knowledge_index import KnowledgeIndex
 from core.retrieval.retriever import ContextRetriever
 from models.chat_turn import (
     FALLBACK_MODE_HANDOFF,
+    ChatPolicy,
     HandoffReason,
     TurnDelta,
     TurnOutcome,
@@ -49,6 +50,12 @@ from .tool_calling_agent import ToolCallingAgent
 logger = logging.getLogger(__name__)
 
 TurnEvent = Union[TurnDelta, TurnUsage, TurnResult]
+
+
+def _or_default(value, default: Callable[[], Any]):
+    """An admin-set policy value, or the env default when none was saved."""
+    return default() if value is None else value
+
 
 #: User-facing failure texts (Vietnamese, like the rest of the conversation).
 
@@ -143,6 +150,8 @@ class ChatbotService:
     async def _run(self, request: TurnRequest, deadline: float) -> AsyncIterator[TurnEvent]:
         """The pipeline proper; exceptions are mapped by :meth:`run`."""
         policy = request.policy
+        chat_model = _or_default(policy.chat_model, Config.LLM.ACTIVE_MODEL)
+        light_model = _or_default(policy.light_model, Config.LLM.ACTIVE_LIGHT_MODEL)
         history = recent_history(request.history, Config.Chat.MAX_HISTORY_TURNS() * 2)
 
         verdict = await self._guard.check(request.query)
@@ -163,20 +172,20 @@ class ChatbotService:
             return
 
         if self._intent_router is not None and self._tool_agent is not None:
-            intent, intent_usage = await self._intent_router.classify(request.query, history)
+            intent, intent_usage = await self._intent_router.classify(request.query, history, light_model)
             if intent_usage is not None:
                 yield TurnUsage(PURPOSE_INTENT, intent_usage)
             if intent == IntentType.ACTION:
-                async for event in self._run_tool_agent(request.query, history, deadline):
+                async for event in self._run_tool_agent(request.query, history, deadline, chat_model, light_model):
                     yield event
                 return
 
-        search_query, rewrite_usage = await self._rewriter.rewrite(request.query, history)
+        search_query, rewrite_usage = await self._rewriter.rewrite(request.query, history, light_model)
         if rewrite_usage is not None:
             yield TurnUsage(PURPOSE_REWRITE, rewrite_usage)
         rewritten = search_query if search_query != request.query else None
 
-        results = await self._retrieve(search_query, request.sources, deadline)
+        results = await self._retrieve(search_query, request.sources, policy, deadline)
         matched = [item for item in results if item.matched]
         if not matched:
             yield self._fallback(request, rewritten)
@@ -185,7 +194,7 @@ class ChatbotService:
         documents_block = self._assembler.build(results, Config.LLM.MAX_CONTEXT_LENGTH())
         system_prompt = self._prompts.get_system_prompt(policy.assistant_instructions)
         cache_key = ResponseCache.build_key(
-            request.query, documents_block, history, self._cache_namespace(system_prompt)
+            request.query, documents_block, history, self._cache_namespace(chat_model, system_prompt)
         )
         citations = self._citations(matched)
 
@@ -198,7 +207,7 @@ class ChatbotService:
                 citations=citations,
                 confidence=self._score(cached_answer, request.query, documents_block, matched),
                 cached=True,
-                model=Config.LLM.ACTIVE_MODEL(),
+                model=chat_model,
                 rewritten_query=rewritten,
             )
             return
@@ -209,7 +218,7 @@ class ChatbotService:
             {"role": "user", "content": self._prompts.build_user_turn(request.query, documents_block)},
         ]
         pieces: List[str] = []
-        async for delta in self._with_deadline(self._llm.stream(messages), deadline):
+        async for delta in self._with_deadline(self._llm.stream(messages, model=chat_model), deadline):
             if delta.usage is not None:
                 yield TurnUsage(PURPOSE_ANSWER, delta.usage)
             if delta.text:
@@ -227,25 +236,32 @@ class ChatbotService:
             answer,
             citations=citations,
             confidence=self._score(answer, request.query, documents_block, matched),
-            model=Config.LLM.ACTIVE_MODEL(),
+            model=chat_model,
             rewritten_query=rewritten,
         )
 
     async def _run_tool_agent(
-        self, query: str, history: List[Dict[str, str]], deadline: float
+        self, query: str, history: List[Dict[str, str]], deadline: float, chat_model: str, light_model: str
     ) -> AsyncIterator[TurnEvent]:
         """Answer an action request through the tool-calling agent."""
         pieces: List[str] = []
-        async for delta in self._with_deadline(self._tool_agent.stream(query, history), deadline):
+        # The tool agent always answers through OpenAI, so an admin-chosen chat model (which may be
+        # another provider's) is not passed; its query rewrite runs on the chat provider's light model.
+        stream = self._tool_agent.stream(query, history, light_model=light_model)
+        async for delta in self._with_deadline(stream, deadline):
             if delta.usage is not None:
                 yield TurnUsage(PURPOSE_TOOL, delta.usage)
             if delta.text:
                 pieces.append(delta.text)
                 yield TurnDelta(delta.text)
-        yield TurnResult(TurnOutcome.ANSWERED, "".join(pieces).strip(), model=Config.LLM.ACTIVE_MODEL())
+        yield TurnResult(TurnOutcome.ANSWERED, "".join(pieces).strip(), model=chat_model)
 
-    async def _retrieve(self, query: str, sources, deadline: float) -> List[RetrievedChunk]:
-        """Run hybrid search in a worker thread, bounded by the retrieval slots and the deadline."""
+    async def _retrieve(self, query: str, sources, policy: ChatPolicy, deadline: float) -> List[RetrievedChunk]:
+        """
+        Run hybrid search in a worker thread, bounded by the retrieval slots and the deadline.
+
+        Tuning comes from the turn's policy (admin-editable), falling back to the env defaults.
+        """
         snapshot = self._index.snapshot
         if snapshot.is_empty:
             return []
@@ -255,10 +271,10 @@ class ChatbotService:
                     self._retriever.search,
                     query,
                     snapshot,
-                    top_k=Config.RAG.RETRIEVAL_TOP_K(),
-                    semantic_weight=Config.RAG.SEMANTIC_WEIGHT(),
-                    threshold=Config.RAG.SIMILARITY_THRESHOLD(),
-                    max_context_chunks=Config.RAG.MAX_CONTEXT_CHUNKS(),
+                    top_k=_or_default(policy.retrieval_top_k, Config.RAG.RETRIEVAL_TOP_K),
+                    semantic_weight=_or_default(policy.semantic_weight, Config.RAG.SEMANTIC_WEIGHT),
+                    threshold=_or_default(policy.similarity_threshold, Config.RAG.SIMILARITY_THRESHOLD),
+                    max_context_chunks=_or_default(policy.max_context_chunks, Config.RAG.MAX_CONTEXT_CHUNKS),
                     expansion_radius=Config.RAG.CONTEXT_EXPANSION_RADIUS(),
                     sources=sources,
                 ),
@@ -282,10 +298,10 @@ class ChatbotService:
             )
         return TurnResult(TurnOutcome.DENIED, policy.deny_message, rewritten_query=rewritten)
 
-    def _cache_namespace(self, system_prompt: str) -> str:
-        """Model + prompt + knowledge version, so edits invalidate cached answers."""
+    def _cache_namespace(self, model: str, system_prompt: str) -> str:
+        """Model + prompt + knowledge version, so a model switch or an edit never serves a stale answer."""
         prompt_digest = hashlib.sha256(system_prompt.encode("utf-8")).hexdigest()[:16]
-        return f"{Config.LLM.ACTIVE_MODEL()}|{prompt_digest}|kb{self._index.snapshot.version}"
+        return f"{model}|{prompt_digest}|kb{self._index.snapshot.version}"
 
     @staticmethod
     def _citations(matched: List[RetrievedChunk]) -> List[Dict[str, object]]:

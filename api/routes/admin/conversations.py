@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, Query
 
 # Local imports
 from api.container import AppContainer
-from api.dependencies import READ_ROLES, WRITE_ROLES, get_container, require_admin
+from api.dependencies import HANDOFF_ROLES, READ_ROLES, get_container, require_admin
 from api.schemas.admin import (
     AdminMessage,
     ConversationDetail,
@@ -98,7 +98,7 @@ async def list_handoffs(
 async def update_handoff(
     handoff_id: uuid.UUID,
     body: HandoffUpdate,
-    principal: AdminPrincipal = Depends(require_admin(WRITE_ROLES)),
+    principal: AdminPrincipal = Depends(require_admin(HANDOFF_ROLES)),
     container: AppContainer = Depends(get_container),
 ) -> HandoffOut:
     """Mark a handoff in progress or resolved, optionally with a note."""

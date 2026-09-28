@@ -13,7 +13,7 @@ from models.llm import StreamDelta
 class _StubQueryRewriter:
     """No-op rewriter so agent tests aren't coupled to QueryRewriter's own behavior."""
 
-    async def rewrite(self, query, history):
+    async def rewrite(self, query, history, model=None):
         return query, None
 
 
@@ -78,11 +78,11 @@ class _StubClientProvider:
         self.decision_calls = []
         self.stream_calls = []
 
-    async def complete_with_tools_async(self, messages, tools=None):
+    async def complete_with_tools_async(self, messages, tools=None, model=None):
         self.decision_calls.append({"messages": messages, "tools": tools})
         return self.decision_message, None
 
-    async def stream(self, messages):
+    async def stream(self, messages, model=None):
         self.stream_calls.append(messages)
         for chunk in self.stream_chunks:
             yield StreamDelta(text=chunk)
@@ -183,7 +183,7 @@ async def test_malformed_tool_arguments_reported_as_error_not_raised():
 @pytest.mark.asyncio
 async def test_agent_error_propagates_instead_of_streaming_raw_text():
     class _RaisingClientProvider:
-        async def complete_with_tools_async(self, messages, tools=None):
+        async def complete_with_tools_async(self, messages, tools=None, model=None):
             raise RuntimeError("simulated failure")
 
     agent = ToolCallingAgent(_RaisingClientProvider(), ToolRegistry(tools=[]), _StubQueryRewriter())
