@@ -48,6 +48,24 @@ class IngestionService:
         """File extensions accepted for upload."""
         return list(Config.File.ALLOWED_EXTENSIONS())
 
+    @staticmethod
+    def pdf_page_count(content: bytes) -> Optional[int]:
+        """
+        Pages in a PDF (reads only its page tree, not the page contents).
+
+        Returns:
+            The page count, or ``None`` if the file cannot be opened; the
+            worker then records the parse failure on the document.
+        """
+        try:
+            import pymupdf
+
+            with pymupdf.open(stream=content, filetype="pdf") as document:
+                return document.page_count
+        except Exception:
+            logger.exception("Could not count the pages of an uploaded PDF")
+            return None
+
     def _get_processor(self):
         """The shared document processor, built lazily."""
         if self._processor is None:

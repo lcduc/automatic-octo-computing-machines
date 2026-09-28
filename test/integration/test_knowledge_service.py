@@ -7,9 +7,9 @@ import pytest
 from sqlalchemy import text
 
 from core.retrieval.knowledge_index import KnowledgeIndex
-from core.storage.knowledge_repository import KnowledgeRepository
+from core.storage.knowledge_repository import IngestionQueueStats, KnowledgeRepository
 from core.storage.upload_store import UploadStore
-from services.errors import ConflictError, InvalidRequestError
+from services.errors import ConflictError, InvalidRequestError, NotFoundError
 from services.ingestion_service import IngestionService
 from services.ingestion_worker import CRASH_LOOP_ERROR, MAX_ATTEMPTS, IngestionWorker
 from services.knowledge_service import KnowledgeService
@@ -116,6 +116,59 @@ async def test_failed_ingestion_is_recorded_and_unknown_source_rejected(kb):
     loaded = await service.get_document(document.id)
     assert loaded.status == "failed" and "No content" in loaded.error
     assert not kb.uploads.path_for(document.id, "bad").exists()
+
+
+@pytest.mark.asyncio
+async def test_reuploading_a_failed_file_replaces_the_failed_document(kb):
+    kb.service._ingestion.supported_extensions = lambda: [".bad"]
+    failed = await kb.service.upload_file(b"x", "broken.bad", "general", None, {}, None)
+    await kb.worker.process_next()
+
+    retried = await kb.service.upload_file(b"x", "broken.bad", "general", None, {}, None)
+    assert retried.id != failed.id and retried.status == "processing"
+    with pytest.raises(NotFoundError):
+        await kb.service.get_document(failed.id)
+
+
+@pytest.mark.asyncio
+async def test_pdf_over_the_page_limit_is_refused(kb, monkeypatch):
+    monkeypatch.setenv("MAX_PDF_PAGES", "2")
+    monkeypatch.setenv("ALLOWED_EXTENSIONS", ".pdf")
+    with pytest.raises(InvalidRequestError, match="3 pages"):
+        await kb.service.upload_file(_pdf_with_pages(3), "scan.pdf", "general", None, {}, None)
+    accepted = await kb.service.upload_file(_pdf_with_pages(2), "short.pdf", "general", None, {}, None)
+    assert accepted.status == "processing"
+
+
+def _pdf_with_pages(count: int) -> bytes:
+    """A minimal PDF with ``count`` blank pages."""
+    import pymupdf
+
+    with pymupdf.open() as document:
+        for _ in range(count):
+            document.new_page()
+        return document.tobytes()
+
+
+@pytest.mark.asyncio
+async def test_queue_stats_report_pending_and_claimed_uploads(kb):
+    assert await kb.service.ingestion_queue() == IngestionQueueStats(0, 0, None)
+    await kb.service.upload_file(b"a\n\nb", "one.txt", "general", None, {}, None)
+    await kb.service.upload_file(b"c\n\nd", "two.txt", "general", None, {}, None)
+    held = await _claim(kb.database)  # another worker is busy with the first one
+
+    stats = await kb.service.ingestion_queue()
+    assert (stats.pending, stats.in_progress) == (2, 1) and stats.oldest_pending_seconds >= 0
+
+    assert await kb.worker.process_next() is True  # takes the second upload
+    stats = await kb.service.ingestion_queue()
+    assert (stats.pending, stats.in_progress) == (1, 1)
+
+    await _expire_claim(kb.database, held.document_id)  # that worker died
+    stats = await kb.service.ingestion_queue()
+    assert (stats.pending, stats.in_progress) == (1, 0)
+    assert await kb.worker.process_next() is True
+    assert await kb.service.ingestion_queue() == IngestionQueueStats(0, 0, None)
 
 
 @pytest.mark.asyncio

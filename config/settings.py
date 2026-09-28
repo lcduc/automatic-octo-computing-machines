@@ -244,6 +244,15 @@ class FileConfig:
         return env_int("MAX_FILE_SIZE", 52_428_800)
 
     @staticmethod
+    def MAX_PDF_PAGES() -> int:
+        """
+        Most pages accepted in one uploaded PDF. A long scan occupies the single
+        ingestion worker for a long time (OCR costs seconds per page), so it is
+        refused up front instead.
+        """
+        return env_int("MAX_PDF_PAGES", 300)
+
+    @staticmethod
     def ALLOWED_EXTENSIONS() -> List[str]:
         """
         File extensions accepted by the knowledge upload endpoint.

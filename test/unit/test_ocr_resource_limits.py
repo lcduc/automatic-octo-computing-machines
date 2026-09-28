@@ -9,6 +9,7 @@ import pytest
 from core.document_processing.docling_processor import DoclingProcessor
 from core.document_processing.engine_selector import cpu_threads_per_page
 from core.document_processing.pp_ocr_engine import PPOCRv6Engine
+from services.ingestion_service import IngestionService
 
 
 @pytest.mark.parametrize(
@@ -31,6 +32,17 @@ def test_pp_ocr_pipeline_is_built_with_the_thread_cap(monkeypatch):
     monkeypatch.setitem(sys.modules, "paddleocr", types.SimpleNamespace(PaddleOCR=FakePaddleOCR))
     PPOCRv6Engine(device="cpu", cpu_threads=3)._get_pipeline()
     assert captured["cpu_threads"] == 3
+
+
+def test_pdf_pages_are_counted_and_unreadable_files_give_none():
+    import pymupdf
+
+    with pymupdf.open() as document:
+        for _ in range(4):
+            document.new_page()
+        pdf = document.tobytes()
+    assert IngestionService.pdf_page_count(pdf) == 4
+    assert IngestionService.pdf_page_count(b"not a pdf") is None
 
 
 class _RecordingConverter:
