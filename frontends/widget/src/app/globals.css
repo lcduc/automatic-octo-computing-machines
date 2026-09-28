@@ -1,0 +1,17 @@
+@import "tailwindcss";
+
+/* System fonts render Vietnamese diacritics well and need no network fetch at build time. */
+@theme {
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+body {
+  background: #ffffff;
+  color: #0f172a;
+  font-family: var(--font-sans);
+}
+
+:focus-visible {
+  outline: 2px solid #0b5fff;
+  outline-offset: 2px;
+}
