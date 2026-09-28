@@ -1,0 +1,36 @@
+# Answers for `chatbot install --answers client.toml` (repeatable installs).
+# Copy per client, fill in, keep it with the client's credentials (it holds secrets).
+# Everything not asked here, including every internal secret, is generated.
+
+chat_domain = "chat.example.com"          # serves the widget and embed.js
+admin_domain = "admin.example.com"        # the admin web; never the chat domain
+host_origin = "https://www.example.com"   # site(s) embedding the chat, space separated
+admin_email = "ops@example.com"           # first owner account (one-time password printed once)
+openai_api_key = "sk-..."
+
+[backup]
+# s3://bucket/prefix | sftp://user@host[:port]/path | /mounted/path
+target = "s3://client-backups/chatbot"
+s3_endpoint = ""                          # empty for AWS; e.g. https://s3.ap-southeast-1.wasabisys.com
+s3_region = "ap-southeast-1"
+s3_access_key_id = "..."
+s3_secret_access_key = "..."
+# sftp_password = "..."                   # or sftp_key_file = "/opt/chatbot/secrets/backup_key"
+keep_days = 30
+
+[alert]
+channel = "telegram"                      # telegram | slack | smtp
+telegram_bot_token = "123456:ABC..."
+telegram_chat_id = "-1001234567890"
+# slack_webhook_url = "https://hooks.slack.com/services/..."
+# email_to = "ops@example.com"
+# smtp_host = "smtp.example.com"
+# smtp_port = 587
+# smtp_security = "starttls"
+# smtp_username = "..."
+# smtp_password = "..."
+# smtp_from = "chatbot@example.com"
+
+# [env]
+# Extra backend settings written verbatim into .env, e.g. tuning for this client.
+# OPENAI_MODEL = "gpt-5-mini"
