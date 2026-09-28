@@ -39,6 +39,9 @@ class Conversation(Base):
     )
     #: Opaque visitor id supplied by the frontend (never an email or phone).
     end_user_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    #: Host-site user (``sub`` of a verified host token) once a logged-in visitor used it;
+    #: from then on only that user can read the conversation, on any device.
+    user_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True, index=True)
     channel: Mapped[str] = mapped_column(String(32), nullable=False, default="widget")
     status: Mapped[str] = mapped_column(String(24), nullable=False, default=CONVERSATION_STATUS_ACTIVE)
     message_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

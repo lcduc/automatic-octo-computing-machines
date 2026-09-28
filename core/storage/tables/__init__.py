@@ -2,7 +2,7 @@
 ORM table definitions. Importing this package registers every table on ``Base.metadata``.
 """
 
-from .access_tables import AdminUser, ApiKey, AppSetting
+from .access_tables import AdminUser, ApiKey, AppSetting, HostTokenUse
 from .audit_tables import AdminAuditEntry
 from .base import Base
 from .conversation_tables import Conversation, Feedback, HandoffRequest, Message, TokenUsage
@@ -14,6 +14,7 @@ __all__ = [
     "AdminUser",
     "ApiKey",
     "AppSetting",
+    "HostTokenUse",
     "Conversation",
     "Feedback",
     "HandoffRequest",

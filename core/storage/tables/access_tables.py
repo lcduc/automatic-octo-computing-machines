@@ -67,3 +67,20 @@ class AppSetting(Base):
     value: Mapped[Any] = mapped_column(JSONB, nullable=False)
     updated_by: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     updated_at: Mapped[datetime] = updated_at_column()
+
+
+class HostTokenUse(Base):
+    """
+    Binds a host token (its ``jti``) to the first visitor that presented it.
+
+    The widget reuses its token for every call until it expires, so a ``jti``
+    is not single-use; instead a token presented by any *other* visitor is a
+    replay (e.g. copied into another browser) and is refused.
+    """
+
+    __tablename__ = "host_token_uses"
+
+    jti: Mapped[str] = mapped_column(String(128), primary_key=True)
+    visitor_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    #: The token's ``exp``; expired rows are purged.
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
