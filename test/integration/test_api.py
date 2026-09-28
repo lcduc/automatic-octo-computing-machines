@@ -23,6 +23,7 @@ ORIGIN = "http://localhost:3000"
 ADMIN_EMAIL = "owner@example.test"
 ADMIN_PASSWORD = "correct-horse-battery"
 VISITOR = {"X-End-User-Id": "visitor-0001"}
+BFF_TOKEN = "bff-token-" + "y" * 40
 
 
 class FakeLLM:
@@ -96,6 +97,7 @@ def client(monkeypatch):
     monkeypatch.setenv("SIMILARITY_THRESHOLD", "0.5")
     monkeypatch.setenv("RATE_LIMIT_USER_PER_MINUTE", "8")
     monkeypatch.setenv("TOOL_CALLING_ENABLED", "false")
+    monkeypatch.setenv("BFF_SERVICE_TOKEN", BFF_TOKEN)
     from main import create_app
 
     with TestClient(create_app(FakeContainer)) as test_client:
@@ -145,6 +147,20 @@ def test_auth_cors_and_security_headers(client):
     assert no_visitor.status_code == 400
     assert client.get("/api/v1/admin/settings").status_code == 401
     assert client.get("/health/ready").json()["status"] == "ok"
+
+
+def test_widget_server_authenticates_with_its_generated_service_token(client):
+    config = client.get("/api/v1/widget/config", headers={"X-Service-Token": BFF_TOKEN})
+    assert config.status_code == 200 and config.json()["title"]
+    wrong = client.get("/api/v1/widget/config", headers={"X-Service-Token": "not-the-token"})
+    assert wrong.status_code == 401
+
+    streamed = client.post(
+        "/api/v1/chat/stream", json={"message": "xin chào"}, headers={"X-Service-Token": BFF_TOKEN, **VISITOR}
+    )
+    assert streamed.status_code == 200
+    no_visitor = client.post("/api/v1/chat/stream", json={"message": "hi"}, headers={"X-Service-Token": BFF_TOKEN})
+    assert no_visitor.status_code == 400
 
 
 def test_knowledge_chat_feedback_and_admin_views(client):

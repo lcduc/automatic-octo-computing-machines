@@ -30,7 +30,7 @@ from core.retrieval.retriever import ContextRetriever
 from core.storage.database import Database
 from core.storage.upload_store import UploadStore
 from services.audit_service import AuditService
-from services.auth_service import AuthService
+from services.auth_service import SERVICE_BFF, AuthService
 from services.chat_service import ChatService
 from services.conversation_service import ConversationService
 from services.handoff_service import HandoffService
@@ -72,7 +72,10 @@ class AppContainer:
         self.handoffs = HandoffService(self.database, self.usage)
         self.conversations = ConversationService(self.database)
         self.auth = AuthService(
-            self.database, Config.Security.ADMIN_JWT_SECRET(), Config.Security.ADMIN_TOKEN_TTL_MINUTES()
+            self.database,
+            Config.Security.ADMIN_JWT_SECRET(),
+            Config.Security.ADMIN_TOKEN_TTL_MINUTES(),
+            service_tokens={SERVICE_BFF: Config.Security.BFF_SERVICE_TOKEN()},
         )
         self.logs = LogService(json_log_path(), LOG_BACKUP_COUNT)
         self.audit = AuditService(self.database)

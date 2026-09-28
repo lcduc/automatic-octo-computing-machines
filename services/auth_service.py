@@ -47,6 +47,9 @@ MIN_PASSWORD_LENGTH = 10
 
 JWT_ALGORITHM = "HS256"
 
+#: Name of the chat widget's server (BFF) among the internal services.
+SERVICE_BFF = "bff"
+
 
 @dataclass(frozen=True)
 class VerifiedApiKey:
@@ -101,17 +104,44 @@ class AuthService:
     #: Hash compared against when the e-mail is unknown, so timing does not reveal accounts.
     _DUMMY_HASH = hash_password(secrets.token_hex(16))
 
-    def __init__(self, database: Database, jwt_secret: str, token_ttl_minutes: int):
+    def __init__(
+        self,
+        database: Database,
+        jwt_secret: str,
+        token_ttl_minutes: int,
+        service_tokens: Optional[Dict[str, str]] = None,
+    ):
         """
         Args:
             database: Connected database.
             jwt_secret: HMAC secret for admin tokens.
             token_ttl_minutes: Admin token lifetime.
+            service_tokens: Internal service name -> its generated token (e.g.
+                ``{"bff": ...}``); services with an empty token are never admitted.
         """
         self._database = database
         self._jwt_secret = jwt_secret
         self._token_ttl = timedelta(minutes=token_ttl_minutes)
         self._key_cache: Dict[str, Tuple[Optional[VerifiedApiKey], float]] = {}
+        self._service_tokens = {name: token for name, token in (service_tokens or {}).items() if token}
+
+    # ------------------------------------------------------------------
+    # Internal services
+    # ------------------------------------------------------------------
+
+    def verify_service_token(self, presented: str) -> Optional[str]:
+        """
+        Identify one of our own services by its generated token.
+
+        Returns:
+            The service name (e.g. ``bff``), or ``None`` for a missing or unknown token.
+        """
+        if not presented:
+            return None
+        for name, token in self._service_tokens.items():
+            if hmac.compare_digest(presented.encode("utf-8"), token.encode("utf-8")):
+                return name
+        return None
 
     # ------------------------------------------------------------------
     # API keys
