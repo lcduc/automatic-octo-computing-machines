@@ -1,0 +1,23 @@
+# Local development only: build the images from this checkout instead of
+# pulling a release tag. Compose merges this file automatically when run from
+# the repository; the ops CLI never copies it to a client box.
+#
+#   python -m deploy.ops install --dir . --answers deploy/answers.example.toml --skip-deploy
+#   docker compose up -d --build
+
+x-backend-build: &backend-build
+  context: .
+  args:
+    TORCH_INDEX: ${TORCH_INDEX:-cu126}
+
+services:
+  migrate:
+    build: *backend-build
+  api:
+    build: *backend-build
+  ingestion-worker:
+    build: *backend-build
+  web:
+    build: ./frontends/widget
+  admin:
+    build: ./frontends/admin

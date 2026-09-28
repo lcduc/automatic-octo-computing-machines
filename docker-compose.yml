@@ -1,85 +1,129 @@
-# One-command deployment on a single VPS:   docker compose up -d --build
+# Production stack for one client box, installed and driven by the ops CLI
+# (`chatbot install | deploy | backup | rollback`; see docs/DEPLOYMENT.md).
+# Local development: docker-compose.override.yml (merged automatically in this
+# checkout, never copied to a client box) builds the images from source.
 #
-#   caddy  :80/:443  -> web :3000 (Next.js: widget, embed.js, admin web)
-#   web              -> api :8500 (FastAPI, GPU)      [internal network only]
-#   api              -> postgres :5432 (pgvector)     [internal network only]
-#   ingestion-worker -> postgres (parses/OCRs uploads queued by api; shares ./data)
+#   caddy    :80/:443  -> web :3000 (widget, embed.js, BFF)        [edge]
+#                      -> admin :80 (admin SPA)                     [edge]
+#                      -> api :8500 /api/v1/admin/* on ADMIN domain [edge]
+#   web      -> api :8500 with its generated BFF_SERVICE_TOKEN      [edge]
+#   api      -> postgres, LLM provider (internet)                   [internal, edge]
+#   ingestion-worker -> postgres, OCR/embeddings                    [internal, egress]
+#   migrate  one-shot `alembic upgrade head` as the schema owner    [internal]
+#   postgres reachable from `internal` only; no host port           [internal]
 #
-# Configuration: `.env` (backend + database) and `frontends/widget/.env` (chat
-# widget). A client deployment is a branch that customises frontends/widget.
-# See docs/DEPLOYMENT.md.
+# Every secret comes from the installer-generated `.env` (0600) and
+# `secrets/` (0700); nothing here is edited by hand on a client box.
 
 name: chatbot
 
-# Shared by api and ingestion-worker: one image, one .env, one data volume.
-x-backend: &backend
-  build:
-    context: .
-    args:
-      TORCH_INDEX: ${TORCH_INDEX:-cu126}
-  image: chatbot-backend:latest
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+x-hardening: &hardening
   restart: unless-stopped
+  logging: *logging
+  security_opt:
+    - no-new-privileges:true
+
+# Shared by migrate, api and ingestion-worker: one image, one .env, one data volume.
+x-backend: &backend
+  <<: *hardening
+  image: ${REGISTRY:-ghcr.io/lcduc}/chatbot-api:${IMAGE_TAG:-dev}
   env_file: .env
   volumes:
     - ./data:/app/data
-  security_opt:
-    - no-new-privileges:true
   tmpfs:
     - /tmp:size=512m
 
+x-gpu: &gpu
+  driver: nvidia
+  count: 1
+  capabilities: [gpu]
+
 services:
   postgres:
+    <<: *hardening
     image: pgvector/pgvector:pg17
-    restart: unless-stopped
-    env_file: .env
-    # Same defaults as config/platform_settings.py, so .env only needs the password.
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-chatbot}
-      POSTGRES_USER: ${POSTGRES_USER:-chatbot}
+      POSTGRES_DB: chatbot
+      POSTGRES_USER: chatbot
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_owner_password
+      # Read by deploy/postgres/10-app-role.sh (also re-run by `chatbot deploy`).
+      POSTGRES_APP_USER: ${POSTGRES_APP_USER:-chatbot_app}
+      POSTGRES_APP_PASSWORD: ${POSTGRES_APP_PASSWORD:?run the installer to generate secrets}
+    secrets: [postgres_owner_password]
     volumes:
       - pgdata:/var/lib/postgresql/data
+      - ./deploy/postgres:/docker-entrypoint-initdb.d:ro
+    shm_size: 256m
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      test: ["CMD-SHELL", "pg_isready -U chatbot -d chatbot"]
       interval: 10s
       timeout: 5s
       retries: 10
-    # Reachable from the host only (for backups / psql), never from outside.
-    ports:
-      - "127.0.0.1:5432:5432"
+    networks: [internal]
+    deploy:
+      resources:
+        limits:
+          memory: ${POSTGRES_MEMORY:-3g}
+
+  migrate:
+    <<: *backend
+    restart: "no"
+    command: ["alembic", "upgrade", "head"]
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_USER: chatbot
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_owner_password
+    secrets: [postgres_owner_password]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      disable: true
+    networks: [internal]
 
   api:
     <<: *backend
     environment:
       POSTGRES_HOST: postgres
-      # Only the web container can reach the API, so its forwarded client IPs are trusted.
+      POSTGRES_USER: ${POSTGRES_APP_USER:-chatbot_app}
+      POSTGRES_PASSWORD: ${POSTGRES_APP_PASSWORD:?run the installer to generate secrets}
+      # Only web and caddy can reach the API, so their forwarded client IPs are trusted.
       FORWARDED_ALLOW_IPS: "*"
       # Uploads are parsed by ingestion-worker, never inside the API process.
       INGESTION_WORKER: external
+      # The migrate service already applied the schema as its owner.
+      MIGRATE_ON_START: "false"
     depends_on:
-      postgres:
-        condition: service_healthy
-    # GPU for embeddings / reranking. Needs the NVIDIA Container Toolkit on the
-    # host; remove this block (and build with TORCH_INDEX=cpu) without a GPU.
+      migrate:
+        condition: service_completed_successfully
+    networks: [internal, edge]
     deploy:
       resources:
+        limits:
+          memory: ${API_MEMORY:-4g}
         reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
+          devices: [*gpu]
 
   ingestion-worker:
     <<: *backend
     command: ["python", "worker.py"]
     environment:
       POSTGRES_HOST: postgres
-    # Started after api is healthy, i.e. after api has applied the migrations.
+      POSTGRES_USER: ${POSTGRES_APP_USER:-chatbot_app}
+      POSTGRES_PASSWORD: ${POSTGRES_APP_PASSWORD:?run the installer to generate secrets}
     depends_on:
-      api:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     # The image's healthcheck probes the API port, which the worker does not serve.
     healthcheck:
       disable: true
+    networks: [internal, egress]
     # Hard caps so parsing can never starve the API or the host: an OOM here
     # kills (and restarts) only this container; its upload is retried.
     # Keep OCR_CPU_THREADS below WORKER_CPUS.
@@ -87,45 +131,45 @@ services:
       resources:
         limits:
           cpus: "${WORKER_CPUS:-3}"
-          memory: ${WORKER_MEMORY:-6g}
-        # GPU for OCR (PaddleOCR-VL) and embeddings; remove without a GPU, like api's.
+          memory: ${WORKER_MEMORY:-5g}
         reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
+          devices: [*gpu]
     # On SIGTERM the worker hands its upload back to the queue right away.
     stop_grace_period: 30s
 
   web:
-    build: ./frontends/widget
-    restart: unless-stopped
-    env_file: ./frontends/widget/.env
+    <<: *hardening
+    image: ${REGISTRY:-ghcr.io/lcduc}/chatbot-web:${IMAGE_TAG:-dev}
     environment:
       BACKEND_URL: http://api:8500
+      BFF_SERVICE_TOKEN: ${BFF_SERVICE_TOKEN:?run the installer to generate secrets}
+      VISITOR_COOKIE_SECRET: ${VISITOR_COOKIE_SECRET:?run the installer to generate secrets}
+      WIDGET_ALLOWED_PARENTS: ${HOST_ORIGIN:?set HOST_ORIGIN (the site embedding the widget)}
     depends_on:
       api:
         condition: service_healthy
-    security_opt:
-      - no-new-privileges:true
+    networks: [edge]
+    deploy:
+      resources:
+        limits:
+          memory: ${WEB_MEMORY:-384m}
 
-  # Admin web (static SPA), served on ADMIN_DOMAIN only; shared by every client deployment.
+  # Admin web (static SPA), served on PUBLIC_DOMAIN_ADMIN only; shared by every client deployment.
   admin:
-    build: ./frontends/admin
-    restart: unless-stopped
-    security_opt:
-      - no-new-privileges:true
+    <<: *hardening
+    image: ${REGISTRY:-ghcr.io/lcduc}/chatbot-admin:${IMAGE_TAG:-dev}
+    networks: [edge]
     deploy:
       resources:
         limits:
           memory: 128m
 
   caddy:
-    image: caddy:2
-    restart: unless-stopped
-    env_file: .env
+    <<: *hardening
+    image: caddy:2.10
     environment:
-      ADMIN_DOMAIN: ${ADMIN_DOMAIN:?set ADMIN_DOMAIN in .env (the admin web's own domain)}
+      PUBLIC_DOMAIN_CHAT: ${PUBLIC_DOMAIN_CHAT:?set PUBLIC_DOMAIN_CHAT}
+      PUBLIC_DOMAIN_ADMIN: ${PUBLIC_DOMAIN_ADMIN:?set PUBLIC_DOMAIN_ADMIN (the admin web's own domain)}
     ports:
       - "80:80"
       - "443:443"
@@ -136,6 +180,27 @@ services:
     depends_on:
       - web
       - admin
+    networks: [edge]
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+
+networks:
+  # Public-facing services and the API they proxy to.
+  edge: {}
+  # Database and internal services: no route to or from the internet.
+  internal:
+    internal: true
+  # Outbound internet for the worker (hosted OCR, alerts) without being reachable from caddy.
+  egress: {}
+
+# File-based secrets live in secrets/ (directory 0700); the files themselves are
+# world-readable so the unprivileged postgres and app users inside the containers
+# can read them, while the directory keeps them private on the host.
+secrets:
+  postgres_owner_password:
+    file: ./secrets/postgres_owner_password
 
 volumes:
   pgdata:

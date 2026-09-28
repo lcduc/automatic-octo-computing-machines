@@ -74,3 +74,11 @@ frontends/
 deploy/
 .claude/
 .codegraph/
+
+# Install-directory artifacts of a local `python -m deploy.ops install --dir .`
+secrets/
+ops.env
+backups/
+handover/
+.deploy_history
+data/uploads/
