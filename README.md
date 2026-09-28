@@ -3,8 +3,10 @@
 A knowledge-grounded Vietnamese chatbot product:
 
 - **Chat widget** embeddable on any website with one `<script>` tag.
-- **Admin web** for the client's staff: knowledge base, conversations, feedback,
-  handoffs, live token usage, logs and settings.
+- **Admin web** (`frontends/admin`, its own domain) for the client's staff:
+  knowledge base with chunking strategies, conversations, feedback, handoffs,
+  live token usage, logs, settings (incl. live model and retrieval tuning),
+  accounts and an append-only audit log.
 - **FastAPI backend**: hybrid retrieval over PostgreSQL + pgvector, grounded answers
   streamed from OpenAI, Anthropic or Gemini.
 
@@ -42,15 +44,25 @@ Everything runs on one VPS with `docker compose up -d` (see
 - Staff can edit a document's title, source and metadata, and each chunk's
   text and metadata, in the admin web. Edits are re-embedded and searchable
   immediately, with no full re-index.
+- Each upload picks a **chunking strategy**: `auto` (per file type), `size`,
+  `heading`, `legal_article` (one chunk per Điều, labelled for citation),
+  `qa_pair`, `table_rows` or `whole`. The extracted text is kept, so staff can
+  preview another strategy and re-chunk a document without uploading it again.
+  Uploading with `enabled=false` keeps it out of answers until it is checked.
 - Chat requests may restrict retrieval to given sources.
 
 ## Security
 
-- **Browser access:** browsers only reach the Next.js server. Its routes hold
-  the chat API key and sign an anonymous visitor cookie, so no secrets are in
-  the page. The widget iframe may only be framed by allow-listed sites.
+- **Browser access:** on the chat domain browsers only reach the Next.js server.
+  Its routes hold the chat API key and sign an anonymous visitor cookie, so no
+  secrets are in the page. The widget iframe may only be framed by allow-listed
+  sites. The admin web lives on a separate domain that cannot be framed.
 - **API access:** per-frontend API keys (hashed, revocable) and admin accounts
-  with owner/editor/viewer roles (JWT).
+  with owner / editor / support agent / viewer roles. Admin sessions are an
+  HttpOnly, SameSite=Strict cookie; cookie-authenticated writes also need an
+  `X-Admin-Request` header.
+- **Audit log:** every admin write and sign-in attempt is recorded (secrets
+  redacted) in an append-only table that PostgreSQL itself refuses to change.
 - **Rate limits:** per visitor and per IP, a daily token budget per visitor,
   and a cap on concurrent generations.
 - **CORS:** the backend accepts only listed origins.
@@ -63,7 +75,8 @@ Everything runs on one VPS with `docker compose up -d` (see
 ```text
 main.py                 FastAPI wiring (middleware, routers, lifespan)
 worker.py               ingestion worker: parses/OCRs queued uploads outside the API
-api/                    routes (v1 public + admin), schemas, dependencies, middleware
+api/                    routes (v1 public + admin), schemas, dependencies
+middleware/             app-wide ASGI middleware, one class per file (only main.py imports it)
 services/               use cases: chat, knowledge, ingestion, auth, settings, usage…
 core/agent/             LLM providers (usage-reporting), chat pipeline, prompts, tools
 core/retrieval/         embeddings, reranker, in-memory knowledge index, retriever
@@ -71,9 +84,11 @@ core/guardrails/        PII redactor, input guard
 core/storage/           SQLAlchemy tables, repositories, connection pool
 core/document_processing/  Docling / OCR parsing
 migrations/             Alembic schema migrations
-frontends/<client>/       per-client frontend (widget + admin web), consumes the API
+frontends/widget/         chat widget (Next.js); client deployments customise it on a branch
+frontends/admin/          admin web shared by every deployment (Vite + React)
 app.py                  internal Streamlit demo of the chat API
 docs/DEPLOYMENT.md      VPS deployment, embedding, backups, operations
+docs/API.md             API reference (public chat + admin); docs/openapi.json is its schema
 ```
 
 ## Development
@@ -83,7 +98,8 @@ See [docs/DEPLOYMENT.md#local-development](docs/DEPLOYMENT.md#local-development)
 ```bash
 ruff check .
 pytest                                  # unit tests; integration tests need TEST_DATABASE_URL
-cd frontends/<client> && npm run lint && npx tsc --noEmit && npm run build
+cd frontends/widget && npm run lint && npx next typegen && npx tsc --noEmit && npm run build
+cd frontends/admin && npm run lint && npm run typecheck && npm test && npm run build
 ```
 
 API documentation: `http://localhost:8500/docs` (disabled when `APP_ENV=production`).

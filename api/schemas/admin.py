@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field
 from .chat import Citation
 from .common import ApiModel
 
-AdminRole = Literal["owner", "editor", "viewer"]
+AdminRole = Literal["owner", "editor", "viewer", "support_agent"]
 #: Deliberately loose e-mail shape check (accounts are created by owners, not self-service).
 EMAIL_PATTERN = r"^[^@\s]{1,64}@[^@\s]{1,255}\.[^@\s]{2,}$"
 MAX_CANNED_MESSAGE = 2000
@@ -105,6 +105,13 @@ class ApiKeyCreated(ApiKeyOut):
 # ---------------------------------------------------------------- settings
 
 
+#: Provider model ids ("gpt-5-mini", "claude-sonnet-5", "models/gemini-3.6-flash", ...).
+MODEL_NAME_PATTERN = r"^[A-Za-z0-9._:/\-]+$"
+MAX_MODEL_NAME = 100
+#: Upper bound for top-k and context chunks set from the admin web.
+MAX_RETRIEVAL_CHUNKS = 20
+
+
 class SettingsUpdate(BaseModel):
     """Runtime chat and widget settings; omitted fields are unchanged."""
 
@@ -119,6 +126,12 @@ class SettingsUpdate(BaseModel):
     widget_welcome_message: Optional[str] = Field(None, max_length=500)
     widget_primary_color: Optional[str] = Field(None, pattern=r"^#[0-9a-fA-F]{6}$")
     widget_suggested_questions: Optional[List[str]] = Field(None, max_length=MAX_SUGGESTED_QUESTIONS)
+    chat_model: Optional[str] = Field(None, max_length=MAX_MODEL_NAME, pattern=MODEL_NAME_PATTERN)
+    light_model: Optional[str] = Field(None, max_length=MAX_MODEL_NAME, pattern=MODEL_NAME_PATTERN)
+    similarity_threshold: Optional[float] = Field(None, ge=0.0, le=1.0)
+    semantic_weight: Optional[float] = Field(None, ge=0.0, le=1.0)
+    retrieval_top_k: Optional[int] = Field(None, ge=1, le=MAX_RETRIEVAL_CHUNKS)
+    max_context_chunks: Optional[int] = Field(None, ge=1, le=MAX_RETRIEVAL_CHUNKS)
 
 
 # ---------------------------------------------------------------- conversations
@@ -268,3 +281,23 @@ class SystemStatus(BaseModel):
     cache: Dict[str, Any]
     fallback_mode: str
     ingestion_queue: IngestionQueueStatus
+
+
+# ---------------------------------------------------------------- audit
+
+
+class AuditEntryOut(ApiModel):
+    """One audited admin write or sign-in attempt."""
+
+    id: uuid.UUID
+    created_at: datetime
+    actor_id: Optional[uuid.UUID] = None
+    actor_email: Optional[str] = None
+    actor_role: Optional[str] = None
+    method: str
+    path: str
+    status_code: int
+    request_id: Optional[str] = None
+    client_ip: Optional[str] = None
+    request_body: Optional[Any] = None
+    response_body: Optional[Any] = None

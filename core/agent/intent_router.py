@@ -60,7 +60,7 @@ class IntentRouter:
         ]
 
     async def classify(
-        self, query: str, history: Optional[List[Dict[str, str]]] = None
+        self, query: str, history: Optional[List[Dict[str, str]]] = None, model: Optional[str] = None
     ) -> Tuple[IntentType, Optional[LLMUsage]]:
         """
         Classify one turn as :attr:`IntentType.RAG` or :attr:`IntentType.ACTION`.
@@ -74,6 +74,7 @@ class IntentRouter:
         Args:
             query: Current turn's user text.
             history: Prior conversation turns, most recent last.
+            model: Light model to use; defaults to the configured one.
 
         Returns:
             ``(intent, usage)`` — usage is ``None`` when no call was made.
@@ -84,7 +85,7 @@ class IntentRouter:
         try:
             result = await self._client_provider.complete_async(
                 self._build_messages(query, history),
-                model=Config.LLM.ACTIVE_LIGHT_MODEL(),
+                model=model or Config.LLM.ACTIVE_LIGHT_MODEL(),
             )
         except Exception:
             logger.exception("Intent classification failed; defaulting to RAG")

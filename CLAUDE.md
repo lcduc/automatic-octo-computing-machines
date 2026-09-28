@@ -29,7 +29,7 @@
 - Deliberate simplification with a known limit (global lock, O(n²) scan, naive heuristic) → mark it `# ceiling: <limit>, <upgrade trigger>` (e.g. `# ceiling: single global lock, per-account locks if throughput matters`). This is a documented decision, not a TODO; every marker must name its trigger.
 
 ## 2. File Structure
-Monorepo: one backend serving an HTTP API, and any number of frontends that consume only that API. Streamlit is the internal demo; each client gets its own frontend.
+Monorepo: one backend serving an HTTP API, and any number of frontends that consume only that API. Streamlit is the internal demo; `frontends/widget` is the chat widget and `frontends/admin` the admin web. A client deployment is a branch that customises `frontends/widget`.
 
 ```text
 project_root/
@@ -66,7 +66,8 @@ project_root/
 │   │   ├── pages/  components/                 # UI pieces, one concern per file
 │   │   ├── api_client.py                       # the ONLY place that calls the backend
 │   │   ├── venv/  requirements.txt  Dockerfile
-│   └── <client-name>/                          # per-client custom frontend; own stack, own toolchain
+│   ├── widget/                                 # chat widget (Next.js); customised per client on a client branch
+│   └── admin/                                  # admin web (Vite SPA), its own domain, shared by all clients
 ├── docs/                                       # architecture notes, exported openapi.json
 ├── data/                                       # runtime data (chunks, vectors, temp) — gitignored, mounted as volume
 ├── model_weights/                              # downloaded model cache — gitignored, mounted as volume

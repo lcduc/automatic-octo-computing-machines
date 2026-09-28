@@ -30,8 +30,31 @@ async def update_settings(
     principal: AdminPrincipal = Depends(require_admin(WRITE_ROLES)),
     container: AppContainer = Depends(get_container),
 ) -> Dict[str, Any]:
-    """Change settings; they apply to the next chat turn without a restart."""
-    return await container.settings.update(body.model_dump(exclude_unset=True), principal.email)
+    """
+    Change settings; they apply to the next chat turn without a restart.
+
+    A new chat or light model is tried with one tiny request first, so a
+    mistyped model name is refused (400) instead of breaking every chat.
+    """
+    return await container.settings.update(
+        body.model_dump(exclude_unset=True), principal.email, model_check=container.check_model
+    )
+
+
+@router.get("/settings/defaults", dependencies=[Depends(require_admin(READ_ROLES))])
+async def get_setting_defaults(container: AppContainer = Depends(get_container)) -> Dict[str, Any]:
+    """What each setting falls back to (``.env`` / built-in), to show saved overrides."""
+    return container.settings.defaults()
+
+
+@router.delete("/settings/{key}")
+async def reset_setting(
+    key: str,
+    principal: AdminPrincipal = Depends(require_admin(WRITE_ROLES)),
+    container: AppContainer = Depends(get_container),
+) -> Dict[str, Any]:
+    """Drop a saved override so the default applies again."""
+    return await container.settings.reset(key, principal.email)
 
 
 @router.get("/api-keys", response_model=List[ApiKeyOut], dependencies=[Depends(require_admin(OWNER_ROLES))])

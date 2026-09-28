@@ -89,7 +89,11 @@ class ToolCallingAgent:
         }
 
     async def stream(
-        self, query: str, history: Optional[List[Dict[str, str]]] = None
+        self,
+        query: str,
+        history: Optional[List[Dict[str, str]]] = None,
+        model: Optional[str] = None,
+        light_model: Optional[str] = None,
     ) -> AsyncGenerator[StreamDelta, None]:
         """
         Answer a query, letting the model call a registered tool first if it chooses to.
@@ -97,6 +101,8 @@ class ToolCallingAgent:
         Args:
             query: Current turn's user text.
             history: Prior conversation turns, most recent last.
+            model: Answer model; defaults to the configured one.
+            light_model: Model for the query rewrite; defaults to the configured one.
 
         Yields:
             Text deltas and usage deltas (one per LLM call made).
@@ -105,13 +111,13 @@ class ToolCallingAgent:
             Exception: Provider failures propagate to the caller, which maps
                 them to a user-facing error instead of streaming raw text.
         """
-        standalone_query, rewrite_usage = await self._query_rewriter.rewrite(query, history)
+        standalone_query, rewrite_usage = await self._query_rewriter.rewrite(query, history, light_model)
         if rewrite_usage is not None:
             yield StreamDelta(usage=rewrite_usage)
         messages = self._build_messages(standalone_query, history)
 
         message, decision_usage = await self._client_provider.complete_with_tools_async(
-            messages, tools=self._tool_registry.schemas()
+            messages, tools=self._tool_registry.schemas(), model=model
         )
         if decision_usage is not None:
             yield StreamDelta(usage=decision_usage)
@@ -133,5 +139,5 @@ class ToolCallingAgent:
                 }
             )
 
-        async for delta in self._client_provider.stream(messages):
+        async for delta in self._client_provider.stream(messages, model=model):
             yield delta

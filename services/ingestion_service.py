@@ -13,7 +13,15 @@ import numpy as np
 
 # Local imports
 from config.settings import Config
-from utils.text_utils import TextUtils
+from core.document_processing.chunking import Chunker
+from models.knowledge import (
+    AUTO_STRATEGY,
+    EXTRACTION_LOCAL,
+    ChunkDraft,
+    ChunkingResult,
+    ChunkingSpec,
+    ExtractedDocument,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +46,7 @@ class IngestionService:
         self._processor: Optional[object] = None
         self._embedding_service = embedding_service
         self._parse_slots = asyncio.Semaphore(max(1, max_concurrent_files))
+        self._chunker = Chunker()
 
     @property
     def embedding_model(self) -> str:
@@ -72,12 +81,16 @@ class IngestionService:
             self._processor = self._processor_factory()
         return self._processor
 
-    async def extract_chunks(self, content: bytes, filename: str) -> List[str]:
+    async def extract(self, content: bytes, filename: str, spec: ChunkingSpec) -> ExtractedDocument:
         """
-        Parse a file into cleaned text chunks.
+        Parse a file and chunk its text with ``spec``.
+
+        ``auto`` keeps the chunks the processor made for this file type; any
+        other strategy re-splits the processor's full text.
 
         Raises:
-            ValueError: Unsupported type, too large, or no text could be extracted.
+            ValueError: Unsupported type, too large, no text could be extracted,
+                or the strategy cannot chunk this text (``InvalidChunkingError``).
         """
         if len(content) > Config.File.MAX_FILE_SIZE():
             raise ValueError(f"File too large; maximum is {Config.File.MAX_FILE_SIZE() // (1024 * 1024)}MB")
@@ -87,17 +100,24 @@ class IngestionService:
                 result = await self._get_processor().process_file(content, filename)
             finally:
                 self._release_memory()
-        chunks = [chunk for chunk in result["documents"] if chunk.strip()]
-        logger.info("Parsed %s into %d chunks", filename, len(chunks))
-        return chunks
+        processor_chunks = [chunk for chunk in result["documents"] if chunk.strip()]
+        text = result.get("text") or "\n\n".join(processor_chunks)
+        method = result.get("extraction_method") or EXTRACTION_LOCAL
+        if spec.strategy == AUTO_STRATEGY:
+            chunking = ChunkingResult([ChunkDraft(chunk) for chunk in processor_chunks])
+        else:
+            chunking = await asyncio.to_thread(self.chunk, text, spec, method)
+        logger.info("Parsed %s (%s) into %d chunks with %s", filename, method, len(chunking.drafts), spec.strategy)
+        return ExtractedDocument(text=text, extraction_method=method, chunking=chunking)
 
-    @staticmethod
-    def split_text(text: str) -> List[str]:
-        """Split hand-written text into chunks using the configured chunk size."""
-        pieces = TextUtils.chunk_text(
-            text, chunk_size=Config.File.CHUNK_SIZE(), overlap=Config.File.CHUNK_OVERLAP()
-        )
-        return [cleaned for cleaned in (TextUtils.clean_chunk_text(p) for p in pieces) if cleaned.strip()]
+    def chunk(self, text: str, spec: ChunkingSpec, extraction_method: str) -> ChunkingResult:
+        """
+        Chunk already-extracted text (CPU-bound; call it in a worker thread).
+
+        Raises:
+            InvalidChunkingError: The strategy cannot chunk this text.
+        """
+        return self._chunker.split(text, spec, extraction_method)
 
     async def embed(self, texts: List[str]) -> np.ndarray:
         """Embed chunk texts in a worker thread (GPU/CPU-bound)."""

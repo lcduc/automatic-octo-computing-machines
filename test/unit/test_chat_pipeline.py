@@ -33,6 +33,7 @@ class FakeLLM:
         self.answer = answer
         self.fail = fail
         self.stream_calls = []
+        self.stream_models = []
         self.complete_calls = []
 
     async def complete_async(self, messages, model=None):
@@ -41,6 +42,7 @@ class FakeLLM:
 
     async def stream(self, messages, model=None):
         self.stream_calls.append(messages)
+        self.stream_models.append(model)
         if self.fail:
             raise self.fail
         for word in self.answer.split(" "):
@@ -158,3 +160,16 @@ async def test_provider_failure_ends_with_safe_error_message():
     _, result = await _collect(_pipeline(FakeLLM(fail=RateLimitError("secret detail"))), "lương tối thiểu vùng")
     assert result.outcome == TurnOutcome.ERROR
     assert "secret" not in result.text and "quá tải" in result.text
+
+
+@pytest.mark.asyncio
+async def test_admin_chosen_model_is_used_and_switching_it_never_serves_a_cached_answer():
+    llm = FakeLLM()
+    pipeline = _pipeline(llm)
+    first_policy = ChatPolicy(**{**POLICY.__dict__, "chat_model": "model-a"})
+    _, first = await _collect(pipeline, "lương tối thiểu vùng là bao nhiêu", policy=first_policy)
+    assert first.model == "model-a" and llm.stream_models == ["model-a"]
+
+    second_policy = ChatPolicy(**{**POLICY.__dict__, "chat_model": "model-b"})
+    _, second = await _collect(pipeline, "lương tối thiểu vùng là bao nhiêu", policy=second_policy)
+    assert not second.cached and llm.stream_models == ["model-a", "model-b"]

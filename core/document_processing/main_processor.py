@@ -22,6 +22,7 @@ from typing import Any, Dict, List, Optional
 
 # Local imports
 from config.settings import Config
+from models.knowledge import EXTRACTION_DOCLING, EXTRACTION_LOCAL
 from models.metadata import ProcessingMethod
 from utils.text_utils import TextUtils
 from .docling_processor import DoclingProcessor
@@ -103,7 +104,7 @@ class MainDocumentProcessor:
             file_ext: Lower-cased extension including the leading dot.
 
         Returns:
-            ``(documents, metadata)``.
+            ``(documents, full text, metadata)``.
 
         Raises:
             ValueError: No local processor handles this extension.
@@ -112,8 +113,8 @@ class MainDocumentProcessor:
         if processor is None:
             raise ValueError(f"No processor could extract content from {filename}")
 
-        documents = await processor.process(file_content, filename)
-        return documents, {
+        extraction = await processor.process(file_content, filename)
+        return extraction.chunks, extraction.text, {
             "processing_method": ProcessingMethod.EXISTING_PROCESSOR.value,
             "processor_version": type(processor).__name__,
         }
@@ -127,7 +128,8 @@ class MainDocumentProcessor:
             filename: Original filename for processing and metadata
 
         Returns:
-            Dict containing processed documents and comprehensive metadata
+            ``documents`` (chunks), ``text`` (the full extracted text),
+            ``extraction_method`` (``docling``, ``ocr`` or ``local``) and ``metadata``.
 
         Raises:
             ValueError: The extension is not allowed, or no content was extracted.
@@ -146,6 +148,8 @@ class MainDocumentProcessor:
                     )
                     metadata = result.get("metadata", {})
                     documents = result.get("documents") or []
+                    text = result.get("text", "")
+                    extraction_method = result.get("extraction_method", EXTRACTION_DOCLING)
                     extra_metadata = {
                         **metadata,
                         "processor_version": metadata.get(
@@ -163,14 +167,16 @@ class MainDocumentProcessor:
                         filename,
                         exc_info=True,
                     )
-                    documents, extra_metadata = await self._extract_locally(
+                    documents, text, extra_metadata = await self._extract_locally(
                         file_content, filename, file_ext
                     )
+                    extraction_method = EXTRACTION_LOCAL
             else:
                 # Docling rejects this format outright (e.g. .txt).
-                documents, extra_metadata = await self._extract_locally(
+                documents, text, extra_metadata = await self._extract_locally(
                     file_content, filename, file_ext
                 )
+                extraction_method = EXTRACTION_LOCAL
 
             documents = [
                 cleaned for cleaned in (TextUtils.clean_chunk_text(doc) for doc in documents) if cleaned.strip()
@@ -180,6 +186,8 @@ class MainDocumentProcessor:
 
             return {
                 "documents": documents,
+                "text": text,
+                "extraction_method": extraction_method,
                 "metadata": {
                     **extra_metadata,
                     "processing_timestamp": datetime.now().isoformat(),

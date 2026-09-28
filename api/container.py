@@ -29,6 +29,7 @@ from core.retrieval.knowledge_index import KnowledgeIndex
 from core.retrieval.retriever import ContextRetriever
 from core.storage.database import Database
 from core.storage.upload_store import UploadStore
+from services.audit_service import AuditService
 from services.auth_service import AuthService
 from services.chat_service import ChatService
 from services.conversation_service import ConversationService
@@ -47,6 +48,8 @@ logger = logging.getLogger(__name__)
 
 #: Seconds between checks for uploads the ingestion worker has finished.
 INGESTION_WATCH_SECONDS = 5
+#: Prompt sent once to confirm a newly chosen model exists before it is saved.
+MODEL_CHECK_PROMPT = "Reply with OK."
 
 
 def _document_processor():
@@ -72,6 +75,7 @@ class AppContainer:
             self.database, Config.Security.ADMIN_JWT_SECRET(), Config.Security.ADMIN_TOKEN_TTL_MINUTES()
         )
         self.logs = LogService(json_log_path(), LOG_BACKUP_COUNT)
+        self.audit = AuditService(self.database)
         self.redactor = PiiRedactor() if Config.Security.PII_REDACTION_ENABLED() else None
         self.reranker = None
         self.llm = None
@@ -150,6 +154,15 @@ class AppContainer:
     def _create_llm(self):
         """The configured chat-completion provider."""
         return LLMProviderFactory.create()
+
+    async def check_model(self, model: str) -> None:
+        """
+        Answer one tiny prompt with ``model`` on the chat provider.
+
+        Raises:
+            Exception: Whatever the provider raises for an unknown or unavailable model.
+        """
+        await self.llm.complete_async([{"role": "user", "content": MODEL_CHECK_PROMPT}], model=model)
 
     def _openai_extras(self) -> Optional[OpenAIClientProvider]:
         """

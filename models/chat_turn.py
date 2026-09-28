@@ -49,6 +49,14 @@ class ChatPolicy:
     thanks_message: str
     #: Extra system-prompt instructions (persona, scope, tone); may be empty.
     assistant_instructions: str = ""
+    #: Answer model and light model (rewrite/routing); ``None`` = the env default.
+    chat_model: Optional[str] = None
+    light_model: Optional[str] = None
+    #: Retrieval tuning; ``None`` = the env default.
+    similarity_threshold: Optional[float] = None
+    semantic_weight: Optional[float] = None
+    retrieval_top_k: Optional[int] = None
+    max_context_chunks: Optional[int] = None
 
 
 @dataclass(frozen=True)

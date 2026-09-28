@@ -3,8 +3,10 @@ FastAPI dependency providers: the service container and caller authentication.
 
 * Public chat routes require ``X-API-Key`` (a key with the ``chat`` scope,
   held by the frontend's server) plus ``X-End-User-Id`` (the visitor).
-* Admin routes require ``Authorization: Bearer <admin session token>`` and a
-  role allowed for the route.
+* Admin routes require an admin session token and a role allowed for the
+  route. The token comes from the HttpOnly session cookie set at sign-in (the
+  admin web) or ``Authorization: Bearer`` (scripts). Cookie-authenticated writes
+  must also send ``X-Admin-Request: 1``, which a cross-site form cannot.
 """
 
 # Standard library imports
@@ -15,7 +17,7 @@ from typing import Callable
 from fastapi import Depends, Header, HTTPException, Request, status
 
 # Local imports
-from core.storage.tables.access_tables import ROLE_EDITOR, ROLE_OWNER, ROLE_VIEWER, SCOPE_CHAT
+from core.storage.tables.access_tables import ROLE_EDITOR, ROLE_OWNER, ROLE_SUPPORT_AGENT, ROLE_VIEWER, SCOPE_CHAT
 from models.caller import ChatCaller
 from services.auth_service import AdminPrincipal
 from utils.request_context import current_request_id
@@ -25,9 +27,20 @@ from .container import AppContainer
 END_USER_ID_PATTERN = re.compile(r"^[A-Za-z0-9_\-:.]{8,128}$")
 
 #: Roles allowed by each admin permission level.
-READ_ROLES = (ROLE_OWNER, ROLE_EDITOR, ROLE_VIEWER)
+READ_ROLES = (ROLE_OWNER, ROLE_EDITOR, ROLE_VIEWER, ROLE_SUPPORT_AGENT)
 WRITE_ROLES = (ROLE_OWNER, ROLE_EDITOR)
+#: Who may take on and close transfer-to-human requests.
+HANDOFF_ROLES = (ROLE_OWNER, ROLE_EDITOR, ROLE_SUPPORT_AGENT)
 OWNER_ROLES = (ROLE_OWNER,)
+
+#: HttpOnly cookie carrying the admin session token for the admin web.
+ADMIN_SESSION_COOKIE = "admin_session"
+#: Path the session cookie is scoped to, so no other route ever receives it.
+ADMIN_COOKIE_PATH = "/api/v1/admin"
+#: Header cookie-authenticated writes must carry (browsers never add it cross-site).
+CSRF_HEADER = "X-Admin-Request"
+#: Methods that change state and therefore need the CSRF header.
+UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 
 
 def get_container(request: Request) -> AppContainer:
@@ -90,17 +103,26 @@ def require_admin(roles=READ_ROLES) -> Callable:
     """
 
     async def dependency(
+        request: Request,
         authorization: str = Header("", alias="Authorization"),
         container: AppContainer = Depends(get_container),
     ) -> AdminPrincipal:
-        scheme, _, token = authorization.partition(" ")
-        principal = await container.auth.verify_token(token) if scheme.lower() == "bearer" and token else None
+        scheme, _, bearer = authorization.partition(" ")
+        token = bearer if scheme.lower() == "bearer" and bearer else None
+        from_cookie = token is None
+        if from_cookie:
+            token = request.cookies.get(ADMIN_SESSION_COOKIE)
+        principal = await container.auth.verify_token(token) if token else None
         if principal is None:
             raise HTTPException(
                 status.HTTP_401_UNAUTHORIZED, "Not signed in", headers={"WWW-Authenticate": "Bearer"}
             )
+        if from_cookie and request.method in UNSAFE_METHODS and request.headers.get(CSRF_HEADER) != "1":
+            raise HTTPException(status.HTTP_403_FORBIDDEN, f"Missing {CSRF_HEADER} header")
         if principal.role not in roles:
             raise HTTPException(status.HTTP_403_FORBIDDEN, "Your role does not allow this action")
+        # Read by the audit middleware to attribute the change.
+        request.state.admin = principal
         return principal
 
     return dependency

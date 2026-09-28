@@ -1,0 +1,37 @@
+# Chat widget
+
+The embeddable chat for visitors: `embed.js` adds a launcher to any allowed site and opens the chat
+(`/widget`) in an iframe. A small Next.js server holds the chat API key, signs an anonymous visitor
+cookie and relays answers from the backend as Server-Sent Events, so no secret reaches the browser.
+
+Staff manage everything else in the admin web (`frontends/admin`, its own domain).
+
+## Develop
+
+```bash
+cd frontends/widget
+cp .env.example .env.local   # set CHATBOT_API_KEY and VISITOR_COOKIE_SECRET
+npm ci
+npm run dev                  # http://localhost:3000, /embed-demo shows the widget on a page
+```
+
+```bash
+npm run lint
+npx next typegen && npx tsc --noEmit
+npm run build
+```
+
+## Embed
+
+```html
+<script src="https://chat.example.com/embed.js" defer data-color="#0B5FFF" data-position="right" data-label="Hỏi đáp"></script>
+```
+
+List the embedding sites in `WIDGET_ALLOWED_PARENTS`; the widget refuses to be framed anywhere else.
+
+## Client deployments
+
+`main` carries this generic widget. For a client, create a branch (e.g. `client/<name>`), customise the
+widget there (look, texts, extra pages), set that client's `.env` values, and deploy the branch. Keep
+backend and admin changes on `main` and merge them into client branches, so each branch differs only in
+`frontends/widget` and its configuration.

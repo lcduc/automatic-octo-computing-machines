@@ -43,7 +43,7 @@ class QueryRewriter:
         ]
 
     async def rewrite(
-        self, query: str, history: Optional[List[Dict[str, str]]]
+        self, query: str, history: Optional[List[Dict[str, str]]], model: Optional[str] = None
     ) -> Tuple[str, Optional[LLMUsage]]:
         """
         Return a standalone version of ``query`` resolved against ``history``.
@@ -52,6 +52,7 @@ class QueryRewriter:
             query: Current turn's user text.
             history: Prior conversation turns, most recent last. Without
                 history there is nothing to resolve, so no LLM call is made.
+            model: Light model to use; defaults to the configured one.
 
         Returns:
             ``(search_query, usage)``: the rewritten query (or the original on
@@ -63,7 +64,7 @@ class QueryRewriter:
         try:
             result = await self._client_provider.complete_async(
                 self._build_messages(query, history or []),
-                model=Config.LLM.ACTIVE_LIGHT_MODEL(),
+                model=model or Config.LLM.ACTIVE_LIGHT_MODEL(),
             )
         except Exception:
             logger.exception("Query rewrite failed; falling back to original query")

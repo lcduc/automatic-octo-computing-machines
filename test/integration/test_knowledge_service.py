@@ -1,6 +1,7 @@
 """KnowledgeService and IngestionWorker against real PostgreSQL: CRUD keeps the index in sync, uploads go through the queue."""
 
 import asyncio
+import uuid
 from types import SimpleNamespace
 
 import pytest
@@ -9,6 +10,7 @@ from sqlalchemy import text
 from core.retrieval.knowledge_index import KnowledgeIndex
 from core.storage.knowledge_repository import IngestionQueueStats, KnowledgeRepository
 from core.storage.upload_store import UploadStore
+from models.knowledge import ChunkingSpec
 from services.errors import ConflictError, InvalidRequestError, NotFoundError
 from services.ingestion_service import IngestionService
 from services.ingestion_worker import CRASH_LOOP_ERROR, MAX_ATTEMPTS, IngestionWorker
@@ -199,11 +201,11 @@ async def test_upload_that_keeps_killing_the_worker_is_failed(kb):
 async def test_clean_shutdown_hands_the_job_back_to_the_queue(kb):
     started = asyncio.Event()
 
-    async def parse_forever(content, filename):
+    async def parse_forever(content, filename, spec):
         started.set()
         await asyncio.Event().wait()
 
-    kb.service._ingestion.extract_chunks = parse_forever
+    kb.service._ingestion.extract = parse_forever
     document = await kb.service.upload_file(b"a\n\nb", "doc.txt", "general", None, {}, None)
     task = asyncio.create_task(kb.worker.run())
     await asyncio.wait_for(started.wait(), timeout=10)
@@ -233,3 +235,90 @@ async def test_source_cannot_be_deleted_while_it_has_documents(kb):
         await service.delete_source(sources["web_data"].id)
     await service.update_source(sources["web_data"].id, {"enabled": False})
     assert index.snapshot.is_empty
+
+
+LAW_TEXT = (
+    "Chương I\nQUY ĐỊNH CHUNG\n\n"
+    "Điều 1. Phạm vi điều chỉnh\nLuật này quy định về người lao động đi làm việc ở nước ngoài.\n\n"
+    "Điều 2. Đối tượng áp dụng\nNgười lao động và doanh nghiệp dịch vụ."
+).encode("utf-8")
+
+
+@pytest.mark.asyncio
+async def test_upload_held_for_review_keeps_its_text_and_article_metadata(kb):
+    service, index = kb.service, kb.index
+    document = await service.upload_file(
+        LAW_TEXT, "luat.txt", "general", None, {}, None,
+        chunking=ChunkingSpec("legal_article", {}), enabled=False,
+    )
+    await kb.worker.process_next()
+
+    loaded = await service.get_document(document.id)
+    assert loaded.status == "ready" and loaded.chunking == {"strategy": "legal_article"}
+    assert [c.extra_metadata for c in loaded.chunks] == [
+        {"chapter": "Chương I", "article": "Điều 1"},
+        {"chapter": "Chương I", "article": "Điều 2"},
+    ]
+    assert loaded.chunks[0].content.startswith("Chương I QUY ĐỊNH CHUNG\nĐiều 1.")
+    assert loaded.extraction_method == "docling"
+    assert index.snapshot.is_empty  # held back until an admin enables it
+
+    await service.update_document(document.id, {"enabled": True})
+    assert {c.metadata["article"] for c in index.snapshot.chunks} == {"Điều 1", "Điều 2"}
+
+
+@pytest.mark.asyncio
+async def test_preview_writes_nothing_and_rechunk_replaces_the_chunks(kb):
+    service, index = kb.service, kb.index
+    document = await service.upload_file(LAW_TEXT, "luat.txt", "general", None, {}, None)
+    await kb.worker.process_next()
+    auto_chunks = [c.content for c in (await service.get_document(document.id)).chunks]
+
+    preview = await service.preview_chunking(document.id, ChunkingSpec("legal_article", {}))
+    assert [d.metadata.get("article") for d in preview.drafts] == ["Điều 1", "Điều 2"]
+    assert [c.content for c in (await service.get_document(document.id)).chunks] == auto_chunks
+
+    rechunked = await service.rechunk(document.id, ChunkingSpec("legal_article", {}), discard_manual_edits=False)
+    assert rechunked.chunk_count == 2 and rechunked.chunking == {"strategy": "legal_article"}
+    assert [c.position for c in rechunked.chunks] == [0, 1]
+    assert sorted(c.metadata["article"] for c in index.snapshot.chunks) == ["Điều 1", "Điều 2"]
+
+
+@pytest.mark.asyncio
+async def test_rechunk_protects_hand_edited_chunks(kb):
+    service = kb.service
+    document = await service.create_text_document("FAQ", "Hỏi đáp", "Hỏi: Phí?\nĐáp: Miễn phí.", {}, None)
+    chunk_id = (await service.get_document(document.id)).chunks[0].id
+    await service.update_chunk(chunk_id, "Hỏi: Phí?\nĐáp: 100 nghìn đồng.", None)
+
+    with pytest.raises(ConflictError, match="edited by hand"):
+        await service.rechunk(document.id, ChunkingSpec("qa_pair", {}), discard_manual_edits=False)
+    rechunked = await service.rechunk(document.id, ChunkingSpec("qa_pair", {}), discard_manual_edits=True)
+    assert [(c.content, c.edited) for c in rechunked.chunks] == [("Hỏi: Phí?\nĐáp: Miễn phí.", False)]
+    assert rechunked.chunks[0].extra_metadata == {"question": "Phí?"}
+
+
+@pytest.mark.asyncio
+async def test_rechunk_needs_stored_text_and_a_strategy_that_fits(kb):
+    service = kb.service
+    document = await service.create_text_document("general", "Ghi chú", "Chỉ là một đoạn văn.", {}, None)
+    with pytest.raises(InvalidRequestError, match="No question/answer pairs"):
+        await service.preview_chunking(document.id, ChunkingSpec("qa_pair", {}))
+
+    async with kb.database.session() as session:
+        await session.execute(text("UPDATE knowledge_documents SET extracted_text = NULL WHERE id = :id"), {"id": document.id})
+    with pytest.raises(ConflictError, match="upload the file again"):
+        await service.rechunk(document.id, ChunkingSpec("size", {"max_chars": 500}), discard_manual_edits=False)
+    with pytest.raises(NotFoundError):
+        await service.preview_chunking(uuid.uuid4(), ChunkingSpec())
+
+
+@pytest.mark.asyncio
+async def test_upload_whose_strategy_finds_nothing_fails_with_the_reason(kb):
+    document = await kb.service.upload_file(
+        b"Plain notes without questions.", "notes.txt", "general", None, {}, None, chunking=ChunkingSpec("qa_pair", {})
+    )
+    await kb.worker.process_next()
+
+    loaded = await kb.service.get_document(document.id)
+    assert loaded.status == "failed" and "No question/answer pairs" in loaded.error

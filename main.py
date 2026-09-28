@@ -31,7 +31,8 @@ configure_uvicorn_for_windows()
 
 from api.container import AppContainer  # noqa: E402
 from api.error_handlers import register_error_handlers  # noqa: E402
-from api.middleware import (  # noqa: E402
+from middleware import (  # noqa: E402
+    AdminAuditMiddleware,
     BodySizeLimitMiddleware,
     IpRateLimitMiddleware,
     RequestContextMiddleware,
@@ -46,7 +47,7 @@ logger = logging.getLogger(__name__)
 
 APP_VERSION = "3.0.0"
 #: Headers the web frontend may send cross-origin.
-CORS_ALLOWED_HEADERS = ["Authorization", "Content-Type", "X-API-Key", "X-End-User-Id", "X-Request-ID"]
+CORS_ALLOWED_HEADERS = ["Authorization", "Content-Type", "X-API-Key", "X-End-User-Id", "X-Request-ID", "X-Admin-Request"]
 CORS_ALLOWED_METHODS = ["GET", "POST", "PATCH", "DELETE", "OPTIONS"]
 
 configure_logging()
@@ -87,6 +88,7 @@ def create_app(container_factory: Callable[[], AppContainer] = AppContainer) -> 
     # Starlette runs the last-added middleware first, so this list reads
     # innermost -> outermost; CORS must be outermost so even 401/429/413
     # responses carry CORS headers and preflights never hit authentication.
+    app.add_middleware(AdminAuditMiddleware)
     app.add_middleware(IpRateLimitMiddleware)
     app.add_middleware(BodySizeLimitMiddleware)
     app.add_middleware(SecurityHeadersMiddleware)

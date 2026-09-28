@@ -14,7 +14,7 @@ from typing import Any, Dict, List, Optional
 
 # Third-party imports
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text, false, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -73,6 +73,15 @@ class KnowledgeDocument(Base):
     claimed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     #: When ingestion last finished (ready or failed); the API watches it to refresh its index.
     processed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    #: Chunking strategy and parameters, ``{"strategy": ..., ...}``; ``{}`` means ``auto``.
+    chunking: Mapped[Dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb")
+    )
+    #: Full text as extracted before chunking, kept so the document can be re-chunked.
+    #: Deferred: list and detail queries never need it.
+    extracted_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True, deferred=True)
+    #: How ``extracted_text`` was produced (docling, ocr, local, text); ``None`` = not stored.
+    extraction_method: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
     created_at: Mapped[datetime] = created_at_column()
     updated_at: Mapped[datetime] = updated_at_column()
 
@@ -105,6 +114,8 @@ class KnowledgeChunk(Base):
     #: Dimension-less so switching EMBEDDING_MODEL only requires a re-embed, not a migration.
     embedding: Mapped[Optional[List[float]]] = mapped_column(Vector(), nullable=True)
     embedding_model: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    #: Written or changed by an admin; re-chunking the document would discard it.
+    edited: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
     created_at: Mapped[datetime] = created_at_column()
     updated_at: Mapped[datetime] = updated_at_column()
 

@@ -1,0 +1,15 @@
+# Serves the built admin SPA inside the compose network (plain HTTP; TLS is
+# terminated by the public Caddy in deploy/Caddyfile).
+:80 {
+	root * /srv
+	encode zstd gzip
+
+	# Hashed build assets never change; everything else must be revalidated.
+	@assets path /assets/*
+	header @assets Cache-Control "public, max-age=31536000, immutable"
+	header -Server
+
+	# Client-side routes (/knowledge/…, /settings, …) all load index.html.
+	try_files {path} /index.html
+	file_server
+}

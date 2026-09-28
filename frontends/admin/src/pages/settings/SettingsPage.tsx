@@ -1,0 +1,42 @@
+import { useSearchParams } from "react-router";
+import { ErrorState, LoadingState, PageHeader, Tabs } from "../../components/ui/primitives";
+import { useI18n } from "../../i18n/I18nProvider";
+import type { Settings, SystemStatus } from "../../lib/types";
+import { useApi } from "../../lib/use-api";
+import { ChatBehaviorTab } from "./ChatBehaviorTab";
+import { ModelsTab } from "./ModelsTab";
+import { WidgetTab } from "./WidgetTab";
+
+type Tab = "chat" | "models" | "widget";
+
+export function SettingsPage() {
+  const { t } = useI18n();
+  const [params, setParams] = useSearchParams();
+  const tab = (["chat", "models", "widget"].includes(params.get("tab") ?? "") ? params.get("tab") : "chat") as Tab;
+  const settings = useApi<Settings>("settings");
+  const defaults = useApi<Settings>("settings/defaults");
+  const system = useApi<SystemStatus>("system");
+
+  return (
+    <>
+      <PageHeader title={t("settings.title")} description={t("settings.description")} />
+      <Tabs<Tab>
+        label={t("settings.title")}
+        tabs={[
+          { key: "chat", label: t("settings.tab.chat") },
+          { key: "models", label: t("settings.tab.models") },
+          { key: "widget", label: t("settings.tab.widget") },
+        ]}
+        selected={tab}
+        onSelect={(key) => setParams({ tab: key })}
+      />
+      {settings.error && <ErrorState message={settings.error} onRetry={settings.reload} />}
+      {!settings.data && !settings.error && <LoadingState />}
+      {settings.data && tab === "chat" && <ChatBehaviorTab key={JSON.stringify(settings.data)} settings={settings.data} onSaved={settings.setData} />}
+      {settings.data && defaults.data && tab === "models" && (
+        <ModelsTab key={JSON.stringify(settings.data)} settings={settings.data} defaults={defaults.data} system={system.data} onSaved={settings.setData} />
+      )}
+      {settings.data && tab === "widget" && <WidgetTab key={JSON.stringify(settings.data)} settings={settings.data} onSaved={settings.setData} />}
+    </>
+  );
+}

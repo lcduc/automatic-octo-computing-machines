@@ -15,6 +15,8 @@ downloads/
 eggs/
 .eggs/
 lib/
+# Frontend source folders named lib are code, not Python build output.
+!frontends/**/src/lib/
 lib64/
 parts/
 sdist/
@@ -172,7 +174,7 @@ SSL/
 # files added to that package.
 model_weights/
 
-# Client frontends (frontends/<client>/): dependencies, build output, local secrets.
+# Frontends (frontends/widget, frontends/admin): dependencies, build output, local secrets.
 # Each frontend keeps its own .gitignore too; these apply even before it has one.
 frontends/*/node_modules/
 frontends/*/.next/
