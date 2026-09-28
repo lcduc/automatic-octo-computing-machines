@@ -7,6 +7,18 @@
  * It adds a launcher button and loads the chat (an iframe served from the
  * same origin as this script) the first time the visitor opens it. The page
  * itself never talks to the chat API, so no key is ever exposed here.
+ *
+ * Signed-in users: give the chat a way to get a short-lived token from your
+ * backend (see host-sdk/), before or after this script loads:
+ *
+ *   window.ChatbotConfig = { getToken: () => fetch("/chatbot-token").then(r => r.ok ? r.text() : null),
+ *                            onLoginRequest: () => showYourLoginDialog() };
+ *   // or, once loaded: Chatbot.configure({ getToken, onLoginRequest })
+ *   Chatbot.login();   // after your user signs in
+ *   Chatbot.logout();  // when they sign out (their private chat history disappears at once)
+ *
+ * Messages to the chat iframe always target its exact origin, and only
+ * messages from that iframe are accepted.
  */
 (function () {
   "use strict";
@@ -76,10 +88,48 @@
   document.addEventListener("keydown", function (event) {
     if (event.key === "Escape" && !panel.hidden) close();
   });
+  // --- Host page <-> chat iframe ------------------------------------------------
+  var initial = window.ChatbotConfig || {};
+  var hooks = { getToken: initial.getToken || null, onLoginRequest: initial.onLoginRequest || null };
+
+  function send(message) {
+    if (iframe && iframe.contentWindow) iframe.contentWindow.postMessage(message, origin);
+  }
+
+  /** Ask the host backend for a token and hand it to the chat (null = nobody signed in). */
+  function sendToken(type) {
+    if (typeof hooks.getToken !== "function") {
+      send({ type: "host:hello" });
+      return;
+    }
+    Promise.resolve()
+      .then(function () { return hooks.getToken(); })
+      .then(
+        function (token) { send({ type: type, token: typeof token === "string" && token ? token : null }); },
+        function () { send({ type: type, token: null }); }
+      );
+  }
+
   window.addEventListener("message", function (event) {
-    if (event.origin !== origin || !event.data || event.data.type !== "chatbot:close") return;
-    close();
+    if (event.origin !== origin || !iframe || event.source !== iframe.contentWindow || !event.data) return;
+    var type = event.data.type;
+    if (type === "chatbot:close") close();
+    else if (type === "chatbot:ready") sendToken("host:login");
+    else if (type === "chatbot:request_token") sendToken("host:token_refresh");
+    else if (type === "chatbot:login_request" && typeof hooks.onLoginRequest === "function") hooks.onLoginRequest();
   });
+
+  var api = window.Chatbot || {};
+  api.configure = function (options) {
+    hooks.getToken = (options && options.getToken) || null;
+    hooks.onLoginRequest = (options && options.onLoginRequest) || null;
+    sendToken("host:login");
+  };
+  api.login = function () { sendToken("host:login"); };
+  api.logout = function () { send({ type: "host:logout" }); };
+  api.open = open;
+  api.close = close;
+  window.Chatbot = api;
   window.matchMedia(MOBILE_QUERY).addEventListener("change", function () {
     if (!panel.hidden) layoutPanel();
   });
