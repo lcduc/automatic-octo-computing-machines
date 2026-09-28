@@ -85,7 +85,7 @@ These are security/correctness rules. Any code change breaking one is a blocker.
 - [~] ARC-03 Hostnames: `chat.<domain>` (iframe-able) and `admin.<domain>` (not iframe-able; MFA; IP/VPN restriction recommended) — domains separated; no MFA, no IP allowlist
 - [~] ARC-04 LLM provider abstraction: tool calling, structured output, streaming, timeout, retry w/ exponential backoff, fallback model — no fallback model; tool calling OpenAI-only
 - [x] ARC-05 Config via env vars; secrets never in repo; `.env.example` maintained
-- [~] ARC-06 `restart: unless-stopped` + memory limits on every container — memory limits only on worker and admin
+- [x] ARC-06 `restart: unless-stopped` + memory limits on every container (plus capped container logs)
 - [~] ARC-07 `/health/live` (liveness) and `/health/ready` (DB, model-server, LLM reachability) on chat-api — ready checks DB + pipeline only
 - [x] ARC-08 DB connection pooling; async I/O throughout the chat path
 
@@ -288,7 +288,7 @@ Single-tenant env vars (minimum): `HOST_ORIGIN`, `HOST_AUTH_MODE` (`rs256` | `hs
 - [~] SEC-08 LLM10 Unbounded Consumption: tiered rate limits, max input length, max output tokens, ORC-05 loop limits, spend cap — no tiers, no spend cap, counters reset on restart
 - [~] SEC-09 Web: TLS + HSTS, CSP, CORS locked, dependency scanning (`pip-audit`, Dependabot), container image scanning — chat CSP framing-only, pip-audit advisory, no npm/docker Dependabot, no image scan
 - [x] SEC-10 Admin/chat domain separation (Invariant 7)
-- [ ] SEC-11 Internal authentication wired automatically (Invariant 10): per-service tokens (BFF → api, worker → api, api/worker → model-server); `edge`/`internal` networks; postgres not bound on the host
+- [~] SEC-11 Internal authentication wired automatically (Invariant 10): per-service tokens (BFF → api, worker → api, api/worker → model-server); `edge`/`internal` networks; postgres not bound on the host — BFF token, networks and DML-only app role done; model-server token pending
 - [ ] SEC-12 Server-to-server API keys (`cb_live_…`): SHA-256 hashed, shown once, scoped per endpoint, per-key rate limit, optional expiry, two-key rotation, rejected from browser contexts, audit-logged
 
 ---
@@ -322,17 +322,17 @@ Single-tenant env vars (minimum): `HOST_ORIGIN`, `HOST_AUTH_MODE` (`rs256` | `hs
 ## 16. Reliability, backups, deployment
 
 - [~] OPS-01 Graceful degradation: LLM/reranker down → clear error message; LLM fallback model — no fallback model
-- [ ] OPS-02 Daily Postgres dump (incl. vectors) stored off-server
-- [ ] OPS-03 Original uploaded files backed up off-server — originals are deleted after ingestion
-- [ ] OPS-04 Restore tested; record RTO here: `____`
-- [~] OPS-05 Rebuild runbook: fresh VM → running system — first-deployment steps only
+- [x] OPS-02 Daily Postgres dump (incl. vectors) stored off-server — `chatbot backup` via cron, rclone to S3/SFTP/mounted path; also before every migration
+- [x] OPS-03 Original uploaded files backed up off-server — originals kept until their document is deleted, archived with each backup
+- [~] OPS-04 Restore tested; record RTO here: `____` — `chatbot restore` verified on a scratch stack (rows and uploads restored, grants intact); record the RTO from the staging drill
+- [x] OPS-05 Rebuild runbook: fresh VM → running system — install the same release with the same answers file, then `chatbot restore` (docs/DEPLOYMENT.md)
 - [~] OPS-06 Git, protected main, PR review — PRs used; main not protected
 - [~] OPS-07 CI: lint, type-check, unit tests, EVAL-09 hard gates, fast eval subset, image build — no Python type-check, no eval gates, image build only on main
-- [ ] OPS-08 Staging: vendor-side environment with the same compose file and image tags, its own DB, keys and test host page. Client boxes run production only
-- [~] OPS-09 One-command deploy and rollback (tagged images) — `docker compose up -d --build`, `:latest` only
+- [~] OPS-08 Staging: vendor-side environment with the same compose file and image tags, its own DB, keys and test host page. Client boxes run production only — tooling supports it (`http://localhost` host origin allowed); the staging server itself is the team's
+- [x] OPS-09 One-command deploy and rollback (tagged images) — `chatbot deploy <tag>` / `chatbot rollback`; tags published by `release.yml`
 - [x] OPS-10 Alembic migrations only; no manual SQL on production
-- [ ] OPS-11 One-command install on the client VPS: `install.sh` (Docker + NVIDIA toolkit only on the host) → `ops install` asks six questions or reads an answers file, generates every secret, is idempotent on rerun
-- [ ] OPS-12 `ops preflight` passes before a deployment counts as done: GPU/VRAM/RAM/disk, DNS for both domains, backup target, test alert, security self-check (only 80/443 open; api/model-server/postgres unreachable; headers present; no example secrets)
+- [~] OPS-11 One-command install on the client VPS: `install.sh` (Docker + NVIDIA toolkit only on the host) → `ops install` asks six questions or reads an answers file, generates every secret, is idempotent on rerun — implemented and verified piecewise; first full run needs the first published release
+- [~] OPS-12 `ops preflight` passes before a deployment counts as done: GPU/VRAM/RAM/disk, DNS for both domains, backup target, test alert, security self-check (only 80/443 open; api/model-server/postgres unreachable; headers present; no example secrets) — implemented; first run on a real box pending
 
 ---
 
