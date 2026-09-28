@@ -82,7 +82,7 @@ jobs:
         run: pytest
 
   widget:
-    name: Chat widget (lint, types, build)
+    name: Chat widget (lint, types, tests, build)
     runs-on: ubuntu-latest
     timeout-minutes: 15
     defaults:
@@ -101,6 +101,7 @@ jobs:
       - run: npm run lint
       - run: npx next typegen
       - run: npx tsc --noEmit
+      - run: npm test
       - run: npm run build
 
   admin-web:
