@@ -9,10 +9,20 @@ from typing import List, Optional
 
 # Third-party imports
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from pydantic import ValidationError
 
 # Local imports
 from api.container import AppContainer
 from api.dependencies import READ_ROLES, WRITE_ROLES, get_container, require_admin
+from api.schemas.chunking import (
+    CHUNKING_ADAPTER,
+    ChunkingPreview,
+    ChunkingPreviewRequest,
+    ChunkingStrategyInfo,
+    RechunkRequest,
+    strategy_catalog,
+    to_spec,
+)
 from api.schemas.common import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, MessageResponse, Page, validate_metadata
 from api.schemas.knowledge import (
     SOURCE_NAME_PATTERN,
@@ -92,6 +102,8 @@ async def upload_document(
     source: str = Form(..., pattern=SOURCE_NAME_PATTERN),
     title: Optional[str] = Form(None, max_length=512),
     metadata: str = Form("{}", description="JSON object of document metadata"),
+    chunking: str = Form('{"strategy": "auto"}', description="JSON chunking strategy, see GET /chunking/strategies"),
+    enabled: bool = Form(True, description="false keeps the document out of answers until an admin enables it"),
     principal: AdminPrincipal = Depends(write_access),
     container: AppContainer = Depends(get_container),
 ) -> DocumentOut:
@@ -103,11 +115,16 @@ async def upload_document(
         parsed_metadata = validate_metadata(json.loads(metadata))
     except (ValueError, TypeError, AttributeError) as exc:
         raise HTTPException(422, f"Invalid metadata: {exc}")
+    try:
+        chunking_spec = to_spec(CHUNKING_ADAPTER.validate_json(chunking))
+    except ValidationError as exc:
+        raise HTTPException(422, f"Invalid chunking: {exc.errors(include_url=False)}")
     content = await file.read(Config.File.MAX_FILE_SIZE() + 1)
     if len(content) > Config.File.MAX_FILE_SIZE():
         raise HTTPException(413, f"File too large; maximum is {Config.File.MAX_FILE_SIZE() // (1024 * 1024)}MB")
     document = await container.knowledge.upload_file(
-        content, file.filename or "upload", source, title, parsed_metadata, principal.email
+        content, file.filename or "upload", source, title, parsed_metadata, principal.email,
+        chunking=chunking_spec, enabled=enabled,
     )
     return DocumentOut.from_document(document)
 
@@ -120,7 +137,7 @@ async def create_text_document(
 ) -> DocumentOut:
     """Create a document from typed text (searchable immediately)."""
     document = await container.knowledge.create_text_document(
-        body.source, body.title, body.content, body.metadata, principal.email
+        body.source, body.title, body.content, body.metadata, principal.email, chunking=to_spec(body.chunking)
     )
     return DocumentOut.from_document(document)
 
@@ -169,3 +186,32 @@ async def delete_chunk(chunk_id: uuid.UUID, container: AppContainer = Depends(ge
     """Remove a chunk."""
     await container.knowledge.delete_chunk(chunk_id)
     return MessageResponse(message="Chunk deleted")
+
+
+# ---------------------------------------------------------------- chunking
+
+
+@router.get("/chunking/strategies", response_model=List[ChunkingStrategyInfo], dependencies=[read_access])
+async def list_chunking_strategies() -> List[ChunkingStrategyInfo]:
+    """Chunking strategies with their parameter schemas (for the upload and re-chunk forms)."""
+    return strategy_catalog()
+
+
+@router.post(
+    "/documents/{document_id}/chunking/preview", response_model=ChunkingPreview, dependencies=[Depends(write_access)]
+)
+async def preview_chunking(
+    document_id: uuid.UUID, body: ChunkingPreviewRequest, container: AppContainer = Depends(get_container)
+) -> ChunkingPreview:
+    """What a strategy would make of the document's stored text; nothing is saved."""
+    result = await container.knowledge.preview_chunking(document_id, to_spec(body.chunking))
+    return ChunkingPreview.from_result(result, body.limit)
+
+
+@router.post("/documents/{document_id}/rechunk", response_model=DocumentDetail, dependencies=[Depends(write_access)])
+async def rechunk_document(
+    document_id: uuid.UUID, body: RechunkRequest, container: AppContainer = Depends(get_container)
+) -> DocumentDetail:
+    """Replace the document's chunks with its stored text split by the given strategy."""
+    document = await container.knowledge.rechunk(document_id, to_spec(body.chunking), body.discard_manual_edits)
+    return DocumentDetail.from_document(document)

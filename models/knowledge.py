@@ -4,7 +4,60 @@ Internal data classes describing indexed knowledge and retrieval results.
 
 # Standard library imports
 from dataclasses import dataclass, field
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
+
+#: Chunking strategy that keeps each file type's built-in splitting.
+AUTO_STRATEGY = "auto"
+
+#: How a document's text was extracted; decides what ``auto`` chunking means for it.
+EXTRACTION_DOCLING = "docling"
+EXTRACTION_OCR = "ocr"
+EXTRACTION_LOCAL = "local"
+#: Typed in the admin web rather than uploaded.
+EXTRACTION_TEXT = "text"
+
+
+@dataclass(frozen=True)
+class ChunkingSpec:
+    """How a document's text is split into chunks: a strategy name and its parameters."""
+
+    strategy: str = AUTO_STRATEGY
+    params: Dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_json(cls, value: Optional[Dict[str, Any]]) -> "ChunkingSpec":
+        """Build from the stored JSON form ``{"strategy": ..., **params}``; empty means ``auto``."""
+        params = dict(value or {})
+        return cls(strategy=params.pop("strategy", AUTO_STRATEGY), params=params)
+
+    def to_json(self) -> Dict[str, Any]:
+        """The stored JSON form."""
+        return {"strategy": self.strategy, **self.params}
+
+
+@dataclass(frozen=True)
+class ChunkDraft:
+    """A chunk produced by a chunking strategy, before it is embedded and stored."""
+
+    content: str
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class ChunkingResult:
+    """Chunks produced for a text plus warnings worth showing to an admin."""
+
+    drafts: List[ChunkDraft]
+    warnings: List[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class ExtractedDocument:
+    """A parsed upload: its full text, how it was extracted, and its chunks."""
+
+    text: str
+    extraction_method: str
+    chunking: ChunkingResult
 
 
 @dataclass(frozen=True)

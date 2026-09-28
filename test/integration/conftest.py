@@ -67,5 +67,6 @@ class FakeProcessor:
     async def process_file(self, content: bytes, filename: str):
         if filename.endswith(".bad"):
             raise ValueError("No content could be extracted")
-        parts = [p.strip() for p in content.decode("utf-8").split("\n\n") if p.strip()]
-        return {"documents": parts, "metadata": {}}
+        text_value = content.decode("utf-8")
+        parts = [p.strip() for p in text_value.split("\n\n") if p.strip()]
+        return {"documents": parts, "text": text_value, "extraction_method": "docling", "metadata": {}}

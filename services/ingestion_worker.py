@@ -6,7 +6,7 @@ Background ingestion: claims queued uploads, parses and embeds them, stores thei
 import asyncio
 import logging
 import uuid
-from typing import List, Optional
+from typing import Optional
 
 # Third-party imports
 from sqlalchemy import func
@@ -21,6 +21,7 @@ from core.storage.tables.knowledge_tables import (
     KnowledgeDocument,
 )
 from core.storage.upload_store import UploadStore
+from models.knowledge import ChunkingSpec, ExtractedDocument
 from .ingestion_service import IngestionService
 
 logger = logging.getLogger(__name__)
@@ -140,26 +141,27 @@ class IngestionWorker:
             await self._finish(job, DOCUMENT_STATUS_FAILED, MISSING_FILE_ERROR)
             return
         try:
-            texts = await self._ingestion.extract_chunks(content, filename)
-            vectors = await self._ingestion.embed(texts)
+            extracted = await self._ingestion.extract(content, filename, ChunkingSpec.from_json(job.chunking))
+            vectors = await self._ingestion.embed([draft.content for draft in extracted.chunking.drafts])
         except Exception as exc:
             logger.exception("Ingestion failed for %s", filename)
+            # ValueError messages (incl. InvalidChunkingError) are written for the admin.
             message = str(exc) if isinstance(exc, ValueError) else GENERIC_ERROR
             await self._finish(job, DOCUMENT_STATUS_FAILED, message)
             return
-        await self._finish(job, DOCUMENT_STATUS_READY, None, texts, vectors)
-        logger.info("Ingested %s: %d chunks", filename, len(texts))
+        await self._finish(job, DOCUMENT_STATUS_READY, None, extracted, vectors)
+        logger.info("Ingested %s: %d chunks", filename, len(extracted.chunking.drafts))
 
     async def _finish(
         self,
         job: ClaimedUpload,
         status: str,
         error: Optional[str],
-        texts: Optional[List[str]] = None,
+        extracted: Optional[ExtractedDocument] = None,
         vectors=None,
     ) -> None:
         """
-        Record a job's outcome (with its chunks when ``ready``) and drop its stored file.
+        Record a job's outcome (with its text and chunks when ``ready``) and drop its stored file.
 
         The row lock plus the ``processing`` check make the outcome land once,
         even if a stalled worker and the one that took over its lease both finish.
@@ -170,10 +172,19 @@ class IngestionWorker:
             if document is None or document.status != DOCUMENT_STATUS_PROCESSING:
                 logger.warning("Document %s was deleted or already finished; discarding result", job.document_id)
             else:
-                if texts:
+                if extracted is not None:
+                    drafts = extracted.chunking.drafts
                     repository.add_chunks(
-                        document, texts, vectors, [{} for _ in texts], 0, self._ingestion.embedding_model
+                        document,
+                        [draft.content for draft in drafts],
+                        vectors,
+                        [draft.metadata for draft in drafts],
+                        0,
+                        self._ingestion.embedding_model,
                     )
+                    # Kept so the document can be re-chunked; the file itself is deleted below.
+                    document.extracted_text = extracted.text
+                    document.extraction_method = extracted.extraction_method
                 self._mark_finished(document, status, error)
         await asyncio.to_thread(self._uploads.delete, job.document_id, job.file_type)
 

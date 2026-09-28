@@ -11,12 +11,14 @@ from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field, field_validator
 
 # Local imports
+from core.document_processing.chunking import MAX_CHUNK_CHARS
+from .chunking import AutoChunking, ChunkingConfig
 from .common import ApiModel, validate_metadata
 
 SOURCE_NAME_PATTERN = r"^[A-Za-z0-9_\-]{1,64}$"
 #: Largest hand-written document accepted, in characters.
 MAX_TEXT_DOCUMENT_LENGTH = 200_000
-MAX_CHUNK_LENGTH = 20_000
+MAX_CHUNK_LENGTH = MAX_CHUNK_CHARS
 #: Allowed range of a source's retrieval priority multiplier.
 MIN_PRIORITY = 0.1
 MAX_PRIORITY = 5.0
@@ -58,6 +60,8 @@ class ChunkOut(ApiModel):
     position: int
     content: str
     metadata: Dict[str, Any] = Field(validation_alias="extra_metadata")
+    #: Written or changed by an admin (re-chunking asks before discarding it).
+    edited: bool = False
     updated_at: datetime
 
 
@@ -74,6 +78,10 @@ class DocumentOut(ApiModel):
     enabled: bool
     chunk_count: int
     metadata: Dict[str, Any]
+    #: Chunking strategy and parameters in use (``{}`` = auto).
+    chunking: Dict[str, Any] = {}
+    #: Whether the extracted text is stored, i.e. preview and re-chunk are available.
+    can_rechunk: bool = False
     created_by: Optional[str] = None
     created_at: datetime
     updated_at: datetime
@@ -92,6 +100,8 @@ class DocumentOut(ApiModel):
             enabled=document.enabled,
             chunk_count=document.chunk_count,
             metadata=document.extra_metadata or {},
+            chunking=document.chunking or {},
+            can_rechunk=document.extraction_method is not None,
             created_by=document.created_by,
             created_at=document.created_at,
             updated_at=document.updated_at,
@@ -126,6 +136,7 @@ class TextDocumentCreate(_MetadataModel):
     title: str = Field(..., min_length=1, max_length=512)
     content: str = Field(..., min_length=1, max_length=MAX_TEXT_DOCUMENT_LENGTH)
     metadata: Dict[str, Any] = {}
+    chunking: ChunkingConfig = AutoChunking()
 
 
 class DocumentUpdate(_MetadataModel):

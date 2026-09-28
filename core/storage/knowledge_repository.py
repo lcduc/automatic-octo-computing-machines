@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 # Third-party imports
-from sqlalchemy import Select, func, or_, select, update
+from sqlalchemy import Select, delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -34,6 +34,8 @@ class ClaimedUpload:
     filename: Optional[str]
     file_type: str
     attempts: int
+    #: The document's stored chunking spec (``{}`` = auto).
+    chunking: Dict[str, Any]
 
 
 @dataclass(frozen=True)
@@ -225,6 +227,7 @@ class KnowledgeRepository:
                 KnowledgeDocument.original_filename,
                 KnowledgeDocument.file_type,
                 KnowledgeDocument.attempts,
+                KnowledgeDocument.chunking,
             )
             .execution_options(synchronize_session=False)
         )
@@ -302,6 +305,44 @@ class KnowledgeRepository:
                 )
             )
         document.chunk_count = (document.chunk_count or 0) + len(texts)
+
+    async def replace_chunks(
+        self,
+        document: KnowledgeDocument,
+        texts: List[str],
+        vectors: Sequence[Sequence[float]],
+        metadata: List[Dict[str, Any]],
+        embedding_model: str,
+    ) -> None:
+        """Delete every chunk of ``document`` and stage ``texts`` as its new chunks from position 0."""
+        await self._session.execute(
+            delete(KnowledgeChunk)
+            .where(KnowledgeChunk.document_id == document.id)
+            .execution_options(synchronize_session=False)
+        )
+        document.chunk_count = 0
+        self.add_chunks(document, texts, vectors, metadata, 0, embedding_model)
+
+    async def count_edited_chunks(self, document_id: uuid.UUID) -> int:
+        """Chunks of a document that an admin wrote or changed."""
+        result = await self._session.execute(
+            select(func.count(KnowledgeChunk.id)).where(
+                KnowledgeChunk.document_id == document_id, KnowledgeChunk.edited.is_(True)
+            )
+        )
+        return int(result.scalar_one())
+
+    async def load_extracted_text(self, document_id: uuid.UUID) -> Optional[Tuple[str, str]]:
+        """``(extracted text, extraction method)`` of a document, or ``None`` if it has no stored text."""
+        result = await self._session.execute(
+            select(KnowledgeDocument.extracted_text, KnowledgeDocument.extraction_method).where(
+                KnowledgeDocument.id == document_id
+            )
+        )
+        row = result.one_or_none()
+        if row is None or row.extracted_text is None:
+            return None
+        return row.extracted_text, row.extraction_method
 
     async def shift_positions(self, document_id: uuid.UUID, from_position: int, delta: int) -> None:
         """Add ``delta`` to the position of every chunk at or after ``from_position``."""

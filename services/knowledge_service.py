@@ -25,6 +25,8 @@ from core.storage.tables.knowledge_tables import (
     KnowledgeSource,
 )
 from core.storage.upload_store import UploadStore
+from core.document_processing.chunking import InvalidChunkingError
+from models.knowledge import EXTRACTION_TEXT, ChunkingResult, ChunkingSpec
 from .errors import ConflictError, InvalidRequestError, NotFoundError
 from .ingestion_service import IngestionService
 from .ingestion_worker import CLAIM_LEASE_SECONDS
@@ -33,6 +35,10 @@ logger = logging.getLogger(__name__)
 
 #: Chunks re-embedded per batch when the embedding model changes.
 REEMBED_BATCH_SIZE = 256
+NO_STORED_TEXT_ERROR = (
+    "This document's extracted text was not stored (it was uploaded before re-chunking existed); "
+    "delete it and upload the file again to change its chunking."
+)
 
 
 class KnowledgeService:
@@ -180,12 +186,16 @@ class KnowledgeService:
         title: Optional[str],
         metadata: Dict[str, Any],
         created_by: Optional[str],
+        chunking: ChunkingSpec = ChunkingSpec(),
+        enabled: bool = True,
     ) -> KnowledgeDocument:
         """
         Register an uploaded file and queue it for the ingestion worker.
 
         The document is returned immediately with status ``processing``; it
         becomes ``ready`` (or ``failed`` with an error) once the worker is done.
+        Uploading with ``enabled=False`` keeps it out of answers until an admin
+        has checked (and possibly re-chunked) it.
 
         A previously *failed* upload of the same file in the same source is
         replaced, so retrying never needs a manual delete first.
@@ -226,6 +236,8 @@ class KnowledgeService:
                     content_hash=content_hash,
                     extra_metadata=metadata,
                     status=DOCUMENT_STATUS_PROCESSING,
+                    enabled=enabled,
+                    chunking=chunking.to_json(),
                     created_by=created_by,
                 )
                 repository.add(document)
@@ -252,16 +264,16 @@ class KnowledgeService:
         text: str,
         metadata: Dict[str, Any],
         created_by: Optional[str],
+        chunking: ChunkingSpec = ChunkingSpec(),
     ) -> KnowledgeDocument:
         """
         Create a document from typed text (e.g. one FAQ entry), embedded synchronously.
 
         Raises:
-            InvalidRequestError: Empty text or unknown source.
+            InvalidRequestError: Empty text, the strategy cannot chunk it, or unknown source.
         """
-        texts = self._ingestion.split_text(text)
-        if not texts:
-            raise InvalidRequestError("The content is empty")
+        drafts = (await self._chunk(text, chunking, EXTRACTION_TEXT)).drafts
+        texts = [draft.content for draft in drafts]
         vectors = await self._ingestion.embed(texts)
         async with self._database.session() as session:
             repository = KnowledgeRepository(session)
@@ -273,12 +285,15 @@ class KnowledgeService:
                 content_hash=hashlib.sha256(text.encode("utf-8")).hexdigest(),
                 extra_metadata=metadata,
                 status=DOCUMENT_STATUS_READY,
+                chunking=chunking.to_json(),
+                extracted_text=text,
+                extraction_method=EXTRACTION_TEXT,
                 created_by=created_by,
             )
             repository.add(document)
             await repository.flush()
             repository.add_chunks(
-                document, texts, vectors, [{} for _ in texts], 0, self._ingestion.embedding_model
+                document, texts, vectors, [draft.metadata for draft in drafts], 0, self._ingestion.embedding_model
             )
             document.source = source
         logger.info("Created text document %s in %s (%d chunks)", document.id, source_name, len(texts))
@@ -361,6 +376,7 @@ class KnowledgeService:
                 chunk.embedding_model = self._ingestion.embedding_model
             if metadata is not None:
                 chunk.extra_metadata = metadata
+            chunk.edited = True
         logger.info("Updated chunk %s", chunk_id)
         await self._index.refresh()
         return chunk
@@ -394,6 +410,7 @@ class KnowledgeService:
                 extra_metadata=metadata,
                 embedding=vector,
                 embedding_model=self._ingestion.embedding_model,
+                edited=True,
             )
             repository.add(chunk)
             document.chunk_count = count + 1
@@ -423,6 +440,108 @@ class KnowledgeService:
             document.chunk_count = max(0, (document.chunk_count or 1) - 1)
         logger.info("Deleted chunk %s", chunk_id)
         await self._index.refresh()
+
+    # ------------------------------------------------------------------
+    # Chunking strategy
+    # ------------------------------------------------------------------
+
+    async def _chunk(self, text: str, spec: ChunkingSpec, extraction_method: str) -> ChunkingResult:
+        """
+        Chunk text off the event loop.
+
+        Raises:
+            InvalidRequestError: The strategy cannot chunk this text.
+        """
+        try:
+            return await asyncio.to_thread(self._ingestion.chunk, text, spec, extraction_method)
+        except InvalidChunkingError as exc:
+            raise InvalidRequestError(str(exc)) from exc
+
+    async def _stored_text(self, repository: KnowledgeRepository, document_id: uuid.UUID) -> Tuple[str, str]:
+        """
+        A ready document's extracted text and extraction method.
+
+        Raises:
+            NotFoundError: Unknown document.
+            ConflictError: Still processing, or its text was never stored.
+        """
+        document = await repository.get_document(document_id)
+        if document is None:
+            raise NotFoundError("Document not found")
+        if document.status == DOCUMENT_STATUS_PROCESSING:
+            raise ConflictError("The document is still being processed")
+        stored = await repository.load_extracted_text(document_id)
+        if stored is None:
+            raise ConflictError(NO_STORED_TEXT_ERROR)
+        return stored
+
+    async def preview_chunking(self, document_id: uuid.UUID, spec: ChunkingSpec) -> ChunkingResult:
+        """
+        Chunk a document's stored text with ``spec`` without embedding or saving anything.
+
+        Raises:
+            NotFoundError: Unknown document.
+            ConflictError: Still processing, or no stored text.
+            InvalidRequestError: The strategy cannot chunk this text.
+        """
+        async with self._database.session() as session:
+            text, method = await self._stored_text(KnowledgeRepository(session), document_id)
+        result = await self._chunk(text, spec, method)
+        logger.info("Previewed %s on document %s: %d chunks", spec.strategy, document_id, len(result.drafts))
+        return result
+
+    async def rechunk(
+        self, document_id: uuid.UUID, spec: ChunkingSpec, discard_manual_edits: bool
+    ) -> KnowledgeDocument:
+        """
+        Replace a document's chunks with its stored text chunked by ``spec``.
+
+        Raises:
+            NotFoundError: Unknown document.
+            ConflictError: Still processing, no stored text, or chunks edited by
+                hand while ``discard_manual_edits`` is false.
+            InvalidRequestError: The strategy cannot chunk this text.
+        """
+        # ceiling: chunks and embeds inside the request (≤MAX_PDF_PAGES pages, a few thousand chunks); move to the ingestion queue if re-chunk requests time out
+        async with self._database.session() as session:
+            repository = KnowledgeRepository(session)
+            text, method = await self._stored_text(repository, document_id)
+            await self._check_manual_edits(repository, document_id, discard_manual_edits)
+        drafts = (await self._chunk(text, spec, method)).drafts
+        vectors = await self._ingestion.embed([draft.content for draft in drafts])
+        async with self._database.session() as session:
+            repository = KnowledgeRepository(session)
+            document = await repository.lock_document(document_id)
+            if document is None:
+                raise NotFoundError("Document not found")
+            if document.status == DOCUMENT_STATUS_PROCESSING:
+                raise ConflictError("The document is still being processed")
+            # Re-checked under the lock: an edit may have landed while embedding.
+            await self._check_manual_edits(repository, document_id, discard_manual_edits)
+            await repository.replace_chunks(
+                document,
+                [draft.content for draft in drafts],
+                vectors,
+                [draft.metadata for draft in drafts],
+                self._ingestion.embedding_model,
+            )
+            document.chunking = spec.to_json()
+            document.status, document.error = DOCUMENT_STATUS_READY, None
+        logger.info("Re-chunked document %s with %s into %d chunks", document_id, spec.strategy, len(drafts))
+        await self._index.refresh()
+        return await self.get_document(document_id)
+
+    @staticmethod
+    async def _check_manual_edits(repository: KnowledgeRepository, document_id: uuid.UUID, discard: bool) -> None:
+        """
+        Raises:
+            ConflictError: The document has hand-edited chunks and ``discard`` is false.
+        """
+        edited = await repository.count_edited_chunks(document_id)
+        if edited and not discard:
+            raise ConflictError(
+                f"{edited} chunk(s) were edited by hand and would be lost; resend with discard_manual_edits=true"
+            )
 
     # ------------------------------------------------------------------
     # Maintenance

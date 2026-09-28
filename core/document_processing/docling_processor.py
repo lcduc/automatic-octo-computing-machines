@@ -33,6 +33,7 @@ except Exception:  # defer hard failure to runtime path
 # Local imports
 from config.settings import Config
 from .engine_selector import get_ocr_engine
+from models.knowledge import EXTRACTION_DOCLING, EXTRACTION_OCR
 from models.metadata import MetadataBuilder, ProcessingMethod, SourceType, ProcessingStatus
 from utils.text_utils import TextUtils
 
@@ -318,6 +319,8 @@ class DoclingProcessor:
 
             return {
                 "documents": chunks,
+                "text": text_md,
+                "extraction_method": EXTRACTION_OCR if ocr_used else EXTRACTION_DOCLING,
                 "metadata": metadata.model_dump() if hasattr(metadata, 'model_dump') else metadata.dict() if hasattr(metadata, 'dict') else dict(metadata),
             }
         except Exception as e:

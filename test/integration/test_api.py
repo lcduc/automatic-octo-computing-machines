@@ -238,3 +238,56 @@ def test_rate_limit_and_roles(client):
     assert forbidden.status_code == 403
     assert client.get("/api/v1/admin/api-keys", headers=viewer).status_code == 403
     assert client.get("/api/v1/admin/api-keys", headers=admin).status_code == 200
+
+
+def test_chunking_strategies_preview_and_rechunk(client):
+    admin = _admin_headers(client)
+    strategies = client.get("/api/v1/admin/knowledge/chunking/strategies", headers=admin).json()
+    assert {s["name"] for s in strategies} >= {"auto", "legal_article", "qa_pair"}
+
+    bad = client.post(
+        "/api/v1/admin/knowledge/documents/upload",
+        data={"source": "general", "chunking": '{"strategy": "legal_article", "max_chars": 5}'},
+        files={"file": ("luat.txt", "Điều 1. Nội dung".encode("utf-8"), "text/plain")},
+        headers=admin,
+    )
+    assert bad.status_code == 422 and "Invalid chunking" in bad.text
+    held = client.post(
+        "/api/v1/admin/knowledge/documents/upload",
+        data={"source": "general", "chunking": '{"strategy": "legal_article"}', "enabled": "false"},
+        files={"file": ("luat.txt", "Điều 1. Nội dung".encode("utf-8"), "text/plain")},
+        headers=admin,
+    ).json()
+    assert held["enabled"] is False and held["chunking"]["strategy"] == "legal_article"
+
+    created = client.post(
+        "/api/v1/admin/knowledge/documents/text",
+        json={"source": "FAQ", "title": "Hỏi đáp", "content": "Hỏi: Phí bao nhiêu?\nĐáp: Miễn phí.\nHỏi: Ở đâu?\nĐáp: Hà Tĩnh.",
+              "chunking": {"strategy": "qa_pair"}},
+        headers=admin,
+    ).json()
+    assert created["chunk_count"] == 2 and created["can_rechunk"] is True
+    url = f"/api/v1/admin/knowledge/documents/{created['id']}"
+
+    preview = client.post(f"{url}/chunking/preview", json={"chunking": {"strategy": "whole"}, "limit": 1}, headers=admin)
+    assert preview.status_code == 200, preview.text
+    assert preview.json()["chunk_count"] == 1 and len(preview.json()["chunks"]) == 1
+    assert client.get(url, headers=admin).json()["chunk_count"] == 2  # a preview saves nothing
+
+    rechunked = client.post(f"{url}/rechunk", json={"chunking": {"strategy": "whole"}}, headers=admin)
+    assert rechunked.status_code == 200, rechunked.text
+    assert rechunked.json()["chunk_count"] == 1 and rechunked.json()["chunking"] == {"strategy": "whole"}
+    unknown = client.post(
+        "/api/v1/admin/knowledge/documents/00000000-0000-0000-0000-000000000000/rechunk",
+        json={"chunking": {"strategy": "auto"}}, headers=admin,
+    )
+    assert unknown.status_code == 404
+
+    container = client.app.state.container
+    client.portal.call(container.auth.create_admin, "reader@example.test", "reader-password-1", "viewer")
+    token = client.post(
+        "/api/v1/admin/auth/login", json={"email": "reader@example.test", "password": "reader-password-1"}
+    ).json()["access_token"]
+    viewer = {"Authorization": f"Bearer {token}"}
+    assert client.get("/api/v1/admin/knowledge/chunking/strategies", headers=viewer).status_code == 200
+    assert client.post(f"{url}/chunking/preview", json={"chunking": {"strategy": "auto"}}, headers=viewer).status_code == 403

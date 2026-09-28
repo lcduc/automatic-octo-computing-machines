@@ -42,6 +42,11 @@ Everything runs on one VPS with `docker compose up -d` (see
 - Staff can edit a document's title, source and metadata, and each chunk's
   text and metadata, in the admin web. Edits are re-embedded and searchable
   immediately, with no full re-index.
+- Each upload picks a **chunking strategy**: `auto` (per file type), `size`,
+  `heading`, `legal_article` (one chunk per Điều, labelled for citation),
+  `qa_pair`, `table_rows` or `whole`. The extracted text is kept, so staff can
+  preview another strategy and re-chunk a document without uploading it again.
+  Uploading with `enabled=false` keeps it out of answers until it is checked.
 - Chat requests may restrict retrieval to given sources.
 
 ## Security
