@@ -44,6 +44,9 @@ def test_valid_answers_map_to_app_and_ops_settings(tmp_path):
     # Backup credentials never reach the application containers' .env.
     assert env.get("BACKUP_S3_SECRET_ACCESS_KEY") is None and ops_env.get("BACKUP_S3_SECRET_ACCESS_KEY") == "SK"
     assert ops_env.get("BACKUP_KEEP_DAYS") == "14"
+    # Host sign-in defaults: RS256, issued by the host site for this chat domain.
+    assert env.get("HOST_AUTH_MODE") == "rs256"
+    assert env.get("HOST_JWT_ISSUER") == "https://www.client.vn" and env.get("HOST_JWT_AUDIENCE") == "https://chat.client.vn"
 
 
 @pytest.mark.parametrize(
@@ -54,6 +57,8 @@ def test_valid_answers_map_to_app_and_ops_settings(tmp_path):
         ({"host_origin": "https://www.client.vn/path"}, "no path"),
         ({"alert": {"channel": "slack"}}, "slack_webhook_url"),
         ({"backup": {"target": "ftp://x"}}, "backup.target"),
+        ({"host_auth": {"mode": "oauth"}}, "host_auth.mode"),
+        ({"host_auth": {"jwks_url": "http://host/jwks"}}, "https://"),
     ],
 )
 def test_invalid_answers_are_all_reported(change, fragment):

@@ -20,6 +20,7 @@ from .check_result import report
 from .context import OpsContext
 from .deployer import ENV_HEADER
 from .env_file import EnvFile
+from .host_bundle import HostIntegrationBundle
 from .layout import copy_templates
 from .prompter import InteractivePrompter
 from .secret_generator import SecretGenerator
@@ -80,7 +81,21 @@ class Installer:
         env.save(ENV_HEADER)
         ops_env.save(OPS_ENV_HEADER)
         self._context.out(f"Settings written to {layout.env_file} ({len(generated)} secrets generated now).")
+        self._hand_over_host_keys(env, "HOST_JWT_SECRET" in generated)
         return answers
+
+    def _hand_over_host_keys(self, env: EnvFile, new_shared_secret: bool) -> None:
+        """Generate the host signing key on first install and package it for the host's developers."""
+        bundle = HostIntegrationBundle(self._context.layout, self._context.runner, self._context.templates_dir)
+        private_key = bundle.ensure_keys()
+        mode = env.get("HOST_AUTH_MODE", "rs256")
+        shared = env.get("HOST_JWT_SECRET") if mode == "hs256" and new_shared_secret else None
+        if (private_key and mode == "rs256" and not env.get("HOST_JWKS_URL")) or shared:
+            path = bundle.write(env.as_dict(), private_key if mode == "rs256" else None, shared)
+            self._context.out(
+                f"Host integration bundle: {path}\n"
+                "  It holds the signing key: give it to the host site's developers, then delete it from this box."
+            )
 
     def install(self, answers: Optional[InstallAnswers], tag: str, registry: str, skip_deploy: bool = False) -> None:
         """

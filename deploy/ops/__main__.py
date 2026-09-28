@@ -26,6 +26,7 @@ from .backup_target import BackupTargetError
 from .check_result import report
 from .context import OpsContext
 from .deployer import DeployError
+from .host_bundle import HostIntegrationBundle
 from .installer import InstallError, Installer
 from .rotation import SecretRotator
 from .runner import CommandError
@@ -85,7 +86,11 @@ class OpsCli:
         self._context.out(f"Restore finished in {seconds:.0f}s (record this as the RTO).")
 
     def rotate_secrets(self, args: argparse.Namespace) -> None:
-        """Rotate the generated secrets on the running stack."""
+        """Rotate the generated secrets on the running stack (and, on request, the host signing key)."""
+        if args.host_keys:
+            bundle = HostIntegrationBundle(self._context.layout, self._context.runner, self._context.templates_dir)
+            path = bundle.write(self._context.env(), bundle.ensure_keys(rotate=True))
+            self._context.out(f"New host signing key in {path}: the host must switch to it before tokens verify again.")
         rotated = SecretRotator(self._context.layout, self._context.compose, SecretGenerator(), self._context.out).rotate(
             args.include_visitor_cookie
         )
@@ -126,6 +131,8 @@ def _parser() -> argparse.ArgumentParser:
     rotate = commands.add_parser("rotate-secrets", help="Replace the generated secrets")
     rotate.add_argument("--include-visitor-cookie", action="store_true",
                         help="Also rotate the visitor cookie secret (anonymous visitors lose their history)")
+    rotate.add_argument("--host-keys", action="store_true",
+                        help="Also replace the host signing key pair and write a new hand-over bundle")
     return parser
 
 

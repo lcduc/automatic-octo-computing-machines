@@ -16,6 +16,7 @@ COPY deploy/ops/*.py deploy/ops/
 COPY docker-compose.yml templates/docker-compose.yml
 COPY deploy/Caddyfile templates/deploy/Caddyfile
 COPY deploy/postgres/ templates/deploy/postgres/
+COPY host-sdk/ templates/host-sdk/
 
 ENV OPS_TEMPLATES_DIR=/opt/ops/templates \
     PYTHONUNBUFFERED=1 \

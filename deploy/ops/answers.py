@@ -23,10 +23,12 @@ EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 #: Top-level keys of the answers file.
 TOP_LEVEL_ANSWERS = ("chat_domain", "admin_domain", "host_origin", "admin_email", "openai_api_key")
 #: Tables of the answers file (``env`` passes extra settings straight into .env).
-ANSWER_SECTIONS = ("backup", "alert", "env")
+ANSWER_SECTIONS = ("backup", "alert", "host_auth", "env")
 #: Hosts a development/staging host page may use over plain HTTP.
 LOCAL_HOSTS = ("localhost", "127.0.0.1")
 ALERT_CHANNELS = ("telegram", "slack", "smtp")
+HOST_AUTH_MODES = ("rs256", "hs256", "none")
+DEFAULT_HOST_TIERS = "user,premium"
 DEFAULT_BACKUP_KEEP_DAYS = 30
 
 
@@ -67,6 +69,20 @@ class AlertAnswers:
 
 
 @dataclass(frozen=True)
+class HostAuthAnswers:
+    """How the host site's signed-in users are recognised (defaults: RS256 with a generated key)."""
+
+    mode: str = "rs256"
+    #: The host's JWKS endpoint instead of the generated key (rs256).
+    jwks_url: str = ""
+    #: Required ``iss``/``aud``; default to the first host origin / the chat domain's URL.
+    issuer: str = ""
+    audience: str = ""
+    #: Logged-in tiers the host may send, lowest first.
+    tiers: str = DEFAULT_HOST_TIERS
+
+
+@dataclass(frozen=True)
 class InstallAnswers:
     """Everything a person decides for one client box."""
 
@@ -78,6 +94,7 @@ class InstallAnswers:
     openai_api_key: str
     backup: BackupAnswers
     alert: AlertAnswers
+    host_auth: HostAuthAnswers = field(default_factory=HostAuthAnswers)
     extra_env: Dict[str, str] = field(default_factory=dict)
 
     # ------------------------------------------------------------------
@@ -104,6 +121,10 @@ class InstallAnswers:
         if self.backup.keep_days < 1:
             issues.append("backup.keep_days must be at least 1")
         issues.extend(self._alert_problems())
+        if self.host_auth.mode not in HOST_AUTH_MODES:
+            issues.append(f"host_auth.mode must be one of {', '.join(HOST_AUTH_MODES)}")
+        if self.host_auth.jwks_url and not self.host_auth.jwks_url.startswith("https://"):
+            issues.append("host_auth.jwks_url must be an https:// URL")
         return issues
 
     def _origin_problems(self) -> List[str]:
@@ -179,6 +200,11 @@ class InstallAnswers:
             "SMTP_PASSWORD": alert.smtp_password,
             "SMTP_FROM": alert.smtp_from,
             "SMTP_SECURITY": alert.smtp_security,
+            "HOST_AUTH_MODE": self.host_auth.mode,
+            "HOST_JWKS_URL": self.host_auth.jwks_url,
+            "HOST_JWT_ISSUER": self.host_auth.issuer or self.host_origins[0],
+            "HOST_JWT_AUDIENCE": self.host_auth.audience or f"https://{self.chat_domain}",
+            "HOST_TIERS": self.host_auth.tiers,
         }
         values.update(self.extra_env)
         return values
@@ -227,7 +253,9 @@ class AnswersFile:
         unknown = [key for key in data if key not in TOP_LEVEL_ANSWERS + ANSWER_SECTIONS]
         backup_data, backup_unknown = _section(data.get("backup", {}), BackupAnswers)
         alert_data, alert_unknown = _section(data.get("alert", {}), AlertAnswers)
+        host_auth_data, host_auth_unknown = _section(data.get("host_auth", {}), HostAuthAnswers)
         unknown += [f"backup.{key}" for key in backup_unknown] + [f"alert.{key}" for key in alert_unknown]
+        unknown += [f"host_auth.{key}" for key in host_auth_unknown]
         missing += [name for name, section in (("backup.target", backup_data), ("alert.channel", alert_data))
                     if not section.get(name.split(".")[1])]
         if missing or unknown:
@@ -242,6 +270,7 @@ class AnswersFile:
             openai_api_key=str(data["openai_api_key"]).strip(),
             backup=BackupAnswers(**backup_data),
             alert=AlertAnswers(**alert_data),
+            host_auth=HostAuthAnswers(**host_auth_data),
             extra_env={str(key): str(value) for key, value in data.get("env", {}).items()},
         )
 

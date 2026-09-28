@@ -14,6 +14,7 @@ from deploy.ops.https_probe import ProbeResponse
 from deploy.ops.layout import InstallLayout
 from deploy.ops.preflight import Preflight
 from deploy.ops.runner import CommandError, CommandResult
+from deploy.ops.secret_generator import GENERATED_SECRETS
 from deploy.ops.security_check import SecuritySelfCheck
 
 HEALTHY = [
@@ -156,7 +157,7 @@ def test_security_self_check_passes_on_a_correct_stack_and_catches_leaks(tmp_pat
     })
     layout, compose = _install(tmp_path, runner)
     layout.owner_password_file.write_text("o" * 40)
-    env = {**{name: "s" * 48 for name in ("POSTGRES_APP_PASSWORD", "ADMIN_JWT_SECRET", "VISITOR_COOKIE_SECRET", "BFF_SERVICE_TOKEN")},
+    env = {**{name: "s" * 48 for name in GENERATED_SECRETS},
            "PUBLIC_DOMAIN_CHAT": "chat.client.vn", "PUBLIC_DOMAIN_ADMIN": "admin.client.vn", "HOST_ORIGIN": "https://www.client.vn"}
     good = SecuritySelfCheck(layout, runner, compose, env, FakeProbe(_probe_responses("frame-ancestors 'self' https://www.client.vn")))
     failures = [result for result in good.run() if not result.ok]

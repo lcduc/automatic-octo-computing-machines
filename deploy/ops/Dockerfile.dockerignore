@@ -5,3 +5,4 @@
 !deploy/Caddyfile
 !deploy/postgres/
 !docker-compose.yml
+!host-sdk/
