@@ -217,6 +217,7 @@ class KnowledgeService:
         content_hash = hashlib.sha256(content).hexdigest()
 
         stored = False
+        replaced: Optional[Tuple[uuid.UUID, str]] = None
         try:
             async with self._database.session() as session:
                 repository = KnowledgeRepository(session)
@@ -225,6 +226,7 @@ class KnowledgeService:
                 if duplicate is not None and duplicate.status == DOCUMENT_STATUS_FAILED:
                     # Retrying a failed upload replaces it rather than being refused as a duplicate.
                     logger.info("Replacing failed document %s with a new upload of %s", duplicate.id, filename)
+                    replaced = (duplicate.id, duplicate.file_type)
                     await repository.delete(duplicate)
                 elif duplicate is not None:
                     raise ConflictError(f"This file already exists in '{source_name}' as '{duplicate.title}'")
@@ -252,6 +254,8 @@ class KnowledgeService:
                 await asyncio.to_thread(self._uploads.delete, document.id, document.file_type)
             raise
 
+        if replaced is not None:
+            await asyncio.to_thread(self._uploads.delete, *replaced)
         logger.info("Queued ingestion of %s into %s as %s", filename, source_name, document.id)
         if self._on_upload is not None:
             self._on_upload()

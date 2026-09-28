@@ -182,11 +182,11 @@ class IngestionWorker:
                         0,
                         self._ingestion.embedding_model,
                     )
-                    # Kept so the document can be re-chunked; the file itself is deleted below.
+                    # Kept so the document can be re-chunked without the file.
                     document.extracted_text = extracted.text
                     document.extraction_method = extracted.extraction_method
                 self._mark_finished(document, status, error)
-        await asyncio.to_thread(self._uploads.delete, job.document_id, job.file_type)
+        # The original file stays in the upload store (backed up off-server) until the document is deleted.
 
     @staticmethod
     def _mark_finished(document: KnowledgeDocument, status: str, error: Optional[str]) -> None:

@@ -1,5 +1,5 @@
 """
-Uploaded files waiting to be ingested, kept on disk shared by the API and the worker.
+Original uploaded files, kept on disk shared by the API and the worker.
 """
 
 # Standard library imports
@@ -13,12 +13,13 @@ logger = logging.getLogger(__name__)
 
 class UploadStore:
     """
-    One file per queued document, named ``<document id>.<file type>``.
+    One file per uploaded document, named ``<document id>.<file type>``.
 
-    The API writes a file when an upload is accepted; the ingestion worker
-    reads it and deletes it once the document is ``ready`` or ``failed``.
-    Names are built only from the document's UUID and its validated file
-    type, never from the client's filename.
+    The API writes a file when an upload is accepted and the ingestion worker
+    reads it. The file is the original of the document: it is kept (and
+    included in the off-server backups) until the document is deleted or
+    replaced. Names are built only from the document's UUID and its validated
+    file type, never from the client's filename.
     """
 
     def __init__(self, root: str):
