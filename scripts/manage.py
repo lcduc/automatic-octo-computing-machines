@@ -24,6 +24,7 @@ import getpass
 import json
 import secrets
 import sys
+from typing import List
 
 # Third-party imports
 from dotenv import load_dotenv
@@ -34,7 +35,7 @@ load_dotenv()
 from config.settings import Config  # noqa: E402
 from core.infrastructure.alert_notifier import AlertDeliveryError, AlertNotifier  # noqa: E402
 from core.storage.database import Database  # noqa: E402
-from core.storage.tables.access_tables import ADMIN_ROLES, ROLE_OWNER  # noqa: E402
+from core.storage.tables.access_tables import ADMIN_ROLES, API_KEY_SCOPES, ROLE_OWNER, SCOPE_CHAT  # noqa: E402
 from services.auth_service import AuthService  # noqa: E402
 from services.errors import ServiceError  # noqa: E402
 
@@ -73,10 +74,10 @@ class ManagementCli:
         # Intentional CLI output: the installer shows this password once and never stores it.
         print(json.dumps({"created": True, "email": user.email, "password": password}))
 
-    async def create_api_key(self, name: str) -> None:
-        """Issue a chat API key and print it once."""
-        record, raw_key = await self._auth.create_api_key(name)
-        print(f"API key for '{record.name}' (shown once, store it now):\n{raw_key}")
+    async def create_api_key(self, name: str, scopes: List[str]) -> None:
+        """Issue a server-to-server API key and print it once."""
+        record, raw_key = await self._auth.create_api_key(name, scopes)
+        print(f"API key for '{record.name}' ({', '.join(record.scopes)}; shown once, store it now):\n{raw_key}")
 
     @staticmethod
     async def test_alert() -> None:
@@ -107,7 +108,7 @@ class ManagementCli:
             elif args.command == "bootstrap-admin":
                 await self.bootstrap_admin(args.email)
             elif args.command == "create-api-key":
-                await self.create_api_key(args.name)
+                await self.create_api_key(args.name, args.scope or [SCOPE_CHAT])
         finally:
             await self._database.close()
 
@@ -123,6 +124,8 @@ def _parser() -> argparse.ArgumentParser:
     bootstrap.add_argument("--email", required=True)
     key = commands.add_parser("create-api-key", help="Issue an API key for a server-to-server integration")
     key.add_argument("--name", required=True)
+    key.add_argument("--scope", action="append", choices=list(API_KEY_SCOPES),
+                     help="Repeat for several scopes (default: chat)")
     commands.add_parser("test-alert", help="Send a test message to the configured alert channel")
     return parser
 
