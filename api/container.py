@@ -9,7 +9,7 @@ expensive, so they are created at start-up and shared by all requests.
 import asyncio
 import logging
 import time
-from typing import Callable, Optional
+from typing import Callable, List, Optional
 
 # Local imports
 from config.settings import Config
@@ -28,11 +28,13 @@ from core.retrieval.embeddings import get_embedding_service
 from core.retrieval.knowledge_index import KnowledgeIndex
 from core.retrieval.retriever import ContextRetriever
 from core.storage.database import Database
+from core.storage.upload_store import UploadStore
 from services.auth_service import AuthService
 from services.chat_service import ChatService
 from services.conversation_service import ConversationService
 from services.handoff_service import HandoffService
 from services.ingestion_service import IngestionService
+from services.ingestion_worker import IngestionWorker
 from services.knowledge_service import KnowledgeService
 from services.log_service import LogService
 from services.rate_limit_service import RateLimitService
@@ -42,6 +44,9 @@ from services.usage_service import UsageService
 from utils.logging_setup import LOG_BACKUP_COUNT, json_log_path
 
 logger = logging.getLogger(__name__)
+
+#: Seconds between checks for uploads the ingestion worker has finished.
+INGESTION_WATCH_SECONDS = 5
 
 
 def _document_processor():
@@ -73,7 +78,9 @@ class AppContainer:
         self.pipeline: Optional[ChatbotService] = None
         self.chat: Optional[ChatService] = None
         self.knowledge: Optional[KnowledgeService] = None
+        self.ingestion_worker: Optional[IngestionWorker] = None
         self.transcription: Optional[TranscriptionService] = None
+        self._background_loops: List[asyncio.Task] = []
 
     async def start(self) -> None:
         """Connect, load models, build the pipeline and the first knowledge snapshot."""
@@ -93,13 +100,32 @@ class AppContainer:
             self.database, self.pipeline, self.settings, self.usage, self.handoffs, self.rate_limiter, self.redactor
         )
         ingestion = IngestionService(self._processor_factory(), embedding, Config.OCR.OCR_MAX_CONCURRENT_FILES())
-        self.knowledge = KnowledgeService(self.database, ingestion, self.index)
+        uploads = UploadStore(Config.Paths.UPLOAD_DIR())
+        if Config.OCR.INGESTION_WORKER() == "embedded":
+            self.ingestion_worker = IngestionWorker(
+                self.database, ingestion, uploads, Config.OCR.OCR_MAX_CONCURRENT_FILES()
+            )
+        on_upload = self.ingestion_worker.wake if self.ingestion_worker else None
+        self.knowledge = KnowledgeService(self.database, ingestion, self.index, uploads, on_upload)
 
         reembedded = await self.knowledge.reembed_stale_chunks()
         if reembedded:
             logger.info("Re-embedded %d chunks for model %s", reembedded, embedding.model_name)
+        # Record the ingestion mark before the first snapshot so no upload finishing in between is missed.
+        await self.knowledge.refresh_index_if_ingested()
         await self.index.refresh()
+        self._start_background_loops()
         logger.info("Services started")
+
+    def _start_background_loops(self) -> None:
+        """Watch for finished uploads and, in embedded mode, run the ingestion worker in this process."""
+        self._background_loops.append(
+            asyncio.create_task(self.knowledge.watch_ingestions(INGESTION_WATCH_SECONDS))
+        )
+        if self.ingestion_worker is not None:
+            self._background_loops.append(asyncio.create_task(self.ingestion_worker.run()))
+        else:
+            logger.info("INGESTION_WORKER=external: uploads are parsed by worker.py")
 
     async def _load_embedding_service(self):
         """Load the sentence-transformers model (and optional query adapter) off the event loop."""
@@ -160,8 +186,11 @@ class AppContainer:
         """Finish background writes and release pools."""
         logger.info("Stopping services")
         try:
-            if self.knowledge is not None:
-                await self.knowledge.wait_for_background_jobs()
+            # Cancelling the worker hands its unfinished upload back to the queue.
+            for task in self._background_loops:
+                task.cancel()
+            await asyncio.gather(*self._background_loops, return_exceptions=True)
+            self._background_loops = []
             if self.chat is not None:
                 await self.chat.wait_for_pending_writes()
         except Exception:

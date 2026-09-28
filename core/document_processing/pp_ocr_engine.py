@@ -22,12 +22,15 @@ class PPOCRv6Engine(OCREngine):
     across calls, since loading it is expensive.
     """
 
-    def __init__(self, device: str = "cpu"):
+    def __init__(self, device: str = "cpu", cpu_threads: int = 1):
         """
         Args:
             device: PaddleX device string, e.g. ``"cpu"`` or ``"gpu:0"``.
+            cpu_threads: Inference threads per ``extract_text`` call on CPU
+                (PaddleOCR's own default is 10, enough to saturate a small host).
         """
         self._device = device
+        self._cpu_threads = cpu_threads
         self._pipeline: Optional[Any] = None
 
     @property
@@ -38,9 +41,10 @@ class PPOCRv6Engine(OCREngine):
         if self._pipeline is None:
             from paddleocr import PaddleOCR
 
-            logger.info("Loading PP-OCRv6 pipeline on device=%s", self._device)
+            logger.info("Loading PP-OCRv6 pipeline on device=%s, cpu_threads=%d", self._device, self._cpu_threads)
             self._pipeline = PaddleOCR(
                 device=self._device,
+                cpu_threads=self._cpu_threads,
                 use_doc_orientation_classify=False,
                 use_doc_unwarping=False,
                 use_textline_orientation=False,

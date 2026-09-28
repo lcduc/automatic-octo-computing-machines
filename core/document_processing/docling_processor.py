@@ -21,7 +21,10 @@ from typing import Any, Dict, List, Optional
 
 # Third-party imports
 try:
-    from docling.document_converter import DocumentConverter
+    from docling.datamodel.accelerator_options import AcceleratorOptions
+    from docling.datamodel.base_models import InputFormat
+    from docling.datamodel.pipeline_options import PdfPipelineOptions
+    from docling.document_converter import DocumentConverter, PdfFormatOption
     import fitz  # PyMuPDF
 except Exception:  # defer hard failure to runtime path
     DocumentConverter = None  # type: ignore
@@ -112,9 +115,23 @@ class DoclingProcessor:
             async with self._converter_lock:
                 if self._normal_converter is None:
                     logger.info("Initializing normal converter...")
-                    self._normal_converter = DocumentConverter()
+                    self._normal_converter = await asyncio.to_thread(self._build_converter)
                     logger.info(" Normal converter initialized and cached")
         return self._normal_converter
+
+    @staticmethod
+    def _build_converter():
+        """
+        Docling converter whose PDF models are capped at ``OCR_CPU_THREADS``.
+
+        Docling applies the cap with ``torch.set_num_threads`` on CPU, which is
+        process-wide, so CPU embeddings share the same cap once a PDF is parsed.
+        """
+        # ceiling: parsing shares the API process's torch thread pool, move it to a worker process if the cap slows chat
+        pdf_options = PdfPipelineOptions(
+            accelerator_options=AcceleratorOptions(num_threads=Config.OCR.OCR_CPU_THREADS())
+        )
+        return DocumentConverter(format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=pdf_options)})
 
     #: Pages sampled from the front of a PDF when checking for a text layer.
     _TEXT_LAYER_SAMPLE_PAGES = 3
@@ -260,7 +277,8 @@ class DoclingProcessor:
                 )
             else:
                 converter = await self._get_normal_converter()
-                doc = converter.convert(str(temp_path)).document
+                # Conversion takes seconds to minutes; running it inline would block every request.
+                doc = (await asyncio.to_thread(converter.convert, str(temp_path))).document
                 text_md = doc.export_to_markdown()
                 ocr_used = False
                 logger.info(

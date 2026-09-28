@@ -6,16 +6,26 @@ The whole product runs from one command on one machine:
 docker compose up -d --build
 ```
 
-| Service    | What it is                                              | Exposed            |
-|------------|---------------------------------------------------------|--------------------|
-| `caddy`    | HTTPS entry point (free Let's Encrypt certificate)      | ports 80/443       |
-| `web`      | Next.js: chat widget, `embed.js`, admin web, BFF routes | internal only      |
-| `api`      | FastAPI: RAG pipeline, admin API (GPU)                  | internal only      |
-| `postgres` | PostgreSQL 17 + pgvector: all data and embeddings       | `127.0.0.1` only   |
+| Service            | What it is                                              | Exposed            |
+|--------------------|---------------------------------------------------------|--------------------|
+| `caddy`            | HTTPS entry point (free Let's Encrypt certificate)      | ports 80/443       |
+| `web`              | Next.js: chat widget, `embed.js`, admin web, BFF routes | internal only      |
+| `api`              | FastAPI: RAG pipeline, admin API (GPU)                  | internal only      |
+| `ingestion-worker` | Parses, OCRs and embeds uploaded files (same image)     | not exposed        |
+| `postgres`         | PostgreSQL 17 + pgvector: all data and embeddings       | `127.0.0.1` only   |
 
 The browser only talks to Caddy → `web`. The chat API key lives on the `web`
 server, never in the browser. The API and database are unreachable from the
 internet.
+
+Uploads never run inside the API. `api` stores the file in `data/uploads/` and
+queues the document (status `processing`, answered with `202`); `ingestion-worker`
+claims it from PostgreSQL, parses/embeds it, and marks it `ready` or `failed`;
+`api` notices within ~5 s and refreshes its search index. Because the worker has
+its own CPU/memory limits (`WORKER_CPUS`, default 3; `WORKER_MEMORY`, default 6g),
+a large scan can slow uploads but not chat, and an out-of-memory kill restarts
+only the worker. An upload interrupted by a crash or restart is retried
+automatically; one that kills the worker 3 times is marked `failed`.
 
 ## Hardware budget (12 GB VRAM, 8 cores / 16 threads, 16 GB RAM)
 
@@ -23,20 +33,25 @@ internet.
   counters live in that process. Concurrency comes from async I/O:
   - `MAX_CONCURRENT_CHATS` (default 16) caps turns generated at once.
   - `RETRIEVAL_MAX_CONCURRENCY` (default 4) caps GPU retrieval at once.
+- **CPU:** the worker is capped at `WORKER_CPUS` (3), and parsing/OCR inside it at
+  `OCR_CPU_THREADS` (2), leaving the rest of the cores to the API.
 - **GPU:**
-  - Embedding model (~0.5 GB) and reranker (~1.2 GB).
-  - The PaddleOCR-VL engine (optional, a few GB) fits alongside them.
+  - Embedding model (~0.5 GB) and reranker (~1.2 GB) in `api`.
+  - The worker loads its own copy of the embedding model (~0.5 GB) plus the
+    PaddleOCR-VL engine (optional, a few GB); both fit alongside.
 - **RAM:**
-  - API ~4–6 GB (torch, Docling, OCR).
+  - API ~3–4 GB (torch, embeddings, reranker).
+  - Worker up to `WORKER_MEMORY` (6 GB: Docling, OCR, embeddings).
   - PostgreSQL ~0.5 GB, Next.js ~0.2 GB, Caddy negligible.
   - The knowledge index costs ~1.5 KB per chunk (100k chunks ≈ 150 MB).
 
 ## Prerequisites
 
 1. Ubuntu 22.04/24.04 with Docker Engine and the Compose plugin.
-2. NVIDIA driver plus the **NVIDIA Container Toolkit**, so the `api` container can
-   use the GPU.
-   - Without a GPU: delete the `deploy:` block of `api` in `docker-compose.yml`,
+2. NVIDIA driver plus the **NVIDIA Container Toolkit**, so the `api` and
+   `ingestion-worker` containers can use the GPU.
+   - Without a GPU: in `docker-compose.yml`, delete the `deploy:` block of `api`
+     and the `reservations:` part of `ingestion-worker` (keep its `limits:`),
      and set `TORCH_INDEX=cpu` in the shell before building.
 3. A DNS `A` record, e.g. `chat.example.com`, pointing at the VPS, with ports
    80 and 443 open.
@@ -98,7 +113,9 @@ docker compose up -d --build        # migrations run automatically when api star
 ## Backups
 
 All state is in PostgreSQL: knowledge, embeddings, conversations, feedback,
-settings and accounts. `data/logs` holds only logs. A nightly dump is enough:
+settings and accounts. `data/logs` holds only logs, and `data/uploads` only
+files still waiting in the queue (each is deleted once ingested). A nightly dump
+is enough:
 
 ```bash
 # crontab -e
@@ -120,8 +137,10 @@ docker compose exec -T postgres pg_restore -U chatbot -d chatbot --clean < backu
 | Find knowledge gaps                | Admin → Đánh giá (👎 first), Hội thoại filtered by *Không có thông tin* |
 | Token usage / live activity        | Admin → Tổng quan                                             |
 | Logs (PII already masked)          | Admin → Nhật ký hệ thống, or `docker compose logs api`        |
+| Upload / OCR logs                  | `docker compose logs ingestion-worker` (file: `data/logs/worker/`) |
+| Uploads slow or stuck `processing` | `docker compose ps ingestion-worker` and its logs; raise `WORKER_CPUS`/`WORKER_MEMORY` if it is being OOM-killed |
 | Rotate the web's API key           | Admin → Cấu hình → Khoá API: create new, update `.env`, `docker compose up -d web`, revoke old |
-| Change embedding model             | Set `EMBEDDING_MODEL`, restart `api`: stale chunks are re-embedded at start |
+| Change embedding model             | Set `EMBEDDING_MODEL`, then `docker compose up -d --force-recreate api ingestion-worker`: stale chunks are re-embedded when `api` starts |
 
 ## Local development
 
@@ -133,7 +152,9 @@ pip install torch torchvision --index-url https://download.pytorch.org/whl/cu126
 pip install -r requirements.txt
 cp .env.example .env    # APP_ENV=development, POSTGRES_HOST=localhost, POSTGRES_PASSWORD=dev
 alembic upgrade head
-python main.py          # API on :8500, docs on /docs
+python main.py          # API on :8500, docs on /docs; parses uploads in-process
+                        # (INGESTION_WORKER=embedded). To mirror production, set
+                        # INGESTION_WORKER=external and also run: python worker.py
 
 cd frontends/<client> && npm ci
 cp .env.example .env.local && npm run dev   # web on :3000, /embed-demo shows the widget

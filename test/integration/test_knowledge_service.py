@@ -1,23 +1,53 @@
-"""KnowledgeService against real PostgreSQL: CRUD keeps the search index in sync."""
+"""KnowledgeService and IngestionWorker against real PostgreSQL: CRUD keeps the index in sync, uploads go through the queue."""
+
+import asyncio
+from types import SimpleNamespace
 
 import pytest
+from sqlalchemy import text
 
 from core.retrieval.knowledge_index import KnowledgeIndex
+from core.storage.knowledge_repository import KnowledgeRepository
+from core.storage.upload_store import UploadStore
 from services.errors import ConflictError, InvalidRequestError
 from services.ingestion_service import IngestionService
+from services.ingestion_worker import CRASH_LOOP_ERROR, MAX_ATTEMPTS, IngestionWorker
 from services.knowledge_service import KnowledgeService
 from .conftest import FakeEmbeddingService, FakeProcessor
 
 
-def _service(database):
+@pytest.fixture
+def kb(database, tmp_path):
+    """Service, index, upload store and worker sharing one database and upload dir."""
     ingestion = IngestionService(FakeProcessor, FakeEmbeddingService(), max_concurrent_files=1)
     index = KnowledgeIndex(database)
-    return KnowledgeService(database, ingestion, index), index
+    uploads = UploadStore(str(tmp_path / "uploads"))
+    worker = IngestionWorker(database, ingestion, uploads, concurrency=1)
+    service = KnowledgeService(database, ingestion, index, uploads, worker.wake)
+    return SimpleNamespace(service=service, index=index, uploads=uploads, worker=worker, database=database)
+
+
+async def _expire_claim(database, document_id, attempts=None) -> None:
+    """Make a claim look abandoned by a worker that died long ago."""
+    async with database.session() as session:
+        await session.execute(
+            text("UPDATE knowledge_documents SET claimed_at = now() - interval '1 hour' WHERE id = :id"),
+            {"id": document_id},
+        )
+        if attempts is not None:
+            await session.execute(
+                text("UPDATE knowledge_documents SET attempts = :n WHERE id = :id"), {"n": attempts, "id": document_id}
+            )
+
+
+async def _claim(database):
+    async with database.session() as session:
+        return await KnowledgeRepository(session).claim_next_upload(lease_seconds=120)
 
 
 @pytest.mark.asyncio
-async def test_text_document_is_searchable_and_edits_refresh_the_index(database):
-    service, index = _service(database)
+async def test_text_document_is_searchable_and_edits_refresh_the_index(kb):
+    service, index = kb.service, kb.index
     document = await service.create_text_document(
         "FAQ", "Giờ làm việc", "Văn phòng mở cửa từ 8 giờ sáng.", {"url": "https://x.test/faq"}, "admin@x.test"
     )
@@ -37,8 +67,8 @@ async def test_text_document_is_searchable_and_edits_refresh_the_index(database)
 
 
 @pytest.mark.asyncio
-async def test_add_and_delete_chunk_keep_positions_contiguous(database):
-    service, index = _service(database)
+async def test_add_and_delete_chunk_keep_positions_contiguous(kb):
+    service, index = kb.service, kb.index
     document = await service.create_text_document("general", "Doc", "first", {}, None)
     await service.add_chunk(document.id, "third", {}, position=None)
     await service.add_chunk(document.id, "second", {}, position=1)
@@ -53,37 +83,97 @@ async def test_add_and_delete_chunk_keep_positions_contiguous(database):
 
 
 @pytest.mark.asyncio
-async def test_file_upload_ingests_in_background_and_rejects_duplicates(database):
-    service, index = _service(database)
+async def test_upload_is_queued_then_ingested_by_the_worker(kb):
+    service, index = kb.service, kb.index
+    assert await service.refresh_index_if_ingested() is False  # records the starting mark
     content = b"Muc luong toi thieu\n\nThoi gian thu viec"
     document = await service.upload_file(content, "policy.txt", "contracts", None, {"year": 2026}, None)
     assert document.status == "processing"
-    await service.wait_for_background_jobs()
-    await index.refresh()
+    assert kb.uploads.path_for(document.id, "txt").exists()
+
+    assert await kb.worker.process_next() is True
+    assert await kb.worker.process_next() is False
+    assert await service.refresh_index_if_ingested() is True
+    assert await service.refresh_index_if_ingested() is False
 
     loaded = await service.get_document(document.id)
-    assert loaded.status == "ready" and loaded.chunk_count == 2
+    assert loaded.status == "ready" and loaded.chunk_count == 2 and loaded.claimed_at is None
     assert {c.source for c in index.snapshot.chunks} == {"contracts"}
+    assert not kb.uploads.path_for(document.id, "txt").exists()
 
     with pytest.raises(ConflictError):
         await service.upload_file(content, "policy-copy.txt", "contracts", None, {}, None)
 
 
 @pytest.mark.asyncio
-async def test_failed_ingestion_is_recorded_and_unknown_source_rejected(database):
-    service, _ = _service(database)
+async def test_failed_ingestion_is_recorded_and_unknown_source_rejected(kb):
+    service = kb.service
     with pytest.raises(InvalidRequestError):
         await service.create_text_document("nope", "t", "x", {}, None)
     service._ingestion.supported_extensions = lambda: [".bad"]
     document = await service.upload_file(b"x", "broken.bad", "general", None, {}, None)
-    await service.wait_for_background_jobs()
+    await kb.worker.process_next()
     loaded = await service.get_document(document.id)
     assert loaded.status == "failed" and "No content" in loaded.error
+    assert not kb.uploads.path_for(document.id, "bad").exists()
 
 
 @pytest.mark.asyncio
-async def test_source_cannot_be_deleted_while_it_has_documents(database):
-    service, index = _service(database)
+async def test_live_claim_is_not_stolen_but_a_dead_workers_claim_is_retried(kb):
+    document = await kb.service.upload_file(b"a\n\nb", "doc.txt", "general", None, {}, None)
+    assert (await _claim(kb.database)).document_id == document.id  # a worker claims it, then dies
+
+    assert await kb.worker.process_next() is False  # lease still live
+    await _expire_claim(kb.database, document.id)
+    assert await kb.worker.process_next() is True
+
+    loaded = await kb.service.get_document(document.id)
+    assert loaded.status == "ready" and loaded.attempts == 2
+
+
+@pytest.mark.asyncio
+async def test_upload_that_keeps_killing_the_worker_is_failed(kb):
+    document = await kb.service.upload_file(b"a\n\nb", "doc.txt", "general", None, {}, None)
+    await _expire_claim(kb.database, document.id, attempts=MAX_ATTEMPTS)
+    assert await kb.worker.process_next() is True
+
+    loaded = await kb.service.get_document(document.id)
+    assert loaded.status == "failed" and loaded.error == CRASH_LOOP_ERROR
+    assert not kb.uploads.path_for(document.id, "txt").exists()
+
+
+@pytest.mark.asyncio
+async def test_clean_shutdown_hands_the_job_back_to_the_queue(kb):
+    started = asyncio.Event()
+
+    async def parse_forever(content, filename):
+        started.set()
+        await asyncio.Event().wait()
+
+    kb.service._ingestion.extract_chunks = parse_forever
+    document = await kb.service.upload_file(b"a\n\nb", "doc.txt", "general", None, {}, None)
+    task = asyncio.create_task(kb.worker.run())
+    await asyncio.wait_for(started.wait(), timeout=10)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    loaded = await kb.service.get_document(document.id)
+    assert loaded.status == "processing" and loaded.claimed_at is None and loaded.attempts == 0
+    assert kb.uploads.path_for(document.id, "txt").exists()
+
+
+@pytest.mark.asyncio
+async def test_deleting_a_queued_upload_removes_its_file_and_the_job(kb):
+    document = await kb.service.upload_file(b"a\n\nb", "doc.txt", "general", None, {}, None)
+    await kb.service.delete_document(document.id)
+    assert not kb.uploads.path_for(document.id, "txt").exists()
+    assert await kb.worker.process_next() is False
+
+
+@pytest.mark.asyncio
+async def test_source_cannot_be_deleted_while_it_has_documents(kb):
+    service, index = kb.service, kb.index
     await service.create_text_document("web_data", "Page", "content", {}, None)
     sources = {source.name: source for source, _ in await service.list_sources()}
     with pytest.raises(ConflictError):

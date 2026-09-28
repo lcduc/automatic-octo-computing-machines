@@ -8,6 +8,7 @@ boundaries belong to the calling service.
 # Standard library imports
 import uuid
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 # Third-party imports
@@ -17,11 +18,22 @@ from sqlalchemy.orm import selectinload
 
 # Local imports
 from .tables.knowledge_tables import (
+    DOCUMENT_STATUS_PROCESSING,
     DOCUMENT_STATUS_READY,
     KnowledgeChunk,
     KnowledgeDocument,
     KnowledgeSource,
 )
+
+
+@dataclass(frozen=True)
+class ClaimedUpload:
+    """An upload a worker has claimed from the ingestion queue."""
+
+    document_id: uuid.UUID
+    filename: Optional[str]
+    file_type: str
+    attempts: int
 
 
 @dataclass(frozen=True)
@@ -167,6 +179,72 @@ class KnowledgeRepository:
         )
         return result.scalar_one_or_none()
 
+    async def lock_document(self, document_id: uuid.UUID) -> Optional[KnowledgeDocument]:
+        """Document by id, row-locked until the transaction ends (serializes ingestion outcomes)."""
+        return await self._session.get(KnowledgeDocument, document_id, with_for_update=True)
+
+    # ------------------------------------------------------------------
+    # Ingestion queue (documents in ``processing`` are the pending jobs)
+    # ------------------------------------------------------------------
+
+    async def claim_next_upload(self, lease_seconds: int) -> Optional["ClaimedUpload"]:
+        """
+        Claim the oldest pending upload that no live worker holds.
+
+        A claim is a lease: ``claimed_at`` is renewed while the worker parses,
+        so a claim older than ``lease_seconds`` belongs to a dead worker and is
+        taken over. ``SKIP LOCKED`` lets concurrent workers claim distinct rows.
+        """
+        stale_before = func.now() - timedelta(seconds=lease_seconds)
+        candidate = (
+            select(KnowledgeDocument.id)
+            .where(
+                KnowledgeDocument.status == DOCUMENT_STATUS_PROCESSING,
+                or_(KnowledgeDocument.claimed_at.is_(None), KnowledgeDocument.claimed_at < stale_before),
+            )
+            .order_by(KnowledgeDocument.created_at)
+            .limit(1)
+            .with_for_update(skip_locked=True)
+            .scalar_subquery()
+        )
+        result = await self._session.execute(
+            update(KnowledgeDocument)
+            .where(KnowledgeDocument.id == candidate)
+            .values(claimed_at=func.now(), attempts=KnowledgeDocument.attempts + 1)
+            .returning(
+                KnowledgeDocument.id,
+                KnowledgeDocument.original_filename,
+                KnowledgeDocument.file_type,
+                KnowledgeDocument.attempts,
+            )
+            .execution_options(synchronize_session=False)
+        )
+        row = result.one_or_none()
+        return ClaimedUpload(*row) if row else None
+
+    async def renew_claim(self, document_id: uuid.UUID) -> None:
+        """Extend a worker's lease on an upload it is still parsing."""
+        await self._session.execute(
+            update(KnowledgeDocument)
+            .where(KnowledgeDocument.id == document_id, KnowledgeDocument.status == DOCUMENT_STATUS_PROCESSING)
+            .values(claimed_at=func.now())
+            .execution_options(synchronize_session=False)
+        )
+
+    async def release_claim(self, document_id: uuid.UUID) -> None:
+        """Hand an upload back to the queue after a clean shutdown, without counting the attempt."""
+        await self._session.execute(
+            update(KnowledgeDocument)
+            .where(KnowledgeDocument.id == document_id, KnowledgeDocument.status == DOCUMENT_STATUS_PROCESSING)
+            .values(claimed_at=None, attempts=func.greatest(KnowledgeDocument.attempts - 1, 0))
+            .execution_options(synchronize_session=False)
+        )
+
+    async def latest_processed_at(self) -> Optional[datetime]:
+        """When the most recent ingestion finished, or ``None`` if none has."""
+        result = await self._session.execute(select(func.max(KnowledgeDocument.processed_at)))
+        return result.scalar_one()
+
     # ------------------------------------------------------------------
     # Chunks
     # ------------------------------------------------------------------
@@ -177,6 +255,29 @@ class KnowledgeRepository:
             select(KnowledgeChunk).where(KnowledgeChunk.id == chunk_id).options(selectinload(KnowledgeChunk.document))
         )
         return result.scalar_one_or_none()
+
+    def add_chunks(
+        self,
+        document: KnowledgeDocument,
+        texts: List[str],
+        vectors: Sequence[Sequence[float]],
+        metadata: List[Dict[str, Any]],
+        start: int,
+        embedding_model: str,
+    ) -> None:
+        """Stage chunk rows for ``texts`` beginning at ``start`` and bump the document's count."""
+        for offset, (text, vector, chunk_metadata) in enumerate(zip(texts, vectors, metadata)):
+            self._session.add(
+                KnowledgeChunk(
+                    document_id=document.id,
+                    position=start + offset,
+                    content=text,
+                    extra_metadata=chunk_metadata,
+                    embedding=vector,
+                    embedding_model=embedding_model,
+                )
+            )
+        document.chunk_count = (document.chunk_count or 0) + len(texts)
 
     async def shift_positions(self, document_id: uuid.UUID, from_position: int, delta: int) -> None:
         """Add ``delta`` to the position of every chunk at or after ``from_position``."""
