@@ -15,13 +15,14 @@ from fastapi.responses import StreamingResponse
 # Local imports
 from api.container import AppContainer
 from api.dependencies import READ_ROLES, WRITE_ROLES, get_container, require_admin
+from core.storage.tables.access_tables import SCOPE_ADMIN_READ
 from api.schemas.admin import IngestionQueueStatus, LogEntry, SystemStatus
 from api.schemas.common import MessageResponse
 from api.sse import STREAM_HEADERS, sse_stream
 from config.settings import Config
 
 router = APIRouter(tags=["Admin: monitoring"])
-read_access = Depends(require_admin(READ_ROLES))
+read_access = Depends(require_admin(READ_ROLES, key_scope=SCOPE_ADMIN_READ))
 
 APP_VERSION = "3.0.0"
 MAX_SUMMARY_DAYS = 90

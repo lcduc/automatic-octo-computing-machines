@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends
 # Local imports
 from api.container import AppContainer
 from api.dependencies import OWNER_ROLES, READ_ROLES, WRITE_ROLES, get_container, require_admin
-from api.schemas.admin import ApiKeyCreate, ApiKeyCreated, ApiKeyOut, SettingsUpdate
+from api.schemas.admin import ApiKeyCreate, ApiKeyCreated, ApiKeyOut, ApiKeyRotate, SettingsUpdate
 from services.auth_service import AdminPrincipal
 
 router = APIRouter(tags=["Admin: configuration"])
@@ -65,8 +65,18 @@ async def list_api_keys(container: AppContainer = Depends(get_container)) -> Lis
 
 @router.post("/api-keys", response_model=ApiKeyCreated, status_code=201, dependencies=[Depends(require_admin(OWNER_ROLES))])
 async def create_api_key(body: ApiKeyCreate, container: AppContainer = Depends(get_container)) -> ApiKeyCreated:
-    """Issue a key for a frontend; copy it now, it is not retrievable later."""
-    record, raw_key = await container.auth.create_api_key(body.name)
+    """Issue a server-to-server key; copy it now, only its hash is kept."""
+    record, raw_key = await container.auth.create_api_key(
+        body.name, list(body.scopes), body.rate_limit_per_minute, body.expires_in_days
+    )
+    return ApiKeyCreated(**ApiKeyOut.model_validate(record).model_dump(), key=raw_key)
+
+
+@router.post("/api-keys/{key_id}/rotate", response_model=ApiKeyCreated, status_code=201,
+             dependencies=[Depends(require_admin(OWNER_ROLES))])
+async def rotate_api_key(key_id: uuid.UUID, body: ApiKeyRotate, container: AppContainer = Depends(get_container)) -> ApiKeyCreated:
+    """Issue a replacement; the old key keeps working for the grace period so the client can switch."""
+    record, raw_key = await container.auth.rotate_api_key(key_id, body.grace_days)
     return ApiKeyCreated(**ApiKeyOut.model_validate(record).model_dump(), key=raw_key)
 
 

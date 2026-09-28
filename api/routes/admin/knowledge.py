@@ -14,6 +14,7 @@ from pydantic import ValidationError
 # Local imports
 from api.container import AppContainer
 from api.dependencies import READ_ROLES, WRITE_ROLES, get_container, require_admin
+from core.storage.tables.access_tables import SCOPE_ADMIN_READ, SCOPE_DOCUMENTS_WRITE
 from api.schemas.chunking import (
     CHUNKING_ADAPTER,
     ChunkingPreview,
@@ -42,8 +43,8 @@ from services.auth_service import AdminPrincipal
 
 router = APIRouter(prefix="/knowledge", tags=["Admin: knowledge"])
 
-read_access = Depends(require_admin(READ_ROLES))
-write_access = require_admin(WRITE_ROLES)
+read_access = Depends(require_admin(READ_ROLES, key_scope=SCOPE_ADMIN_READ))
+write_access = require_admin(WRITE_ROLES, key_scope=SCOPE_DOCUMENTS_WRITE)
 
 
 # ---------------------------------------------------------------- sources

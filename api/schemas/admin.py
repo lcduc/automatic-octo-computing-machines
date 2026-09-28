@@ -78,6 +78,10 @@ class PasswordChange(BaseModel):
 # ---------------------------------------------------------------- API keys
 
 
+#: Scopes an API key can carry (see core/storage/tables/access_tables.py).
+ApiKeyScope = Literal["chat", "documents:write", "conversations:read", "admin:read"]
+
+
 class ApiKeyOut(ApiModel):
     """An API key without its secret."""
 
@@ -88,12 +92,25 @@ class ApiKeyOut(ApiModel):
     created_at: datetime
     last_used_at: Optional[datetime] = None
     revoked_at: Optional[datetime] = None
+    expires_at: Optional[datetime] = None
+    rate_limit_per_minute: int
+    rotated_from_id: Optional[uuid.UUID] = None
 
 
 class ApiKeyCreate(BaseModel):
-    """New API key for a frontend."""
+    """New server-to-server API key."""
 
     name: str = Field(..., min_length=1, max_length=128)
+    scopes: List[ApiKeyScope] = Field(..., min_length=1)
+    rate_limit_per_minute: int = Field(60, ge=1, le=10_000)
+    #: Days until the key stops working; omitted = no expiry.
+    expires_in_days: Optional[int] = Field(None, ge=1, le=3650)
+
+
+class ApiKeyRotate(BaseModel):
+    """Replace a key; the old one keeps working for ``grace_days`` (0 = revoke it now)."""
+
+    grace_days: int = Field(7, ge=0, le=90)
 
 
 class ApiKeyCreated(ApiKeyOut):

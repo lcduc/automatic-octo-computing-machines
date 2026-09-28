@@ -13,6 +13,7 @@ from fastapi import APIRouter, Depends, Query
 # Local imports
 from api.container import AppContainer
 from api.dependencies import HANDOFF_ROLES, READ_ROLES, get_container, require_admin
+from core.storage.tables.access_tables import SCOPE_CONVERSATIONS_READ
 from api.schemas.admin import (
     AdminMessage,
     ConversationDetail,
@@ -25,7 +26,7 @@ from api.schemas.common import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, Page
 from services.auth_service import AdminPrincipal
 
 router = APIRouter(tags=["Admin: conversations"])
-read_access = Depends(require_admin(READ_ROLES))
+read_access = Depends(require_admin(READ_ROLES, key_scope=SCOPE_CONVERSATIONS_READ))
 
 OUTCOME_PATTERN = "^(answered|smalltalk|denied|handoff|blocked|error)$"
 
