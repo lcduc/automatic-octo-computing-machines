@@ -14,7 +14,7 @@ from typing import Any, Dict, List, Optional
 
 # Third-party imports
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import Boolean, Float, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -67,6 +67,12 @@ class KnowledgeDocument(Base):
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     chunk_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     created_by: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    #: Ingestion queue: times a worker has claimed this upload (bounds crash retries).
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    #: Ingestion queue: lease a worker renews while parsing; a stale lease means the worker died.
+    claimed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    #: When ingestion last finished (ready or failed); the API watches it to refresh its index.
+    processed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = created_at_column()
     updated_at: Mapped[datetime] = updated_at_column()
 

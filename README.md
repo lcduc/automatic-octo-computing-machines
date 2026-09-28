@@ -62,6 +62,7 @@ Everything runs on one VPS with `docker compose up -d` (see
 
 ```text
 main.py                 FastAPI wiring (middleware, routers, lifespan)
+worker.py               ingestion worker: parses/OCRs queued uploads outside the API
 api/                    routes (v1 public + admin), schemas, dependencies, middleware
 services/               use cases: chat, knowledge, ingestion, auth, settings, usage…
 core/agent/             LLM providers (usage-reporting), chat pipeline, prompts, tools

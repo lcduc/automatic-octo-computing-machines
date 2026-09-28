@@ -3,11 +3,28 @@
 #   caddy  :80/:443  -> web :3000 (Next.js: widget, embed.js, admin web)
 #   web              -> api :8500 (FastAPI, GPU)      [internal network only]
 #   api              -> postgres :5432 (pgvector)     [internal network only]
+#   ingestion-worker -> postgres (parses/OCRs uploads queued by api; shares ./data)
 #
 # Configuration: `.env` (backend + database; `FRONTEND` picks the client folder
 # under frontends/) and `frontends/<client>/.env` (web). See docs/DEPLOYMENT.md.
 
 name: chatbot
+
+# Shared by api and ingestion-worker: one image, one .env, one data volume.
+x-backend: &backend
+  build:
+    context: .
+    args:
+      TORCH_INDEX: ${TORCH_INDEX:-cu126}
+  image: chatbot-backend:latest
+  restart: unless-stopped
+  env_file: .env
+  volumes:
+    - ./data:/app/data
+  security_opt:
+    - no-new-privileges:true
+  tmpfs:
+    - /tmp:size=512m
 
 services:
   postgres:
@@ -26,23 +43,18 @@ services:
       - "127.0.0.1:5432:5432"
 
   api:
-    build:
-      context: .
-      args:
-        TORCH_INDEX: ${TORCH_INDEX:-cu126}
-    restart: unless-stopped
-    env_file: .env
+    <<: *backend
     environment:
       POSTGRES_HOST: postgres
       # Only the web container can reach the API, so its forwarded client IPs are trusted.
       FORWARDED_ALLOW_IPS: "*"
+      # Uploads are parsed by ingestion-worker, never inside the API process.
+      INGESTION_WORKER: external
     depends_on:
       postgres:
         condition: service_healthy
-    volumes:
-      - ./data:/app/data
-    # GPU for embeddings / reranking / OCR. Needs the NVIDIA Container Toolkit
-    # on the host; remove this block (and build with TORCH_INDEX=cpu) without a GPU.
+    # GPU for embeddings / reranking. Needs the NVIDIA Container Toolkit on the
+    # host; remove this block (and build with TORCH_INDEX=cpu) without a GPU.
     deploy:
       resources:
         reservations:
@@ -50,10 +62,35 @@ services:
             - driver: nvidia
               count: 1
               capabilities: [gpu]
-    security_opt:
-      - no-new-privileges:true
-    tmpfs:
-      - /tmp:size=512m
+
+  ingestion-worker:
+    <<: *backend
+    command: ["python", "worker.py"]
+    environment:
+      POSTGRES_HOST: postgres
+    # Started after api is healthy, i.e. after api has applied the migrations.
+    depends_on:
+      api:
+        condition: service_healthy
+    # The image's healthcheck probes the API port, which the worker does not serve.
+    healthcheck:
+      disable: true
+    # Hard caps so parsing can never starve the API or the host: an OOM here
+    # kills (and restarts) only this container; its upload is retried.
+    # Keep OCR_CPU_THREADS below WORKER_CPUS.
+    deploy:
+      resources:
+        limits:
+          cpus: "${WORKER_CPUS:-3}"
+          memory: ${WORKER_MEMORY:-6g}
+        # GPU for OCR (PaddleOCR-VL) and embeddings; remove without a GPU, like api's.
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    # On SIGTERM the worker hands its upload back to the queue right away.
+    stop_grace_period: 30s
 
   web:
     build: ./frontends/${FRONTEND:?set FRONTEND in .env to a folder under frontends/}

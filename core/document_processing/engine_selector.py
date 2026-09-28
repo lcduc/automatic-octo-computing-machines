@@ -41,6 +41,14 @@ def _gpu_available() -> bool:
         return False
 
 
+def cpu_threads_per_page() -> int:
+    """
+    Split the ``OCR_CPU_THREADS`` budget across pages OCR'd concurrently, so
+    total OCR CPU use stays within the budget rather than multiplying by it.
+    """
+    return max(1, Config.OCR.OCR_CPU_THREADS() // max(1, Config.OCR.OCR_CONCURRENT_PAGES()))
+
+
 def get_local_engine() -> OCREngine:
     """
     Get the process-wide local OCR engine.
@@ -58,7 +66,7 @@ def get_local_engine() -> OCREngine:
                     _local_engine = PaddleOCRVLEngine(device="gpu:0")
                 else:
                     logger.info("No GPU detected: using PP-OCRv6 (CPU) for local OCR")
-                    _local_engine = PPOCRv6Engine(device="cpu")
+                    _local_engine = PPOCRv6Engine(device="cpu", cpu_threads=cpu_threads_per_page())
     return _local_engine
 
 

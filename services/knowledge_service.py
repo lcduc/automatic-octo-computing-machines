@@ -7,21 +7,22 @@ import asyncio
 import hashlib
 import logging
 import uuid
+from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 # Local imports
 from core.retrieval.knowledge_index import KnowledgeIndex
 from core.storage.database import Database
 from core.storage.knowledge_repository import KnowledgeRepository
 from core.storage.tables.knowledge_tables import (
-    DOCUMENT_STATUS_FAILED,
     DOCUMENT_STATUS_PROCESSING,
     DOCUMENT_STATUS_READY,
     KnowledgeChunk,
     KnowledgeDocument,
     KnowledgeSource,
 )
+from core.storage.upload_store import UploadStore
 from .errors import ConflictError, InvalidRequestError, NotFoundError
 from .ingestion_service import IngestionService
 
@@ -29,27 +30,40 @@ logger = logging.getLogger(__name__)
 
 #: Chunks re-embedded per batch when the embedding model changes.
 REEMBED_BATCH_SIZE = 256
-#: Longest error text stored on a failed document.
-MAX_ERROR_LENGTH = 500
 
 
 class KnowledgeService:
     """
     CRUD over the knowledge base. Every mutation refreshes the search index so
     the chatbot answers from the edited content immediately.
+
+    Uploaded files are queued, not parsed here: :class:`IngestionWorker`
+    processes them, and :meth:`watch_ingestions` picks up the results.
     """
 
-    def __init__(self, database: Database, ingestion: IngestionService, index: KnowledgeIndex):
+    def __init__(
+        self,
+        database: Database,
+        ingestion: IngestionService,
+        index: KnowledgeIndex,
+        uploads: UploadStore,
+        on_upload: Optional[Callable[[], None]] = None,
+    ):
         """
         Args:
             database: Connected database.
-            ingestion: Parser/chunker/embedder.
+            ingestion: Parser/chunker/embedder (embeds typed text and edited chunks).
             index: In-memory search index to refresh after changes.
+            uploads: Where queued upload files are stored for the worker.
+            on_upload: Called after an upload is queued (wakes an in-process worker).
         """
         self._database = database
         self._ingestion = ingestion
         self._index = index
-        self._background_jobs: Set[asyncio.Task] = set()
+        self._uploads = uploads
+        self._on_upload = on_upload
+        self._last_processed_at: Optional[datetime] = None
+        self._ingestion_mark_seen = False
 
     # ------------------------------------------------------------------
     # Sources
@@ -165,10 +179,10 @@ class KnowledgeService:
         created_by: Optional[str],
     ) -> KnowledgeDocument:
         """
-        Register an uploaded file and parse/embed it in the background.
+        Register an uploaded file and queue it for the ingestion worker.
 
         The document is returned immediately with status ``processing``; it
-        becomes ``ready`` (or ``failed`` with an error) once ingestion finishes.
+        becomes ``ready`` (or ``failed`` with an error) once the worker is done.
 
         Raises:
             InvalidRequestError: Empty file, unsupported type or unknown source.
@@ -181,87 +195,40 @@ class KnowledgeService:
             raise InvalidRequestError(f"Unsupported file type '{extension}'")
         content_hash = hashlib.sha256(content).hexdigest()
 
-        async with self._database.session() as session:
-            repository = KnowledgeRepository(session)
-            source = await self._require_source(repository, source_name)
-            duplicate = await repository.find_by_hash(source.id, content_hash)
-            if duplicate is not None:
-                raise ConflictError(f"This file already exists in '{source_name}' as '{duplicate.title}'")
-            document = KnowledgeDocument(
-                source_id=source.id,
-                title=(title or Path(filename).stem)[:512],
-                original_filename=filename[:512],
-                file_type=extension.lstrip("."),
-                content_hash=content_hash,
-                extra_metadata=metadata,
-                status=DOCUMENT_STATUS_PROCESSING,
-                created_by=created_by,
-            )
-            repository.add(document)
-            await repository.flush()
-            document.source = source
-
-        logger.info("Queued ingestion of %s into %s as %s", filename, source_name, document.id)
-        job = asyncio.create_task(self._ingest_file(document.id, content, filename))
-        self._background_jobs.add(job)
-        job.add_done_callback(self._background_jobs.discard)
-        return document
-
-    async def _ingest_file(self, document_id: uuid.UUID, content: bytes, filename: str) -> None:
-        """Background job: parse, embed and store a file's chunks."""
+        stored = False
         try:
-            texts = await self._ingestion.extract_chunks(content, filename)
-            vectors = await self._ingestion.embed(texts)
             async with self._database.session() as session:
                 repository = KnowledgeRepository(session)
-                document = await repository.get_document(document_id)
-                if document is None:
-                    logger.warning("Document %s was deleted during ingestion", document_id)
-                    return
-                self._add_chunks(repository, document, texts, vectors, [{} for _ in texts], start=0)
-                document.status = DOCUMENT_STATUS_READY
-                document.error = None
-            logger.info("Ingested %s: %d chunks", filename, len(texts))
-        except Exception as exc:
-            logger.exception("Ingestion failed for %s", filename)
-            await self._mark_failed(document_id, exc)
-        self._index.request_refresh()
-
-    async def _mark_failed(self, document_id: uuid.UUID, exc: Exception) -> None:
-        """Record an ingestion failure on the document."""
-        message = str(exc) if isinstance(exc, ValueError) else "Processing failed; see server logs."
-        try:
-            async with self._database.session() as session:
-                document = await KnowledgeRepository(session).get_document(document_id)
-                if document is not None:
-                    document.status = DOCUMENT_STATUS_FAILED
-                    document.error = message[:MAX_ERROR_LENGTH]
-        except Exception:
-            logger.exception("Could not mark document %s as failed", document_id)
-
-    def _add_chunks(
-        self,
-        repository: KnowledgeRepository,
-        document: KnowledgeDocument,
-        texts: List[str],
-        vectors,
-        metadata: List[Dict[str, Any]],
-        start: int,
-    ) -> None:
-        """Stage chunk rows for ``texts`` beginning at ``start`` and bump the document's count."""
-        model = self._ingestion.embedding_model
-        for offset, (text, vector, chunk_metadata) in enumerate(zip(texts, vectors, metadata)):
-            repository.add(
-                KnowledgeChunk(
-                    document_id=document.id,
-                    position=start + offset,
-                    content=text,
-                    extra_metadata=chunk_metadata,
-                    embedding=vector,
-                    embedding_model=model,
+                source = await self._require_source(repository, source_name)
+                duplicate = await repository.find_by_hash(source.id, content_hash)
+                if duplicate is not None:
+                    raise ConflictError(f"This file already exists in '{source_name}' as '{duplicate.title}'")
+                document = KnowledgeDocument(
+                    source_id=source.id,
+                    title=(title or Path(filename).stem)[:512],
+                    original_filename=filename[:512],
+                    file_type=extension.lstrip("."),
+                    content_hash=content_hash,
+                    extra_metadata=metadata,
+                    status=DOCUMENT_STATUS_PROCESSING,
+                    created_by=created_by,
                 )
-            )
-        document.chunk_count = (document.chunk_count or 0) + len(texts)
+                repository.add(document)
+                await repository.flush()
+                document.source = source
+                # Stored before the row commits, so a worker never claims a job without its file.
+                await asyncio.to_thread(self._uploads.save, document.id, document.file_type, content)
+                stored = True
+        except Exception:
+            if stored:
+                logger.exception("Could not queue upload %s; removing its stored file", filename)
+                await asyncio.to_thread(self._uploads.delete, document.id, document.file_type)
+            raise
+
+        logger.info("Queued ingestion of %s into %s as %s", filename, source_name, document.id)
+        if self._on_upload is not None:
+            self._on_upload()
+        return document
 
     async def create_text_document(
         self,
@@ -295,7 +262,9 @@ class KnowledgeService:
             )
             repository.add(document)
             await repository.flush()
-            self._add_chunks(repository, document, texts, vectors, [{} for _ in texts], start=0)
+            repository.add_chunks(
+                document, texts, vectors, [{} for _ in texts], 0, self._ingestion.embedding_model
+            )
             document.source = source
         logger.info("Created text document %s in %s (%d chunks)", document.id, source_name, len(texts))
         await self._index.refresh()
@@ -341,7 +310,10 @@ class KnowledgeService:
             document = await repository.get_document(document_id)
             if document is None:
                 raise NotFoundError("Document not found")
+            file_type = document.file_type
             await repository.delete(document)
+        # A still-queued upload's file would otherwise be left behind.
+        await asyncio.to_thread(self._uploads.delete, document_id, file_type)
         logger.info("Deleted document %s", document_id)
         await self._index.refresh()
 
@@ -441,6 +413,37 @@ class KnowledgeService:
     # Maintenance
     # ------------------------------------------------------------------
 
+    async def refresh_index_if_ingested(self) -> bool:
+        """
+        Rebuild the search index if an upload finished since the last check.
+
+        Ingestion may run in another process, so the API learns about finished
+        uploads from ``processed_at`` rather than from an in-process callback.
+        The first call only records the current mark.
+
+        Returns:
+            Whether the index was refreshed.
+        """
+        async with self._database.session() as session:
+            latest = await KnowledgeRepository(session).latest_processed_at()
+        changed = self._ingestion_mark_seen and latest != self._last_processed_at
+        self._last_processed_at, self._ingestion_mark_seen = latest, True
+        if changed:
+            logger.info("Uploads finished ingesting; refreshing the knowledge index")
+            await self._index.refresh()
+        return changed
+
+    async def watch_ingestions(self, interval_seconds: float) -> None:
+        """Call :meth:`refresh_index_if_ingested` every ``interval_seconds`` until cancelled."""
+        while True:
+            try:
+                await self.refresh_index_if_ingested()
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception("Checking for finished ingestions failed")
+            await asyncio.sleep(interval_seconds)
+
     async def reembed_stale_chunks(self) -> int:
         """
         Re-embed chunks produced by a different embedding model (or none).
@@ -467,8 +470,3 @@ class KnowledgeService:
         if total:
             await self._index.refresh()
         return total
-
-    async def wait_for_background_jobs(self) -> None:
-        """Await in-flight ingestion jobs (used on shutdown and in tests)."""
-        if self._background_jobs:
-            await asyncio.gather(*self._background_jobs, return_exceptions=True)

@@ -48,6 +48,11 @@ class PathConfig:
         """
         return env_str("MODELS_DIR", "model_weights")
 
+    @staticmethod
+    def UPLOAD_DIR() -> str:
+        """Uploaded files awaiting ingestion; must be shared by the API and the ingestion worker."""
+        return env_str("UPLOAD_DIR", "data/uploads")
+
 
 class LLMConfig:
     """LLM provider selection, credentials, model selection and answer-cache tuning."""
@@ -361,6 +366,22 @@ class OCRConfig:
         return env_int("OCR_MAX_CONCURRENT_FILES", 1)
 
     @staticmethod
+    def OCR_CPU_THREADS() -> int:
+        """
+        CPU threads local parsing may use (Docling layout models, PP-OCRv6),
+        split across ``OCR_CONCURRENT_PAGES``; keeps the rest free for the API.
+        """
+        return max(1, env_int("OCR_CPU_THREADS", 2))
+
+    @staticmethod
+    def INGESTION_WORKER() -> str:
+        """
+        Where uploads are parsed: ``embedded`` (inside the API process, for local
+        runs) or ``external`` (a separate ``worker.py`` process/container).
+        """
+        return env_str("INGESTION_WORKER", "embedded").lower()
+
+    @staticmethod
     def OCR_PROVIDER() -> str:
         """``auto`` (local, GPU/CPU auto-detected) or ``datalab`` (needs ``DATALAB_API_KEY``)."""
         return env_str("OCR_PROVIDER", "auto")
@@ -428,6 +449,8 @@ class Config:
             issues.append(f"No API key set for LLM_PROVIDER={LLMConfig.LLM_PROVIDER()!r}")
         if ChatConfig.FALLBACK_MODE() not in {"deny", "handoff"}:
             issues.append("FALLBACK_MODE must be 'deny' or 'handoff'")
+        if OCRConfig.INGESTION_WORKER() not in {"embedded", "external"}:
+            issues.append("INGESTION_WORKER must be 'embedded' or 'external'")
         return issues
 
     @staticmethod
