@@ -88,6 +88,23 @@ Roles (each route below lists the lowest role it needs):
 The role is re-read on every request, so disabling an account or changing its role applies at once.
 Every admin write and every sign-in attempt is recorded in the append-only audit log (section 5.9).
 
+**API keys (server-to-server).** The client's own servers (document sync, conversation exports, CI)
+call the admin API at `https://<admin domain>/api/v1/admin/...` with `X-API-Key: cb_live_…` instead of
+a session. A key works only on routes matching one of its scopes and never on accounts, API keys,
+settings, maintenance or the audit log:
+
+| Scope | Routes |
+|---|---|
+| `documents:write` | knowledge writes (sources, documents, chunks, re-chunk) |
+| `conversations:read` | `GET` conversations, feedback and handoffs |
+| `admin:read` | every other read an admin viewer has (knowledge lists, usage, system status) |
+| `chat` | the public chat API (section 4), for server-to-server chat integrations |
+
+A request carrying a key is refused with 403 if it also carries `Origin`, `Sec-Fetch-Site` or
+`Sec-Fetch-Mode`: keys are never used from a browser. Each key has its own per-minute limit (429 with
+`Retry-After`) and optional expiry (401 afterwards). Writes made with a key are audit-logged as
+`api-key:<name>`.
+
 ---
 
 ## 3. Health
@@ -200,9 +217,10 @@ All paths below are relative to `/api/v1/admin`.
 | GET | `/users` | → `AdminOut[]` |
 | POST | `/users` | `{"email", "password" (≥10), "role" (default viewer)}` → 201 `AdminOut` |
 | PATCH | `/users/{admin_id}` | `{"role"?, "disabled"?}` → `AdminOut`. The last enabled owner cannot be demoted or disabled. Accounts are disabled, never deleted. |
-| GET | `/api-keys` | → `[{"id", "name", "key_prefix", "scopes", "created_at", "last_used_at", "revoked_at"}]` |
-| POST | `/api-keys` | `{"name"}` → 201 the same plus `"key"`, **shown only this once** |
-| POST | `/api-keys/{key_id}/revoke` | → the revoked key |
+| GET | `/api-keys` | → `[{"id", "name", "key_prefix", "scopes", "created_at", "last_used_at", "revoked_at", "expires_at", "rate_limit_per_minute", "rotated_from_id"}]` |
+| POST | `/api-keys` | `{"name", "scopes" (≥1 of the scopes above), "rate_limit_per_minute" (1–10000, default 60), "expires_in_days"? (1–3650)}` → 201 the same plus `"key"`, **shown only this once** (only its SHA-256 is stored) |
+| POST | `/api-keys/{key_id}/rotate` | `{"grace_days" (0–90, default 7)}` → 201 a replacement with the same scopes and limit, plus `"key"`. The old key keeps working for `grace_days` (0 revokes it now), so both work while the client switches. |
+| POST | `/api-keys/{key_id}/revoke` | → the revoked key (stops working within a minute) |
 
 ### 5.3 Knowledge: sources
 

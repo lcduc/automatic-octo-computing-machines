@@ -289,7 +289,7 @@ Single-tenant env vars (minimum): `HOST_ORIGIN`, `HOST_AUTH_MODE` (`rs256` | `hs
 - [~] SEC-09 Web: TLS + HSTS, CSP, CORS locked, dependency scanning (`pip-audit`, Dependabot), container image scanning — chat CSP framing-only, pip-audit advisory, no npm/docker Dependabot, no image scan
 - [x] SEC-10 Admin/chat domain separation (Invariant 7)
 - [~] SEC-11 Internal authentication wired automatically (Invariant 10): per-service tokens (BFF → api, worker → api, api/worker → model-server); `edge`/`internal` networks; postgres not bound on the host — BFF token, networks and DML-only app role done; model-server token pending
-- [ ] SEC-12 Server-to-server API keys (`cb_live_…`): SHA-256 hashed, shown once, scoped per endpoint, per-key rate limit, optional expiry, two-key rotation, rejected from browser contexts, audit-logged
+- [x] SEC-12 Server-to-server API keys (`cb_live_…`): SHA-256 hashed, shown once, scoped per endpoint, per-key rate limit, optional expiry, two-key rotation, rejected from browser contexts, audit-logged — managed by owners in the admin web; never accepted on key/user/settings/audit routes
 
 ---
 
