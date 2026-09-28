@@ -24,6 +24,14 @@ export function visitorCookieSecret(): string {
   return secret;
 }
 
+/** Origins allowed to embed the widget (WIDGET_ALLOWED_PARENTS; the installer sets it to HOST_ORIGIN). */
+export function widgetAllowedParents(): string[] {
+  return (process.env.WIDGET_ALLOWED_PARENTS ?? "")
+    .split(/[\s,]+/)
+    .map((origin) => origin.replace(/\/$/, ""))
+    .filter(Boolean);
+}
+
 /** Whether cookies must be marked Secure (always true outside local development). */
 export function secureCookies(): boolean {
   return process.env.NODE_ENV === "production";

@@ -9,13 +9,13 @@ const FALLBACK_COLOR = "#0B5FFF";
 
 const noopSubscribe = () => () => {};
 
-/** Ask the embedding page (embed.js) to close the widget panel. */
-function requestClose() {
-  window.parent?.postMessage({ type: "chatbot:close" }, "*");
+interface ChatWidgetProps {
+  /** Origins allowed to frame the widget (the host site); messages go only to these, exactly. */
+  allowedOrigins: string[];
 }
 
-export function ChatWidget() {
-  const { config, messages, busy, notice, send, stop, rate, reset } = useChat();
+export function ChatWidget({ allowedOrigins }: ChatWidgetProps) {
+  const { config, messages, busy, notice, send, stop, rate, reset, close } = useChat(allowedOrigins);
   const listEnd = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -38,7 +38,7 @@ export function ChatWidget() {
             </button>
           )}
           {embedded && (
-            <button type="button" onClick={requestClose} aria-label="Đóng cửa sổ trò chuyện" className="rounded px-2 py-1 text-lg leading-none hover:bg-white/15">
+            <button type="button" onClick={close} aria-label="Đóng cửa sổ trò chuyện" className="rounded px-2 py-1 text-lg leading-none hover:bg-white/15">
               ×
             </button>
           )}

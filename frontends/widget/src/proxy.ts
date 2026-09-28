@@ -3,12 +3,13 @@
  * so the sites allowed to embed the widget are configurable without a rebuild.
  */
 import { NextResponse, type NextRequest } from "next/server";
+import { widgetAllowedParents } from "@/lib/server/config";
 
 const HSTS = "max-age=31536000; includeSubDomains";
 
 /** Space-separated origins allowed to embed the widget, e.g. "https://example.com". */
 function widgetParents(): string {
-  return (process.env.WIDGET_ALLOWED_PARENTS ?? "").split(/[\s,]+/).filter(Boolean).join(" ");
+  return widgetAllowedParents().join(" ");
 }
 
 export function proxy(request: NextRequest): NextResponse {
