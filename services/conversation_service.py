@@ -12,6 +12,7 @@ from typing import List, Optional, Tuple
 from core.storage.conversation_repository import ConversationRepository
 from core.storage.database import Database
 from core.storage.tables.conversation_tables import Conversation, Feedback, Message
+from models.caller import ChatCaller
 from .errors import InvalidRequestError, NotFoundError
 
 logger = logging.getLogger(__name__)
@@ -30,21 +31,22 @@ class ConversationService:
         """
         self._database = database
 
-    async def visitor_conversation(self, conversation_id: uuid.UUID, end_user_id: str) -> Conversation:
+    async def visitor_conversation(self, conversation_id: uuid.UUID, caller: ChatCaller) -> Conversation:
         """
-        A visitor's own conversation with its messages (to restore the widget).
+        The caller's own conversation with its messages (to restore the widget).
 
         Raises:
-            NotFoundError: Unknown id, or it belongs to someone else.
+            NotFoundError: Unknown id, or it belongs to someone else (including
+                a logged-in user's conversation after they logged out, ID-09).
         """
         async with self._database.session() as session:
             conversation = await ConversationRepository(session).conversation_with_messages(conversation_id)
-        if conversation is None or conversation.end_user_id != end_user_id:
+        if conversation is None or not caller.owns(conversation.user_id, conversation.end_user_id):
             raise NotFoundError("Conversation not found")
         return conversation
 
     async def submit_feedback(
-        self, message_id: uuid.UUID, end_user_id: str, rating: int, comment: Optional[str]
+        self, message_id: uuid.UUID, caller: ChatCaller, rating: int, comment: Optional[str]
     ) -> None:
         """
         Record (or replace) a visitor's rating of an assistant message.
@@ -58,7 +60,7 @@ class ConversationService:
         async with self._database.session() as session:
             repository = ConversationRepository(session)
             message = await repository.get_message(message_id)
-            if message is None or message.conversation.end_user_id != end_user_id:
+            if message is None or not caller.owns(message.conversation.user_id, message.conversation.end_user_id):
                 raise NotFoundError("Message not found")
             if message.role != "assistant":
                 raise InvalidRequestError("Only assistant messages can be rated")

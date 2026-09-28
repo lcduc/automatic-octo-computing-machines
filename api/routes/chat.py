@@ -71,7 +71,7 @@ async def get_conversation(
     container: AppContainer = Depends(get_container),
 ) -> ConversationHistory:
     """The visitor's own conversation, to restore the widget after a page reload."""
-    conversation = await container.conversations.visitor_conversation(conversation_id, caller.end_user_id)
+    conversation = await container.conversations.visitor_conversation(conversation_id, caller)
     return ConversationHistory(
         id=conversation.id,
         status=conversation.status,
@@ -97,7 +97,7 @@ async def submit_feedback(
     container: AppContainer = Depends(get_container),
 ) -> MessageResponse:
     """Rate an assistant answer (thumbs up/down, optional comment)."""
-    await container.conversations.submit_feedback(body.message_id, caller.end_user_id, body.rating, body.comment)
+    await container.conversations.submit_feedback(body.message_id, caller, body.rating, body.comment)
     return MessageResponse(message="Feedback recorded")
 
 

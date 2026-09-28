@@ -34,6 +34,7 @@ from services.auth_service import SERVICE_BFF, AuthService
 from services.chat_service import ChatService
 from services.conversation_service import ConversationService
 from services.handoff_service import HandoffService
+from services.host_identity_service import HostIdentityService
 from services.ingestion_service import IngestionService
 from services.ingestion_worker import IngestionWorker
 from services.knowledge_service import KnowledgeService
@@ -77,6 +78,7 @@ class AppContainer:
             Config.Security.ADMIN_TOKEN_TTL_MINUTES(),
             service_tokens={SERVICE_BFF: Config.Security.BFF_SERVICE_TOKEN()},
         )
+        self.host_identity = HostIdentityService.from_config(self.database)
         self.logs = LogService(json_log_path(), LOG_BACKUP_COUNT)
         self.audit = AuditService(self.database)
         self.redactor = PiiRedactor() if Config.Security.PII_REDACTION_ENABLED() else None

@@ -133,13 +133,24 @@ class ChatService:
     async def _resolve_conversation(
         repository: ConversationRepository, caller: ChatCaller, conversation_id: Optional[uuid.UUID]
     ) -> Conversation:
-        """Load the visitor's conversation or start a new one."""
+        """
+        Load the caller's conversation or start a new one.
+
+        A visitor who logs in mid-conversation keeps it: the first logged-in
+        turn attaches it to their user id (ID-08), after which only that user
+        can continue or read it.
+        """
         if conversation_id is not None:
             conversation = await repository.get_conversation(conversation_id)
-            if conversation is None or conversation.end_user_id != caller.end_user_id:
+            if conversation is None or not caller.owns(conversation.user_id, conversation.end_user_id):
                 raise NotFoundError("Conversation not found")
+            if conversation.user_id is None and caller.logged_in:
+                conversation.user_id = caller.user_id
+                logger.info("Conversation %s attached to its logged-in user", conversation.id)
             return conversation
-        conversation = Conversation(api_key_id=caller.api_key_id, end_user_id=caller.end_user_id)
+        conversation = Conversation(
+            api_key_id=caller.api_key_id, end_user_id=caller.end_user_id, user_id=caller.user_id
+        )
         repository.add(conversation)
         await repository.flush()
         return conversation
