@@ -10,7 +10,7 @@ docker compose up -d --build
 |--------------------|---------------------------------------------------------|--------------------|
 | `caddy`            | HTTPS entry point (free Let's Encrypt certificate)      | ports 80/443       |
 | `web`              | Next.js: chat widget, `embed.js`, BFF routes            | internal only      |
-| `admin`            | Admin web (static SPA), served on `ADMIN_DOMAIN`         | internal only      |
+| `admin`            | Admin web (static SPA), served on `ADMIN_DOMAIN`        | internal only      |
 | `api`              | FastAPI: RAG pipeline, admin API (GPU)                  | internal only      |
 | `ingestion-worker` | Parses, OCRs and embeds uploaded files (same image)     | not exposed        |
 | `postgres`         | PostgreSQL 17 + pgvector: all data and embeddings       | `127.0.0.1` only   |
@@ -68,13 +68,13 @@ git clone <repo> chatbot && cd chatbot
 cp .env.example .env
 #   set: POSTGRES_PASSWORD, ADMIN_JWT_SECRET, OPENAI_API_KEY (or another provider),
 #        CHAT_DOMAIN=chat.example.com, ADMIN_DOMAIN=admin.example.com,
-#        CORS_ORIGINS=https://chat.example.com, FRONTEND=<client>   (folder under frontends/)
+#        CORS_ORIGINS=https://chat.example.com
 #   both domains need a DNS record pointing at this server
 #   every other setting keeps its default from config/settings.py; add a line to override one
 python3 -c "import secrets; print(secrets.token_hex(32))"   # for ADMIN_JWT_SECRET
 
 # 2. Web settings (the API key comes in step 4)
-cp frontends/<client>/.env.example frontends/<client>/.env
+cp frontends/widget/.env.example frontends/widget/.env
 #   set: VISITOR_COOKIE_SECRET (openssl rand -hex 32)
 #        WIDGET_ALLOWED_PARENTS="https://example.com https://www.example.com"
 
@@ -85,7 +85,7 @@ docker compose logs -f api        # wait for "Chatbot API ready"
 # 4. Create the first admin account and the web frontend's API key
 docker compose exec api python -m scripts.manage create-admin --email you@example.com --role owner
 docker compose exec api python -m scripts.manage create-api-key --name "client web"
-#   put the printed key in frontends/<client>/.env as CHATBOT_API_KEY, then:
+#   put the printed key in frontends/widget/.env as CHATBOT_API_KEY, then:
 docker compose up -d web
 ```
 
@@ -93,6 +93,13 @@ Open `https://admin.example.com`, sign in, and add knowledge
 (**Kho tri thức** → *Tải tệp lên* / *Soạn nội dung*). Pick a chunking strategy per
 upload (e.g. *Văn bản pháp luật* for laws); tick *Giữ lại để kiểm tra* to check the
 chunks before the assistant uses them.
+
+## Client deployments
+
+`main` carries a generic chat widget in `frontends/widget`. For a client, branch off `main`
+(e.g. `client/<name>`), customise `frontends/widget` there (look, texts, extra pages), and deploy
+that branch with the client's `.env` and `frontends/widget/.env`. Backend and admin changes land on
+`main` and are merged into the client branches, so a client branch differs only in the widget.
 
 ## Embedding the chat on the client site
 
@@ -137,19 +144,19 @@ docker compose exec -T postgres pg_restore -U chatbot -d chatbot --clean < backu
 
 ## Operations
 
-| Task                               | Where                                                        |
-|------------------------------------|--------------------------------------------------------------|
-| Switch *deny* ↔ *handoff* fallback | Admin → Cấu hình → Cách trả lời (applies immediately)          |
-| Change chat model / retrieval tuning | Admin → Cấu hình → Mô hình & truy xuất (tested before saving; *Về mặc định* restores `.env`) |
-| See who changed what               | Admin → Nhật ký thao tác (owners; append-only)                 |
-| Answer handed-off visitors         | Admin → Chuyển nhân viên                                      |
-| Find knowledge gaps                | Admin → Đánh giá (👎 first), Hội thoại filtered by *Không có thông tin* |
-| Token usage / live activity        | Admin → Tổng quan                                             |
-| Logs (PII already masked)          | Admin → Nhật ký hệ thống, or `docker compose logs api`        |
-| Upload / OCR logs                  | `docker compose logs ingestion-worker` (file: `data/logs/worker/`) |
-| Uploads slow or stuck `processing` | `docker compose ps ingestion-worker` and its logs; raise `WORKER_CPUS`/`WORKER_MEMORY` if it is being OOM-killed |
-| Rotate the web's API key           | Admin → Tài khoản & khoá API: create new, update `.env`, `docker compose up -d web`, revoke old |
-| Change embedding model             | Set `EMBEDDING_MODEL`, then `docker compose up -d --force-recreate api ingestion-worker`: stale chunks are re-embedded when `api` starts |
+| Task                                 | Where                                                                                            |
+|--------------------------------------|--------------------------------------------------------------------------------------------------|
+| Switch *deny* ↔ *handoff* fallback   | Admin → Cấu hình → Cách trả lời (applies immediately)                                            |
+| Change chat model / retrieval tuning | Admin → Cấu hình → Mô hình & truy xuất (tested before saving; *Về mặc định* restores `.env`)     |
+| See who changed what                 | Admin → Nhật ký thao tác (owners; append-only)                                                   |
+| Answer handed-off visitors           | Admin → Chuyển nhân viên                                                                         |
+| Find knowledge gaps                  | Admin → Đánh giá (👎 first), Hội thoại filtered by *Không có thông tin*                          |
+| Token usage / live activity          | Admin → Tổng quan                                                                                |
+| Logs (PII already masked)            | Admin → Nhật ký hệ thống, or `docker compose logs api`                                           |
+| Upload / OCR logs                    | `docker compose logs ingestion-worker` (file: `data/logs/worker/`)                               |
+| Uploads slow or stuck `processing`   | `docker compose ps ingestion-worker` and its logs                                                |
+| Rotate the web's API key             | Admin → Tài khoản & khoá API: create new, update `.env`, `docker compose up -d web`, revoke old  |
+| Change embedding model               | Set `EMBEDDING_MODEL`, then `docker compose up -d --force-recreate api ingestion-worker`         |
 
 ## Local development
 
@@ -165,7 +172,7 @@ python main.py          # API on :8500, docs on /docs; parses uploads in-process
                         # (INGESTION_WORKER=embedded). To mirror production, set
                         # INGESTION_WORKER=external and also run: python worker.py
 
-cd frontends/<client> && npm ci
+cd frontends/widget && npm ci
 cp .env.example .env.local && npm run dev   # web on :3000, /embed-demo shows the widget
 ```
 

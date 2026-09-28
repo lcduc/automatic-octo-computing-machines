@@ -83,7 +83,7 @@ core/guardrails/        PII redactor, input guard
 core/storage/           SQLAlchemy tables, repositories, connection pool
 core/document_processing/  Docling / OCR parsing
 migrations/             Alembic schema migrations
-frontends/<client>/       per-client frontend (chat widget), consumes the API
+frontends/widget/         chat widget (Next.js); client deployments customise it on a branch
 frontends/admin/          admin web shared by every deployment (Vite + React)
 app.py                  internal Streamlit demo of the chat API
 docs/DEPLOYMENT.md      VPS deployment, embedding, backups, operations
@@ -96,7 +96,8 @@ See [docs/DEPLOYMENT.md#local-development](docs/DEPLOYMENT.md#local-development)
 ```bash
 ruff check .
 pytest                                  # unit tests; integration tests need TEST_DATABASE_URL
-cd frontends/<client> && npm run lint && npx tsc --noEmit && npm run build
+cd frontends/widget && npm run lint && npx next typegen && npx tsc --noEmit && npm run build
+cd frontends/admin && npm run lint && npm run typecheck && npm test && npm run build
 ```
 
 API documentation: `http://localhost:8500/docs` (disabled when `APP_ENV=production`).
