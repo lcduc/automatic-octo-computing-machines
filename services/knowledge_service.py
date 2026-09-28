@@ -12,10 +12,12 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 # Local imports
+from config.settings import Config
 from core.retrieval.knowledge_index import KnowledgeIndex
 from core.storage.database import Database
-from core.storage.knowledge_repository import KnowledgeRepository
+from core.storage.knowledge_repository import IngestionQueueStats, KnowledgeRepository
 from core.storage.tables.knowledge_tables import (
+    DOCUMENT_STATUS_FAILED,
     DOCUMENT_STATUS_PROCESSING,
     DOCUMENT_STATUS_READY,
     KnowledgeChunk,
@@ -25,6 +27,7 @@ from core.storage.tables.knowledge_tables import (
 from core.storage.upload_store import UploadStore
 from .errors import ConflictError, InvalidRequestError, NotFoundError
 from .ingestion_service import IngestionService
+from .ingestion_worker import CLAIM_LEASE_SECONDS
 
 logger = logging.getLogger(__name__)
 
@@ -184,15 +187,23 @@ class KnowledgeService:
         The document is returned immediately with status ``processing``; it
         becomes ``ready`` (or ``failed`` with an error) once the worker is done.
 
+        A previously *failed* upload of the same file in the same source is
+        replaced, so retrying never needs a manual delete first.
+
         Raises:
-            InvalidRequestError: Empty file, unsupported type or unknown source.
-            ConflictError: The same file already exists in this source.
+            InvalidRequestError: Empty file, unsupported type, too many PDF pages or unknown source.
+            ConflictError: The same file already exists (queued or ready) in this source.
         """
         extension = Path(filename).suffix.lower()
         if not content:
             raise InvalidRequestError("The file is empty")
         if extension not in self._ingestion.supported_extensions():
             raise InvalidRequestError(f"Unsupported file type '{extension}'")
+        if extension == ".pdf":
+            pages = await asyncio.to_thread(self._ingestion.pdf_page_count, content)
+            max_pages = Config.File.MAX_PDF_PAGES()
+            if pages is not None and pages > max_pages:
+                raise InvalidRequestError(f"The PDF has {pages} pages; the maximum is {max_pages}. Split it and upload the parts.")
         content_hash = hashlib.sha256(content).hexdigest()
 
         stored = False
@@ -201,7 +212,11 @@ class KnowledgeService:
                 repository = KnowledgeRepository(session)
                 source = await self._require_source(repository, source_name)
                 duplicate = await repository.find_by_hash(source.id, content_hash)
-                if duplicate is not None:
+                if duplicate is not None and duplicate.status == DOCUMENT_STATUS_FAILED:
+                    # Retrying a failed upload replaces it rather than being refused as a duplicate.
+                    logger.info("Replacing failed document %s with a new upload of %s", duplicate.id, filename)
+                    await repository.delete(duplicate)
+                elif duplicate is not None:
                     raise ConflictError(f"This file already exists in '{source_name}' as '{duplicate.title}'")
                 document = KnowledgeDocument(
                     source_id=source.id,
@@ -412,6 +427,14 @@ class KnowledgeService:
     # ------------------------------------------------------------------
     # Maintenance
     # ------------------------------------------------------------------
+
+    async def ingestion_queue(self) -> IngestionQueueStats:
+        """
+        State of the upload queue. ``pending`` uploads with none ``in_progress``
+        for long means the ingestion worker is down or stuck.
+        """
+        async with self._database.session() as session:
+            return await KnowledgeRepository(session).ingestion_queue_stats(CLAIM_LEASE_SECONDS)
 
     async def refresh_index_if_ingested(self) -> bool:
         """

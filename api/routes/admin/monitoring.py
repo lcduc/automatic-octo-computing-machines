@@ -15,7 +15,7 @@ from fastapi.responses import StreamingResponse
 # Local imports
 from api.container import AppContainer
 from api.dependencies import READ_ROLES, WRITE_ROLES, get_container, require_admin
-from api.schemas.admin import LogEntry, SystemStatus
+from api.schemas.admin import IngestionQueueStatus, LogEntry, SystemStatus
 from api.schemas.common import MessageResponse
 from api.sse import STREAM_HEADERS, sse_stream
 from config.settings import Config
@@ -67,8 +67,9 @@ async def logs(
 
 @router.get("/system", response_model=SystemStatus, dependencies=[read_access])
 async def system_status(container: AppContainer = Depends(get_container)) -> SystemStatus:
-    """Health, index size, models and cache statistics."""
+    """Health, index size, models, cache statistics and the upload queue."""
     snapshot = container.index.snapshot
+    queue = await container.knowledge.ingestion_queue()
     return SystemStatus(
         version=APP_VERSION,
         uptime_seconds=round(time.time() - container.started_at, 1),
@@ -82,6 +83,11 @@ async def system_status(container: AppContainer = Depends(get_container)) -> Sys
         reranker_loaded=container.reranker is not None,
         cache=container.pipeline.cache.get_stats(),
         fallback_mode=container.settings.all()["fallback_mode"],
+        ingestion_queue=IngestionQueueStatus(
+            pending=queue.pending,
+            in_progress=queue.in_progress,
+            oldest_pending_seconds=queue.oldest_pending_seconds,
+        ),
     )
 
 

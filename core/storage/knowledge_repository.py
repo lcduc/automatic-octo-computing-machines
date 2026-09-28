@@ -37,6 +37,15 @@ class ClaimedUpload:
 
 
 @dataclass(frozen=True)
+class IngestionQueueStats:
+    """Snapshot of the ingestion queue for monitoring."""
+
+    pending: int
+    in_progress: int
+    oldest_pending_seconds: Optional[float]
+
+
+@dataclass(frozen=True)
 class IndexRow:
     """The columns the in-memory index needs for one searchable chunk."""
 
@@ -238,6 +247,21 @@ class KnowledgeRepository:
             .where(KnowledgeDocument.id == document_id, KnowledgeDocument.status == DOCUMENT_STATUS_PROCESSING)
             .values(claimed_at=None, attempts=func.greatest(KnowledgeDocument.attempts - 1, 0))
             .execution_options(synchronize_session=False)
+        )
+
+    async def ingestion_queue_stats(self, lease_seconds: int) -> "IngestionQueueStats":
+        """Pending uploads, how many a live worker holds, and how long the oldest has waited."""
+        live_claim = KnowledgeDocument.claimed_at >= func.now() - timedelta(seconds=lease_seconds)
+        result = await self._session.execute(
+            select(
+                func.count(),
+                func.count().filter(live_claim),
+                func.extract("epoch", func.now() - func.min(KnowledgeDocument.created_at)),
+            ).where(KnowledgeDocument.status == DOCUMENT_STATUS_PROCESSING)
+        )
+        pending, in_progress, oldest_age = result.one()
+        return IngestionQueueStats(
+            int(pending), int(in_progress), float(oldest_age) if oldest_age is not None else None
         )
 
     async def latest_processed_at(self) -> Optional[datetime]:

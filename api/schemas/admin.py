@@ -242,6 +242,16 @@ class LogEntry(BaseModel):
     exception: Optional[str] = None
 
 
+class IngestionQueueStatus(BaseModel):
+    """Uploads waiting for or being processed by the ingestion worker."""
+
+    pending: int = Field(description="Uploads not yet ready or failed (includes in_progress)")
+    in_progress: int = Field(description="Uploads a live worker is parsing right now")
+    oldest_pending_seconds: Optional[float] = Field(
+        None, description="How long the oldest pending upload has waited; growing with in_progress=0 means the worker is down"
+    )
+
+
 class SystemStatus(BaseModel):
     """Runtime health and configuration overview."""
 
@@ -257,3 +267,4 @@ class SystemStatus(BaseModel):
     reranker_loaded: bool
     cache: Dict[str, Any]
     fallback_mode: str
+    ingestion_queue: IngestionQueueStatus

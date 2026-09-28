@@ -190,6 +190,8 @@ def test_knowledge_chat_feedback_and_admin_views(client):
     assert summary["totals"]["completion_tokens"] >= 60
     assert summary["outcomes"]["answered"] == 2
     assert client.get("/api/v1/admin/logs?contains=chat/stream", headers=admin).status_code == 200
+    system = client.get("/api/v1/admin/system", headers=admin).json()
+    assert system["ingestion_queue"] == {"pending": 0, "in_progress": 0, "oldest_pending_seconds": None}
 
 
 def test_fallback_modes_skip_the_llm_and_record_handoffs(client):
