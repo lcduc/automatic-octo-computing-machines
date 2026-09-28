@@ -5,8 +5,9 @@
 #   api              -> postgres :5432 (pgvector)     [internal network only]
 #   ingestion-worker -> postgres (parses/OCRs uploads queued by api; shares ./data)
 #
-# Configuration: `.env` (backend + database; `FRONTEND` picks the client folder
-# under frontends/) and `frontends/<client>/.env` (web). See docs/DEPLOYMENT.md.
+# Configuration: `.env` (backend + database) and `frontends/widget/.env` (chat
+# widget). A client deployment is a branch that customises frontends/widget.
+# See docs/DEPLOYMENT.md.
 
 name: chatbot
 
@@ -97,9 +98,9 @@ services:
     stop_grace_period: 30s
 
   web:
-    build: ./frontends/${FRONTEND:?set FRONTEND in .env to a folder under frontends/}
+    build: ./frontends/widget
     restart: unless-stopped
-    env_file: ./frontends/${FRONTEND}/.env
+    env_file: ./frontends/widget/.env
     environment:
       BACKEND_URL: http://api:8500
     depends_on:

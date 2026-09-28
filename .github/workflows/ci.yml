@@ -81,6 +81,28 @@ jobs:
       - name: Run tests
         run: pytest
 
+  widget:
+    name: Chat widget (lint, types, build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontends/widget
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontends/widget/package-lock.json
+
+      - run: npm ci --no-audit --no-fund
+      - run: npm run lint
+      - run: npx next typegen
+      - run: npx tsc --noEmit
+      - run: npm run build
+
   admin-web:
     name: Admin web (lint, types, tests, build)
     runs-on: ubuntu-latest
