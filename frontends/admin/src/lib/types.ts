@@ -207,6 +207,21 @@ export interface Handoff {
   updated_at: string;
 }
 
+export interface DailyMetrics {
+  day: string;
+  turns: number;
+  conversations: number;
+  errors: number;
+  handoffs: number;
+  p50_latency_ms: number | null;
+  p95_latency_ms: number | null;
+  p95_first_token_ms: number | null;
+  prompt_tokens: number;
+  completion_tokens: number;
+  cost_micro_usd: number;
+  breakdown: Record<string, unknown>;
+}
+
 export interface MessageTrace {
   message_id: string;
   route: string | null;

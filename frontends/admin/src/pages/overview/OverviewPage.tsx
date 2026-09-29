@@ -9,6 +9,7 @@ import { useSession } from "../../lib/session";
 import { OUTCOMES, type MessageResponse, type SystemStatus, type UsageSummary } from "../../lib/types";
 import { useApi } from "../../lib/use-api";
 import { LiveFeed } from "./LiveFeed";
+import { MonthlyHistory } from "./MonthlyHistory";
 import { TokenChart } from "./TokenChart";
 
 const PERIODS = [1, 7, 30] as const;
@@ -162,6 +163,10 @@ export function OverviewPage() {
           )}
         </Card>
       </div>
+
+      <Card title={t("history.title")} flush>
+        <MonthlyHistory />
+      </Card>
 
       {confirming && (
         <ConfirmDialog
