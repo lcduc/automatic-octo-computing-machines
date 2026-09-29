@@ -6,6 +6,7 @@ feedback, handoffs, usage, logs and system status.
 # Standard library imports
 import uuid
 from datetime import datetime
+from decimal import Decimal
 from typing import Any, Dict, List, Literal, Optional
 
 # Third-party imports
@@ -119,6 +120,26 @@ class ApiKeyCreated(ApiKeyOut):
     key: str
 
 
+# ---------------------------------------------------------------- prices
+
+
+class ModelPriceIn(BaseModel):
+    """What one model costs, in USD per million tokens."""
+
+    input_usd_per_million: Decimal = Field(..., ge=0, le=10_000, decimal_places=6)
+    output_usd_per_million: Decimal = Field(..., ge=0, le=10_000, decimal_places=6)
+
+
+class ModelPriceOut(ApiModel):
+    """A model's price as stored."""
+
+    model: str
+    input_usd_per_million: Decimal
+    output_usd_per_million: Decimal
+    updated_by: Optional[str] = None
+    updated_at: datetime
+
+
 # ---------------------------------------------------------------- settings
 
 
@@ -127,6 +148,10 @@ MODEL_NAME_PATTERN = r"^[A-Za-z0-9._:/\-]+$"
 MAX_MODEL_NAME = 100
 #: Upper bound for top-k and context chunks set from the admin web.
 MAX_RETRIEVAL_CHUNKS = 20
+#: Upper bounds for limits set from the admin web.
+MAX_REQUEST_LIMIT = 100_000
+MAX_TOKEN_BUDGET = 1_000_000_000
+MAX_SPEND_CAP_USD = 1_000_000
 
 
 class SettingsUpdate(BaseModel):
@@ -149,6 +174,16 @@ class SettingsUpdate(BaseModel):
     semantic_weight: Optional[float] = Field(None, ge=0.0, le=1.0)
     retrieval_top_k: Optional[int] = Field(None, ge=1, le=MAX_RETRIEVAL_CHUNKS)
     max_context_chunks: Optional[int] = Field(None, ge=1, le=MAX_RETRIEVAL_CHUNKS)
+    # Limits per tier (0 = unlimited) and the monthly spend cap (0 = no cap).
+    limit_anonymous_per_minute: Optional[int] = Field(None, ge=0, le=MAX_REQUEST_LIMIT)
+    limit_anonymous_per_hour: Optional[int] = Field(None, ge=0, le=MAX_REQUEST_LIMIT)
+    tokens_anonymous_per_day: Optional[int] = Field(None, ge=0, le=MAX_TOKEN_BUDGET)
+    limit_user_per_minute: Optional[int] = Field(None, ge=0, le=MAX_REQUEST_LIMIT)
+    limit_user_per_hour: Optional[int] = Field(None, ge=0, le=MAX_REQUEST_LIMIT)
+    tokens_user_per_day: Optional[int] = Field(None, ge=0, le=MAX_TOKEN_BUDGET)
+    tokens_ip_per_day: Optional[int] = Field(None, ge=0, le=MAX_TOKEN_BUDGET)
+    spend_cap_monthly_usd: Optional[float] = Field(None, ge=0, le=MAX_SPEND_CAP_USD)
+    spend_anonymous_cutoff_ratio: Optional[float] = Field(None, ge=0.0, le=1.0)
 
 
 # ---------------------------------------------------------------- conversations

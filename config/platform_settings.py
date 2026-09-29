@@ -12,7 +12,7 @@ from typing import List
 from urllib.parse import quote_plus
 
 # Local imports
-from .env import env_bool, env_int, env_list, env_str
+from .env import env_bool, env_float, env_int, env_list, env_str
 
 logger = logging.getLogger(__name__)
 
@@ -157,19 +157,54 @@ class SecurityConfig:
         return env_int("ADMIN_TOKEN_TTL_MINUTES", 480)
 
     @staticmethod
+    def RATE_LIMIT_ANONYMOUS_PER_MINUTE() -> int:
+        """Chat messages an anonymous visitor may send per minute (0 = unlimited)."""
+        return env_int("RATE_LIMIT_ANONYMOUS_PER_MINUTE", 10)
+
+    @staticmethod
+    def RATE_LIMIT_ANONYMOUS_PER_HOUR() -> int:
+        """Chat messages an anonymous visitor may send per hour."""
+        return env_int("RATE_LIMIT_ANONYMOUS_PER_HOUR", 60)
+
+    @staticmethod
+    def TOKEN_BUDGET_ANONYMOUS_PER_DAY() -> int:
+        """LLM tokens (prompt + completion) an anonymous visitor may consume per local day."""
+        return env_int("TOKEN_BUDGET_ANONYMOUS_PER_DAY", 30000)
+
+    @staticmethod
     def RATE_LIMIT_USER_PER_MINUTE() -> int:
-        """Chat requests allowed per end user per minute."""
+        """Chat messages a signed-in user may send per minute."""
         return env_int("RATE_LIMIT_USER_PER_MINUTE", 20)
+
+    @staticmethod
+    def RATE_LIMIT_USER_PER_HOUR() -> int:
+        """Chat messages a signed-in user may send per hour."""
+        return env_int("RATE_LIMIT_USER_PER_HOUR", 200)
+
+    @staticmethod
+    def TOKEN_BUDGET_USER_PER_DAY() -> int:
+        """LLM tokens a signed-in user may consume per local day."""
+        return env_int("TOKEN_BUDGET_USER_PER_DAY", 200000)
+
+    @staticmethod
+    def TOKEN_BUDGET_IP_PER_DAY() -> int:
+        """LLM tokens all visitors behind one IP may consume per local day."""
+        return env_int("TOKEN_BUDGET_IP_PER_DAY", 400000)
+
+    @staticmethod
+    def SPEND_CAP_MONTHLY_USD() -> float:
+        """Monthly LLM spend cap in USD (0 disables it); needs model prices in the admin web."""
+        return env_float("SPEND_CAP_MONTHLY_USD", 0.0)
+
+    @staticmethod
+    def SPEND_ANONYMOUS_CUTOFF_RATIO() -> float:
+        """Share of the monthly cap after which anonymous visitors are paused."""
+        return env_float("SPEND_ANONYMOUS_CUTOFF_RATIO", 0.9)
 
     @staticmethod
     def RATE_LIMIT_IP_PER_MINUTE() -> int:
         """Requests allowed per client IP per minute, across all endpoints."""
         return env_int("RATE_LIMIT_IP_PER_MINUTE", 120)
-
-    @staticmethod
-    def DAILY_TOKEN_BUDGET_PER_USER() -> int:
-        """LLM tokens (prompt + completion) one end user may consume per day; 0 = unlimited."""
-        return env_int("DAILY_TOKEN_BUDGET_PER_USER", 60000)
 
     @staticmethod
     def MAX_CONCURRENT_CHATS() -> int:

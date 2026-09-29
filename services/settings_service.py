@@ -20,6 +20,7 @@ from core.agent.prompts import AutoReplies
 from core.storage.database import Database
 from core.storage.tables.access_tables import AppSetting
 from models.chat_turn import FALLBACK_MODES, ChatPolicy
+from models.usage_policy import UsagePolicy
 from .errors import InvalidRequestError
 
 logger = logging.getLogger(__name__)
@@ -48,6 +49,15 @@ def _defaults() -> Dict[str, Any]:
         "semantic_weight": Config.RAG.SEMANTIC_WEIGHT(),
         "retrieval_top_k": Config.RAG.RETRIEVAL_TOP_K(),
         "max_context_chunks": Config.RAG.MAX_CONTEXT_CHUNKS(),
+        "limit_anonymous_per_minute": Config.Security.RATE_LIMIT_ANONYMOUS_PER_MINUTE(),
+        "limit_anonymous_per_hour": Config.Security.RATE_LIMIT_ANONYMOUS_PER_HOUR(),
+        "tokens_anonymous_per_day": Config.Security.TOKEN_BUDGET_ANONYMOUS_PER_DAY(),
+        "limit_user_per_minute": Config.Security.RATE_LIMIT_USER_PER_MINUTE(),
+        "limit_user_per_hour": Config.Security.RATE_LIMIT_USER_PER_HOUR(),
+        "tokens_user_per_day": Config.Security.TOKEN_BUDGET_USER_PER_DAY(),
+        "tokens_ip_per_day": Config.Security.TOKEN_BUDGET_IP_PER_DAY(),
+        "spend_cap_monthly_usd": Config.Security.SPEND_CAP_MONTHLY_USD(),
+        "spend_anonymous_cutoff_ratio": Config.Security.SPEND_ANONYMOUS_CUTOFF_RATIO(),
     }
 
 
@@ -106,6 +116,21 @@ class SettingsService:
             semantic_weight=values["semantic_weight"],
             retrieval_top_k=values["retrieval_top_k"],
             max_context_chunks=values["max_context_chunks"],
+        )
+
+    def usage_policy(self) -> UsagePolicy:
+        """Current request limits, token budgets and spend cap."""
+        values = self._values
+        return UsagePolicy(
+            anonymous_per_minute=int(values["limit_anonymous_per_minute"]),
+            anonymous_per_hour=int(values["limit_anonymous_per_hour"]),
+            anonymous_tokens_per_day=int(values["tokens_anonymous_per_day"]),
+            user_per_minute=int(values["limit_user_per_minute"]),
+            user_per_hour=int(values["limit_user_per_hour"]),
+            user_tokens_per_day=int(values["tokens_user_per_day"]),
+            ip_tokens_per_day=int(values["tokens_ip_per_day"]),
+            spend_cap_usd=float(values["spend_cap_monthly_usd"]),
+            anonymous_cutoff_ratio=float(values["spend_anonymous_cutoff_ratio"]),
         )
 
     @staticmethod

@@ -105,6 +105,13 @@ class AutoReplies:
     TIMEOUT = "Xin lỗi, hệ thống phản hồi quá lâu. Bạn vui lòng thử lại với câu hỏi ngắn gọn hơn."
     BUSY = "Hệ thống đang quá tải. Bạn vui lòng thử lại sau giây lát."
     BUDGET_EXCEEDED = "Bạn đã dùng hết lượt hỏi đáp trong hôm nay. Vui lòng quay lại vào ngày mai."
+    #: Monthly spend cap nearly reached: anonymous visitors are paused first.
+    SPEND_PAUSED_ANONYMOUS = (
+        "Trợ lý ảo tạm ngừng phục vụ khách chưa đăng nhập. "
+        "Bạn vui lòng đăng nhập để tiếp tục, hoặc quay lại sau."
+    )
+    #: Monthly spend cap reached for everyone.
+    SPEND_PAUSED = "Trợ lý ảo tạm ngừng hoạt động. Bạn vui lòng quay lại sau hoặc liên hệ bộ phận hỗ trợ."
     RATE_LIMITED = "Bạn gửi tin nhắn quá nhanh. Vui lòng thử lại sau ít giây."
 
 

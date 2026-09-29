@@ -187,17 +187,8 @@ class ConversationRepository:
     # Token usage and statistics
     # ------------------------------------------------------------------
 
-    async def tokens_used_since(self, end_user_id: str, since: datetime) -> int:
-        """Prompt + completion tokens an end user consumed since ``since``."""
-        result = await self._session.execute(
-            select(func.coalesce(func.sum(TokenUsage.prompt_tokens + TokenUsage.completion_tokens), 0)).where(
-                TokenUsage.end_user_id == end_user_id, TokenUsage.created_at >= since
-            )
-        )
-        return int(result.scalar_one())
-
     async def usage_by_day(self, since: datetime) -> List[Dict[str, Any]]:
-        """Daily token totals per model since ``since``."""
+        """Daily token and cost totals per model since ``since``."""
         day = cast(TokenUsage.created_at, Date)
         result = await self._session.execute(
             select(
@@ -205,6 +196,7 @@ class ConversationRepository:
                 TokenUsage.model,
                 func.sum(TokenUsage.prompt_tokens).label("prompt_tokens"),
                 func.sum(TokenUsage.completion_tokens).label("completion_tokens"),
+                func.sum(TokenUsage.cost_micro_usd).label("cost_micro_usd"),
                 func.count(TokenUsage.id).label("calls"),
             )
             .where(TokenUsage.created_at >= since)
@@ -223,6 +215,20 @@ class ConversationRepository:
             )
             .where(TokenUsage.created_at >= since)
             .group_by(TokenUsage.purpose)
+        )
+        return [dict(row._mapping) for row in result.all()]
+
+    async def cost_by_tier(self, since: datetime) -> List[Dict[str, Any]]:
+        """Tokens and cost per caller tier since ``since`` (ADM-07)."""
+        tier = func.coalesce(TokenUsage.tier, "anonymous")
+        result = await self._session.execute(
+            select(
+                tier.label("tier"),
+                func.sum(TokenUsage.prompt_tokens + TokenUsage.completion_tokens).label("tokens"),
+                func.sum(TokenUsage.cost_micro_usd).label("cost_micro_usd"),
+            )
+            .where(TokenUsage.created_at >= since)
+            .group_by(tier)
         )
         return [dict(row._mapping) for row in result.all()]
 
