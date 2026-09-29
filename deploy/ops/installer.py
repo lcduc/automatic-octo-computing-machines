@@ -153,3 +153,6 @@ class Installer:
         out(f'    <script src="https://{answers.chat_domain}/embed.js" defer></script>')
         out(f"  Hand-over files: {self._context.layout.handover_dir}")
         out("  Backups run nightly (cron installed by install.sh); `chatbot backup` runs one now.")
+        warning = answers.retention_warning()
+        if warning:
+            out(f"  WARNING: {warning}")

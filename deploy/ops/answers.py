@@ -11,7 +11,7 @@ import re
 import tomllib
 from dataclasses import dataclass, field, fields
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Tuple
 from urllib.parse import urlsplit
 
 # Local imports
@@ -22,6 +22,8 @@ DOMAIN_PATTERN = re.compile(r"^(?=.{1,253}$)(?!-)[a-z0-9-]{1,63}(?<!-)(\.(?!-)[a
 EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 #: Top-level keys of the answers file.
 TOP_LEVEL_ANSWERS = ("chat_domain", "admin_domain", "host_origin", "admin_email", "openai_api_key")
+#: Optional top-level keys of the answers file.
+OPTIONAL_ANSWERS = ("sector",)
 #: Tables of the answers file (``env`` passes extra settings straight into .env).
 ANSWER_SECTIONS = ("backup", "alert", "host_auth", "business_db", "env")
 #: Hosts a development/staging host page may use over plain HTTP.
@@ -30,6 +32,15 @@ ALERT_CHANNELS = ("telegram", "slack", "smtp")
 HOST_AUTH_MODES = ("rs256", "hs256", "none")
 DEFAULT_HOST_TIERS = "user,premium"
 DEFAULT_BACKUP_KEEP_DAYS = 30
+#: The client's line of business (RET-R6); decides whether to warn about sector retention rules.
+SECTORS = ("general", "finance", "healthcare", "labor_legal", "education", "retail", "public")
+DEFAULT_SECTOR = "general"
+#: Sectors whose own rules may require keeping records longer than the default retention.
+RETENTION_SENSITIVE_SECTORS = {
+    "finance": "banking, securities and insurance rules often require multi-year records",
+    "healthcare": "medical-record rules can require keeping records for many years",
+    "labor_legal": "labour and legal disputes may need records past the statute of limitations",
+}
 
 
 class AnswersError(ValueError):
@@ -105,6 +116,8 @@ class InstallAnswers:
     host_auth: HostAuthAnswers = field(default_factory=HostAuthAnswers)
     business_db: BusinessDbAnswers = field(default_factory=BusinessDbAnswers)
     extra_env: Dict[str, str] = field(default_factory=dict)
+    #: One of ``SECTORS``.
+    sector: str = DEFAULT_SECTOR
 
     # ------------------------------------------------------------------
     # Validation
@@ -136,7 +149,17 @@ class InstallAnswers:
             issues.append("host_auth.jwks_url must be an https:// URL")
         if self.business_db.url and not self.business_db.url.startswith("postgresql+asyncpg://"):
             issues.append("business_db.url must be a postgresql+asyncpg:// URL of a read-only role")
+        if self.sector not in SECTORS:
+            issues.append(f"sector must be one of {', '.join(SECTORS)}")
         return issues
+
+    def retention_warning(self) -> Optional[str]:
+        """Why the default retention may be too short for this client's sector, if it may."""
+        reason = RETENTION_SENSITIVE_SECTORS.get(self.sector)
+        if reason is None:
+            return None
+        return (f"Sector '{self.sector}': {reason}. Confirm the retention periods with the client and set them "
+                "in the admin web (Settings > Privacy) before go-live.")
 
     def _origin_problems(self) -> List[str]:
         """Each host origin must be scheme://host[:port] with no path."""
@@ -234,6 +257,7 @@ class InstallAnswers:
             "BACKUP_SFTP_PASSWORD": backup.sftp_password,
             "BACKUP_SFTP_KEY_FILE": backup.sftp_key_file,
             "BACKUP_KEEP_DAYS": str(backup.keep_days),
+            "CLIENT_SECTOR": self.sector,
         }
 
 
@@ -262,7 +286,7 @@ class AnswersFile:
             AnswersError: Unknown keys, malformed numbers or missing required answers.
         """
         missing = [name for name in TOP_LEVEL_ANSWERS if not str(data.get(name, "")).strip()]
-        unknown = [key for key in data if key not in TOP_LEVEL_ANSWERS + ANSWER_SECTIONS]
+        unknown = [key for key in data if key not in TOP_LEVEL_ANSWERS + OPTIONAL_ANSWERS + ANSWER_SECTIONS]
         backup_data, backup_unknown = _section(data.get("backup", {}), BackupAnswers)
         alert_data, alert_unknown = _section(data.get("alert", {}), AlertAnswers)
         host_auth_data, host_auth_unknown = _section(data.get("host_auth", {}), HostAuthAnswers)
@@ -287,6 +311,7 @@ class AnswersFile:
             host_auth=HostAuthAnswers(**host_auth_data),
             business_db=BusinessDbAnswers(**business_db_data),
             extra_env={str(key): str(value) for key, value in data.get("env", {}).items()},
+            sector=str(data.get("sector", DEFAULT_SECTOR)).strip().lower(),
         )
 
 

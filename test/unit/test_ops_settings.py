@@ -59,6 +59,7 @@ def test_valid_answers_map_to_app_and_ops_settings(tmp_path):
         ({"backup": {"target": "ftp://x"}}, "backup.target"),
         ({"host_auth": {"mode": "oauth"}}, "host_auth.mode"),
         ({"host_auth": {"jwks_url": "http://host/jwks"}}, "https://"),
+        ({"sector": "banking"}, "sector must be one of"),
     ],
 )
 def test_invalid_answers_are_all_reported(change, fragment):
@@ -73,6 +74,17 @@ def test_answers_file_rejects_unknown_and_missing_keys():
     incomplete = {key: value for key, value in VALID_ANSWERS.items() if key != "openai_api_key"}
     with pytest.raises(AnswersError, match="missing: openai_api_key"):
         AnswersFile.from_mapping(incomplete)
+
+
+def test_sector_defaults_to_general_and_warns_for_regulated_sectors(tmp_path):
+    general = AnswersFile.from_mapping(VALID_ANSWERS)
+    assert general.sector == "general" and general.retention_warning() is None
+    finance = AnswersFile.from_mapping({**VALID_ANSWERS, "sector": "Finance"})
+    finance.validate()
+    assert "Confirm the retention periods" in finance.retention_warning()
+    env, ops_env = EnvFile(tmp_path / ".env"), EnvFile(tmp_path / "ops.env")
+    finance.apply(env, ops_env)
+    assert ops_env.get("CLIENT_SECTOR") == "finance" and env.get("CLIENT_SECTOR") is None
 
 
 def test_local_http_origin_is_allowed_for_staging_host_pages():

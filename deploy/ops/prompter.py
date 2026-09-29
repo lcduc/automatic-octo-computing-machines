@@ -13,8 +13,10 @@ from typing import Callable, Dict, Optional
 from .answers import (
     ALERT_CHANNELS,
     DEFAULT_BACKUP_KEEP_DAYS,
+    DEFAULT_SECTOR,
     DOMAIN_PATTERN,
     EMAIL_PATTERN,
+    SECTORS,
     AlertAnswers,
     AnswersError,
     BackupAnswers,
@@ -85,6 +87,8 @@ class InteractivePrompter:
             backup=self._backup(current),
             alert=self._alert(current),
             openai_api_key=self._question("OpenAI API key", current.get("OPENAI_API_KEY"), secret=True),
+            sector=self._question(f"Client sector ({' | '.join(SECTORS)})", current.get("CLIENT_SECTOR", DEFAULT_SECTOR),
+                                  lambda value: None if value.lower() in SECTORS else f"choose one of {', '.join(SECTORS)}").lower(),
         )
         answers.validate()
         return answers
