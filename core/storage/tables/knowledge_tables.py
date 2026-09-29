@@ -9,12 +9,12 @@ retrievable passages, each carrying its own embedding.
 
 # Standard library imports
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, Dict, List, Optional
 
 # Third-party imports
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text, false, text
+from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Index, Integer, String, Text, false, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -82,6 +82,19 @@ class KnowledgeDocument(Base):
     extracted_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True, deferred=True)
     #: How ``extracted_text`` was produced (docling, ocr, local, text); ``None`` = not stored.
     extraction_method: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
+    #: Lowest caller tier that may be answered from this document (``anonymous`` = everyone).
+    access_tier: Mapped[str] = mapped_column(String(16), nullable=False, default="anonymous", server_default="anonymous")
+    #: ``vi``, ``en`` or ``mixed``.
+    language: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
+    #: Free-form version label, e.g. "2026-01" or "v3".
+    version: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    #: The document is answered from only between these dates (inclusive); ``None`` = open-ended.
+    effective_from: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    effective_to: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    #: The earlier version this document replaces (its ``effective_to`` is closed automatically).
+    supersedes_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("knowledge_documents.id", ondelete="SET NULL"), nullable=True
+    )
     created_at: Mapped[datetime] = created_at_column()
     updated_at: Mapped[datetime] = updated_at_column()
 
