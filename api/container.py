@@ -45,6 +45,7 @@ from services.log_service import LogService
 from services.metrics_rollup_service import MetricsRollupService
 from services.live_feed_service import LiveFeedService, asyncpg_dsn
 from services.pricing_service import PricingService
+from services.privacy_service import PrivacyService
 from services.rate_limit_service import RateLimitService, TimeBuckets
 from services.readiness_service import ReadinessService
 from services.settings_service import SettingsService
@@ -83,6 +84,7 @@ class AppContainer:
         self.live_feed = LiveFeedService(self.database, asyncpg_dsn(Config.Database.DATABASE_URL()))
         self.handoffs = HandoffService(self.database, self.live_feed, self.settings, SmtpMailer.from_config())
         self.conversations = ConversationService(self.database, self.handoffs, self.settings)
+        self.privacy = PrivacyService(self.database)
         self.auth = AuthService(
             self.database,
             Config.Security.ADMIN_JWT_SECRET(),

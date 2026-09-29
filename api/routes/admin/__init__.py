@@ -12,7 +12,9 @@ from .configuration import router as configuration_router
 from .conversations import router as conversations_router
 from .knowledge import router as knowledge_router
 from .monitoring import router as monitoring_router
+from .privacy import router as privacy_router
 
 router = APIRouter(prefix="/admin")
-for child in (auth_router, knowledge_router, conversations_router, monitoring_router, configuration_router, audit_router):
+for child in (auth_router, knowledge_router, conversations_router, monitoring_router, configuration_router, audit_router,
+              privacy_router):
     router.include_router(child)

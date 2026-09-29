@@ -237,6 +237,7 @@ class ConversationSummary(ApiModel):
     channel: str
     status: str
     message_count: int
+    legal_hold: bool = False
     created_at: datetime
     last_activity_at: datetime
 
@@ -364,6 +365,7 @@ class HandoffOut(BaseModel):
     emailed_at: Optional[datetime] = None
     due_at: Optional[datetime] = None
     closed_at: Optional[datetime] = None
+    legal_hold: bool = False
     created_at: datetime
     updated_at: datetime
 
@@ -377,7 +379,8 @@ class HandoffOut(BaseModel):
             has_contact=bool(request.contact_email or request.contact_phone), consent_at=request.consent_at,
             details=request.details, assigned_to=request.assigned_to, answer=request.answer,
             answered_at=request.answered_at, emailed_at=request.emailed_at, due_at=request.due_at,
-            closed_at=request.closed_at, created_at=request.created_at, updated_at=request.updated_at,
+            closed_at=request.closed_at, legal_hold=request.legal_hold,
+            created_at=request.created_at, updated_at=request.updated_at,
         )
 
 
