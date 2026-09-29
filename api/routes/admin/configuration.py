@@ -7,12 +7,23 @@ import uuid
 from typing import Any, Dict, List
 
 # Third-party imports
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Path
 
 # Local imports
 from api.container import AppContainer
 from api.dependencies import OWNER_ROLES, READ_ROLES, WRITE_ROLES, get_container, require_admin
-from api.schemas.admin import ApiKeyCreate, ApiKeyCreated, ApiKeyOut, ApiKeyRotate, SettingsUpdate
+from api.schemas.admin import (
+    ApiKeyCreate,
+    ApiKeyCreated,
+    ApiKeyOut,
+    ApiKeyRotate,
+    MAX_MODEL_NAME,
+    MODEL_NAME_PATTERN,
+    ModelPriceIn,
+    ModelPriceOut,
+    SettingsUpdate,
+)
+from api.schemas.common import MessageResponse
 from services.auth_service import AdminPrincipal
 
 router = APIRouter(tags=["Admin: configuration"])
@@ -84,3 +95,30 @@ async def rotate_api_key(key_id: uuid.UUID, body: ApiKeyRotate, container: AppCo
 async def revoke_api_key(key_id: uuid.UUID, container: AppContainer = Depends(get_container)) -> ApiKeyOut:
     """Revoke a key (effective within a minute)."""
     return ApiKeyOut.model_validate(await container.auth.revoke_api_key(key_id))
+
+
+@router.get("/prices", response_model=List[ModelPriceOut], dependencies=[Depends(require_admin(READ_ROLES))])
+async def list_prices(container: AppContainer = Depends(get_container)) -> List[ModelPriceOut]:
+    """LLM prices applied to recorded calls (models without a price cost nothing toward the spend cap)."""
+    return [ModelPriceOut.model_validate(price) for price in await container.pricing.list()]
+
+
+@router.put("/prices/{model:path}", response_model=ModelPriceOut)
+async def set_price(
+    body: ModelPriceIn,
+    model: str = Path(..., min_length=1, max_length=MAX_MODEL_NAME, pattern=MODEL_NAME_PATTERN),
+    principal: AdminPrincipal = Depends(require_admin(OWNER_ROLES)),
+    container: AppContainer = Depends(get_container),
+) -> ModelPriceOut:
+    """Set a model's price; applies to calls recorded from now on."""
+    price = await container.pricing.upsert(
+        model, body.input_usd_per_million, body.output_usd_per_million, principal.email
+    )
+    return ModelPriceOut.model_validate(price)
+
+
+@router.delete("/prices/{model:path}", response_model=MessageResponse, dependencies=[Depends(require_admin(OWNER_ROLES))])
+async def delete_price(model: str, container: AppContainer = Depends(get_container)) -> MessageResponse:
+    """Remove a model's price."""
+    await container.pricing.delete(model)
+    return MessageResponse(message="Price removed")
