@@ -23,6 +23,7 @@ from typing import Any, AsyncIterator, Callable, Dict, List, Optional, Union
 
 # Local imports
 from config.settings import Config
+from core.document_processing.chunking.chunker import section_label
 from core.guardrails.input_guard import GuardAction, InputGuard
 from core.guardrails.topic_matcher import matching_topic
 from core.retrieval.context_builder import ContextAssembler
@@ -384,6 +385,7 @@ class ChatbotService:
                 "title": item.chunk.document_title,
                 "source": item.chunk.source,
                 "url": item.chunk.metadata.get("url"),
+                "section": section_label(item.chunk.metadata),
                 "score": round(item.relevance, 3),
             }
             for item in ranked

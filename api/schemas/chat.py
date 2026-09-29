@@ -46,6 +46,8 @@ class Citation(BaseModel):
     title: str
     source: str
     url: Optional[str] = None
+    #: Where in the document, e.g. "Chương II · Điều 35" or a heading (GEN-03).
+    section: Optional[str] = None
     score: float
 
 
