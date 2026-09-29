@@ -49,10 +49,11 @@ async def update_settings(
 
     A new chat or light model is tried with one tiny request first, so a
     mistyped model name is refused (400) instead of breaking every chat.
+    Retention periods are owner-only (403 for editors).
     """
-    return await container.settings.update(
-        body.model_dump(exclude_unset=True), principal.email, model_check=container.check_model
-    )
+    changes = body.model_dump(exclude_unset=True)
+    container.settings.check_role(changes, principal.role)
+    return await container.settings.update(changes, principal.email, model_check=container.check_model)
 
 
 @router.get("/settings/defaults", dependencies=[Depends(require_admin(READ_ROLES))])
@@ -68,6 +69,7 @@ async def reset_setting(
     container: AppContainer = Depends(get_container),
 ) -> Dict[str, Any]:
     """Drop a saved override so the default applies again."""
+    container.settings.check_role([key], principal.role)
     return await container.settings.reset(key, principal.email)
 
 

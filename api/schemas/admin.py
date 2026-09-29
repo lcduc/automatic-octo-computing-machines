@@ -13,6 +13,7 @@ from typing import Any, Dict, List, Literal, Optional
 from pydantic import BaseModel, Field
 
 # Local imports
+from models.retention_policy import MAX_RETENTION_DAYS, MIN_AUDIT_RETENTION_DAYS, MIN_RETENTION_DAYS
 from services.handoff_service import mask_email, mask_phone
 from .chat import Citation
 from .common import ApiModel
@@ -217,6 +218,12 @@ class SettingsUpdate(BaseModel):
     support_holidays: Optional[List[str]] = Field(None, max_length=MAX_HOLIDAYS)
     ticket_reply_hours: Optional[float] = Field(None, gt=0, le=MAX_TICKET_REPLY_HOURS)
     handoff_topics: Optional[List[str]] = Field(None, max_length=MAX_HANDOFF_TOPICS)
+    # Retention in days (PRV-04), owner-only.
+    retention_chat_days: Optional[int] = Field(None, ge=MIN_RETENTION_DAYS, le=MAX_RETENTION_DAYS)
+    retention_anonymous_chat_days: Optional[int] = Field(None, ge=MIN_RETENTION_DAYS, le=MAX_RETENTION_DAYS)
+    retention_trace_days: Optional[int] = Field(None, ge=MIN_RETENTION_DAYS, le=MAX_RETENTION_DAYS)
+    retention_ticket_days: Optional[int] = Field(None, ge=MIN_RETENTION_DAYS, le=MAX_RETENTION_DAYS)
+    retention_audit_days: Optional[int] = Field(None, ge=MIN_AUDIT_RETENTION_DAYS, le=MAX_RETENTION_DAYS)
 
 
 # ---------------------------------------------------------------- conversations
