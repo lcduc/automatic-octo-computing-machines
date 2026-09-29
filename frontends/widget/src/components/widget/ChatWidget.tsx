@@ -73,7 +73,7 @@ export function ChatWidget({ allowedOrigins }: ChatWidgetProps) {
       </main>
 
       <Composer busy={busy} onSend={send} onStop={stop} />
-      <p className="px-4 pb-2 text-center text-[11px] text-slate-400">
+      <p className="px-4 pb-2 text-center text-xs text-slate-600">
         Trợ lý ảo có thể trả lời chưa chính xác. Vui lòng không chia sẻ thông tin cá nhân nhạy cảm.
       </p>
     </div>
