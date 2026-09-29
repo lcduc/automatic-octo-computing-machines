@@ -113,7 +113,7 @@ Single-tenant env vars (minimum): `HOST_ORIGIN`, `HOST_AUTH_MODE` (`rs256` | `hs
 - [x] ID-01 Server-issued signed random visitor ID on first open (not derived from IP)
 - [x] ID-02 Rate limit by visitor ID AND IP; stricter message/hour and token/day caps than logged-in — Postgres time-bucket counters (minute/hour/day/month), per-IP token budget, editable per tier in the admin web
 - [ ] ID-03 Bot protection (e.g. Cloudflare Turnstile) triggered on abuse signals only
-- [~] ID-04 Access: public documents + public tools only — true only because nothing private exists yet
+- [x] ID-04 Access: public documents + public tools only — document `access_tier` and tool tiers filtered per caller
 
 ### Logged-in (host passes identity)
 - [x] ID-05 Host backend mints short-lived JWT (5–15 min): `sub`, `tier`, `iss`, `aud`, `exp`, `jti`. Host frontend passes it via `postMessage`. `HOST_AUTH_MODE=rs256` (default; JWKS or PEM) \| `hs256` (fallback, startup warning) \| `none` (anonymous-only) — host-sdk snippets for Node/PHP/Python verified against the backend
@@ -137,7 +137,7 @@ Single-tenant env vars (minimum): `HOST_ORIGIN`, `HOST_AUTH_MODE` (`rs256` | `hs
 - [~] ING-05 NFC normalization (Invariant 6) — only in the Q&A chunking strategy
 - [ ] ING-06 Diacritic spot-check on degraded scans (ư/u, ơ/o, dropped tone marks); record error rate here
 - [x] ING-07 Structure-aware chunking (by heading/section); chunk size/overlap in config
-- [~] ING-08 Chunk metadata: `doc_id`, `version`, heading path, page, `language` (vi/en/mixed), `access_tier`, `is_active`, `effective_from`, `effective_to` — no version/language/tier/effective dates
+- [x] ING-08 Chunk metadata: `doc_id`, `version`, heading path, page, `language` (vi/en/mixed), `access_tier`, `is_active`, `effective_from`, `effective_to` — document-level fields inherited by every chunk; heading/page where the chunker records them
 - [x] ING-09 Content-hash dedup
 - [~] ING-10 Idempotent, retryable jobs; states `queued → ocr → chunking → embedding → indexed | failed(reason)` visible in admin — `processing → ready | failed` with retries
 - [~] ING-11 Embedding model name+version pinned; full re-index script exists and is tested — model stored per chunk, stale chunks re-embedded at start
@@ -151,7 +151,7 @@ Single-tenant env vars (minimum): `HOST_ORIGIN`, `HOST_AUTH_MODE` (`rs256` | `hs
 - [~] RET-02 Keyword search: BM25 over accent-folded tokens (in-memory index); evaluate word segmentation (underthesea/pyvi) at index + query time — no segmentation
 - [x] RET-03 Diacritic-insensitive: index `unaccent` copy alongside original; search both (users type "hop dong lao dong")
 - [x] RET-04 Hybrid fusion (weighted, min-max normalised) → rerank top 12–50 → pass top 3–8 to LLM
-- [~] RET-05 Filters on every query (Invariant 4): `is_active AND effective_from <= today AND (effective_to IS NULL OR effective_to >= today) AND access_tier <= session_tier` — only enabled/ready documents and sources
+- [x] RET-05 Filters on every query (Invariant 4): `is_active AND effective_from <= today AND (effective_to IS NULL OR effective_to >= today) AND access_tier <= session_tier` — enabled/ready/expired in SQL at load, tier and dates per query before ranking; unknown tiers fail closed
 - [x] RET-06 Query rewriting: follow-ups → standalone query (uses history) before routing and retrieval
 - [x] RET-07 Relevance threshold; below it → "not found in documents" + handoff trigger (HND-03)
 - [-] RET-08 pgvector HNSW params tuned — semantic search runs brute-force over an in-memory snapshot (`# ceiling:` in `core/retrieval/knowledge_index.py`: move to pgvector HNSW past ~500k chunks)
@@ -254,9 +254,9 @@ Single-tenant env vars (minimum): `HOST_ORIGIN`, `HOST_AUTH_MODE` (`rs256` | `hs
 - [~] ADM-13 Upload with OCR preview/correction before indexing (ING-04) — "hold for review" + extracted-text editing; no OCR side-by-side
 - [x] ADM-14 Edit extracted text/chunks; re-embed only changed chunks
 - [x] ADM-15 Enable/disable toggle effective on next query; invalidates answer cache
-- [~] ADM-16 Edit metadata: title, category, language, `effective_from`, `effective_to`, `access_tier`, source, version. Metadata-only change = no re-embed — title/source/free metadata only
-- [ ] ADM-17 New version can auto-set previous version's `effective_to`; future `effective_from` = scheduled activation
-- [ ] ADM-18 Document page lists recent answers that cited it
+- [x] ADM-16 Edit metadata: title, category, language, `effective_from`, `effective_to`, `access_tier`, source, version. Metadata-only change = no re-embed
+- [x] ADM-17 New version can auto-set previous version's `effective_to`; future `effective_from` = scheduled activation
+- [x] ADM-18 Document page lists recent answers that cited it
 
 ### Configuration
 - [-] ADM-19 Prompt versions (activate/rollback) — see GEN-01
@@ -284,7 +284,7 @@ Single-tenant env vars (minimum): `HOST_ORIGIN`, `HOST_AUTH_MODE` (`rs256` | `hs
 - [x] SEC-04 LLM05 Improper Output Handling: GEN-06
 - [x] SEC-05 LLM06 Excessive Agency: tools read-only; any future write tool requires explicit user confirmation
 - [x] SEC-06 LLM07 System Prompt Leakage: assume prompt leaks; contains nothing sensitive
-- [~] SEC-07 LLM08 Vector/Embedding Weaknesses: RET-05 filters in code
+- [x] SEC-07 LLM08 Vector/Embedding Weaknesses: RET-05 filters in code
 - [x] SEC-08 LLM10 Unbounded Consumption: tiered rate limits, max input length, max output tokens, ORC-05 loop limits, spend cap — durable counters survive restarts and span processes
 - [~] SEC-09 Web: TLS + HSTS, CSP, CORS locked, dependency scanning (`pip-audit`, Dependabot), container image scanning — chat CSP framing-only, pip-audit advisory, no npm/docker Dependabot, no image scan
 - [x] SEC-10 Admin/chat domain separation (Invariant 7)
@@ -311,10 +311,10 @@ Single-tenant env vars (minimum): `HOST_ORIGIN`, `HOST_AUTH_MODE` (`rs256` | `hs
 - [ ] EVAL-03 Answer: faithfulness, relevance, correctness (RAGAS/DeepEval + human spot-check)
 - [~] EVAL-04 Intent routing: labeled set, all intents, both languages; report confusion matrix — `scripts/eval_intent_router.py`, rag/action only
 - [ ] EVAL-05 Tool selection + argument accuracy
-- [ ] EVAL-06 Effective-date correctness (answer depends on active version)
+- [x] EVAL-06 Effective-date correctness (answer depends on active version) — superseded/scheduled versions tested end to end
 - [ ] EVAL-07 Handoff trigger precision/recall
 - [ ] EVAL-08 Out-of-scope and injection sets (bot declines / resists)
-- [~] EVAL-09 HARD GATES (must be 100%, block merge): anonymous never reaches private tool; user A never receives user B's rows; disabled/expired docs never cited — `pytest -m hard_gate` step in CI; document gate pending
+- [x] EVAL-09 HARD GATES (must be 100%, block merge): anonymous never reaches private tool; user A never receives user B's rows; disabled/expired docs never cited — `pytest -m hard_gate` step in CI
 - [ ] EVAL-10 Scores tracked over time (table in repo or admin)
 
 ---
