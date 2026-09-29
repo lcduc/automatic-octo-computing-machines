@@ -2,10 +2,12 @@
 
 import json
 from datetime import datetime, timezone
+from types import SimpleNamespace
 
 import pytest
 
-from deploy.ops.backup import BackupManager
+from deploy.ops.__main__ import OpsCli
+from deploy.ops.backup import BackupError, BackupManager
 from deploy.ops.backup_target import BackupTarget
 from deploy.ops.compose import Compose
 from deploy.ops.deployer import Deployer, DeployError
@@ -106,6 +108,16 @@ def test_backup_ships_dump_and_uploads_then_prunes_old_remote_copies(tmp_path):
     assert any(call.endswith("/mnt/backups/20260928T020000Z-nightly.dump") for call in copies)
     assert any(call.endswith("/mnt/backups/20260928T020000Z-nightly-uploads.tar.gz") for call in copies)
     assert runner.ran("rclone delete --min-age 30d /mnt/backups")
+
+
+def test_failed_backup_is_sent_to_the_alert_channel(tmp_path):
+    runner = FakeRunner({"pg_dump": CommandError("pg_dump: connection refused")})
+    layout, compose = _install(tmp_path, runner)
+    context = SimpleNamespace(compose=compose, out=lambda _: None, backup_manager=lambda: _backups(layout, compose, runner))
+    with pytest.raises(BackupError):
+        OpsCli(context).backup(SimpleNamespace(label="nightly"))
+    [alert] = runner.ran("scripts.manage send-alert")
+    assert "--subject Backup failed" in alert and "connection refused" in alert
 
 
 def test_preflight_reports_each_failing_prerequisite(tmp_path):

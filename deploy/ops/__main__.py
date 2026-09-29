@@ -28,6 +28,7 @@ from .context import OpsContext
 from .deployer import DeployError
 from .host_bundle import HostIntegrationBundle
 from .installer import InstallError, Installer
+from .operator_alert import OperatorAlert
 from .rotation import SecretRotator
 from .runner import CommandError
 from .secret_generator import SecretGenerator
@@ -71,9 +72,14 @@ class OpsCli:
         self._context.deployer().rollback(args.tag)
 
     def backup(self, args: argparse.Namespace) -> None:
-        """Back up now."""
-        manager = self._require_backups()
-        self._context.out(f"Backup {manager.create(args.label).name} shipped.")
+        """Back up now; a failure is also sent to the alert channel (nightly runs are unattended)."""
+        try:
+            manager = self._require_backups()
+            name = manager.create(args.label).name
+        except (BackupError, BackupTargetError, CommandError) as exc:
+            OperatorAlert(self._context.compose).send("Backup failed", str(exc))
+            raise
+        self._context.out(f"Backup {name} shipped.")
 
     def backups(self, args: argparse.Namespace) -> None:
         """List the backups on the target, newest first."""

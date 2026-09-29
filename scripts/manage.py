@@ -7,6 +7,7 @@ Usage (from the repository root, with the venv active, or inside the api contain
     python -m scripts.manage create-api-key --name "client backend"
     python -m scripts.manage bootstrap-admin --email you@example.com
     python -m scripts.manage test-alert
+    python -m scripts.manage send-alert --subject "Backup failed" --body "..."
     python -m scripts.manage sync-sql-tools --file deploy/business_db/demo_tools.json
     python -m scripts.manage check-business-db
 
@@ -14,7 +15,8 @@ Usage (from the repository root, with the venv active, or inside the api contain
 ``bootstrap-admin`` is what the installer runs: it creates the first owner with
 a generated one-time password, printed once as JSON, and does nothing when an
 admin already exists. ``test-alert`` sends one message to the configured alert
-channel and exits non-zero if it cannot. API keys are for server-to-server
+channel and exits non-zero if it cannot; ``send-alert`` sends any message (the ops CLI
+uses it when an unattended backup fails). API keys are for server-to-server
 integrations; the chat widget's server authenticates with its generated
 service token instead.
 """
@@ -87,9 +89,12 @@ class ManagementCli:
         print(f"API key for '{record.name}' ({', '.join(record.scopes)}; shown once, store it now):\n{raw_key}")
 
     @staticmethod
-    async def test_alert() -> None:
+    async def send_alert(subject: str, body: str) -> str:
         """
         Send one message to the configured alert channel.
+
+        Returns:
+            The channel used.
 
         Raises:
             ServiceError: No channel is configured or delivery failed.
@@ -98,10 +103,14 @@ class ManagementCli:
         if not notifier.enabled:
             raise ServiceError("ALERT_CHANNEL is not configured")
         try:
-            await notifier.send(TEST_ALERT_SUBJECT, TEST_ALERT_BODY)
+            await notifier.send(subject, body)
         except AlertDeliveryError as exc:
             raise ServiceError(str(exc)) from exc
-        print(f"Test alert sent via {notifier.channel}")
+        return notifier.channel
+
+    async def test_alert(self) -> None:
+        """Send the preflight's test message."""
+        print(f"Test alert sent via {await self.send_alert(TEST_ALERT_SUBJECT, TEST_ALERT_BODY)}")
 
     async def sync_sql_tools(self, path: str) -> None:
         """
@@ -140,6 +149,9 @@ class ManagementCli:
         if args.command == "test-alert":
             await self.test_alert()
             return
+        if args.command == "send-alert":
+            print(f"Alert sent via {await self.send_alert(args.subject, args.body)}")
+            return
         if args.command == "check-business-db":
             await self.check_business_db()
             return
@@ -171,6 +183,9 @@ def _parser() -> argparse.ArgumentParser:
     key.add_argument("--scope", action="append", choices=list(API_KEY_SCOPES),
                      help="Repeat for several scopes (default: chat)")
     commands.add_parser("test-alert", help="Send a test message to the configured alert channel")
+    alert = commands.add_parser("send-alert", help="Send an operator alert (used by the ops CLI, e.g. a failed backup)")
+    alert.add_argument("--subject", required=True)
+    alert.add_argument("--body", default="")
     tools = commands.add_parser("sync-sql-tools", help="Create or update SQL tool definitions from a JSON file")
     tools.add_argument("--file", required=True)
     commands.add_parser("check-business-db", help="Check the business database role cannot write")
