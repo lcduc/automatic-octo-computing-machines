@@ -37,6 +37,7 @@ from services.alert_monitor_service import AlertMonitorService  # noqa: E402
 from services.ingestion_worker import IngestionWorker  # noqa: E402
 from services.metrics_rollup_service import MetricsRollupService  # noqa: E402
 from services.rate_limit_service import RateLimitService, TimeBuckets  # noqa: E402
+from services.retention_service import RetentionService  # noqa: E402
 from services.settings_service import SettingsService  # noqa: E402
 from services.usage_service import UsageService  # noqa: E402
 from utils.logging_setup import configure_logging  # noqa: E402
@@ -51,13 +52,16 @@ WORKER_DB_POOL_SIZE = 6
 ROLLUP_INTERVAL_SECONDS = 3600
 #: Seconds between alert-rule checks.
 ALERT_CHECK_INTERVAL_SECONDS = 300
+#: Seconds between retention purges (RET-R1).
+RETENTION_INTERVAL_SECONDS = 86400
 
 
 def build_scheduler(database: Database) -> JobScheduler:
     """The worker's periodic jobs, reporting failures to the operator alert channel."""
     timezone = Config.Server.APP_TIMEZONE()
     settings = SettingsService(database)
-    usage = UsageService(database, RateLimitService(database, TimeBuckets(timezone)))
+    rate_limits = RateLimitService(database, TimeBuckets(timezone))
+    usage = UsageService(database, rate_limits)
     monitor = AlertMonitorService(
         database, AlertNotifier.from_config(), settings, usage, Config.Paths.UPLOAD_DIR(),
         Config.Alerts.MONITOR_API_READY_URL(),
@@ -66,6 +70,7 @@ def build_scheduler(database: Database) -> JobScheduler:
     jobs = [
         ScheduledJob("metrics_rollup", ROLLUP_INTERVAL_SECONDS, rollup.run),
         ScheduledJob("alert_checks", ALERT_CHECK_INTERVAL_SECONDS, monitor.check),
+        ScheduledJob("retention_purge", RETENTION_INTERVAL_SECONDS, RetentionService(database, settings, rollup, rate_limits).purge),
     ]
     return JobScheduler(database, jobs, on_failure=monitor.job_failed, on_success=monitor.job_succeeded)
 

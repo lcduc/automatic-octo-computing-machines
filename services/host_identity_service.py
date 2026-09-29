@@ -21,7 +21,6 @@ from typing import Callable, List, Optional
 
 # Third-party imports
 import jwt
-from sqlalchemy import delete, func
 from sqlalchemy.dialects.postgresql import insert
 
 # Local imports
@@ -181,9 +180,3 @@ class HostIdentityService:
         if bound_visitor != visitor_id:
             logger.warning("Host token %s*** replayed from another visitor", token_id[:4])
             raise HostTokenError("token was issued to another browser session")
-
-    async def purge_expired(self) -> int:
-        """Delete bindings of tokens that have expired; returns how many."""
-        async with self._database.session() as session:
-            result = await session.execute(delete(HostTokenUse).where(HostTokenUse.expires_at < func.now()))
-        return int(result.rowcount or 0)
