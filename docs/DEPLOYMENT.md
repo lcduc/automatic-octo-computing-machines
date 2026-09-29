@@ -136,6 +136,7 @@ advisory lock, so a second worker replica never runs the same job twice.
 |------------------|-----------|-------------------------------------------------------------------------------|
 | `metrics_rollup` | hour      | Recomputes today and yesterday into `metrics_daily`, which is never purged    |
 | `alert_checks`   | 5 minutes | Evaluates the rules below and sends new problems to the alert channel         |
+| `retention_purge`| day       | Refreshes the rollup, then deletes data past its retention (see Privacy)      |
 
 | Alert                   | Fires when                                                                 |
 |-------------------------|----------------------------------------------------------------------------|
@@ -165,6 +166,53 @@ on a different host (a small VPS, or the vendor's staging box):
 
 Uptime Kuma catches what the worker cannot: the box, Caddy or DNS being down,
 and expiring certificates.
+
+## Privacy and retention
+
+Where personal data goes is mapped in [PRIVACY_DATA_FLOWS.md](PRIVACY_DATA_FLOWS.md)
+(for the client's legal review).
+
+**Retention** (Admin → Cấu hình → Quyền riêng tư, owners only). The worker's daily
+`retention_purge` deletes:
+
+| Data                                        | Default    | Counted from           |
+|---------------------------------------------|------------|------------------------|
+| Conversations of signed-in users            | 365 days   | last activity          |
+| Anonymous conversations                     | 90 days    | last activity          |
+| Traces and per-call token usage             | 90 days    | creation               |
+| Support tickets (closed or answered)        | 730 days   | opening                |
+| Admin audit log (never less than 365 days)  | 1095 days  | entry                  |
+
+- The daily rollup is refreshed first and is never purged, so dashboards keep their history.
+- A conversation with a kept ticket stays as long as the ticket; open tickets are never purged.
+- **Legal hold** (owners, on a conversation or ticket) keeps it past every period.
+- The eval set holds masked copies with no link back, so it is not purged.
+- Each run logs its counts; a failure raises the "Scheduled job failed" alert.
+- The audit log's trigger refuses every change except deleting entries older than a year.
+
+**Data-subject requests** (PRV-03, owners: Quyền riêng tư → Yêu cầu của chủ thể dữ liệu).
+
+- Find a person by host user id, visitor id or the e-mail on their tickets.
+- *Export* downloads their conversations (with ratings) and tickets as JSON.
+- *Delete* removes them at once, whatever the retention period; items on legal hold are kept and counted.
+- Both actions are in the audit log.
+
+**OpenAI data controls** (PRV-05; set once per client in the OpenAI organisation that owns `OPENAI_API_KEY`):
+
+1. API data is not used for training unless the organisation opts in. Check
+   *Settings → Data controls → Sharing* and leave it off.
+2. OpenAI keeps API content up to 30 days for abuse monitoring. Ask OpenAI for
+   **Zero Data Retention** where the client's contract needs it. Chat completions and audio
+   transcriptions are ZDR-eligible. Check the moderation endpoint (used while
+   `MODERATION_ENABLED`) with OpenAI, or turn moderation off.
+3. The chatbot never sets `store`, so chat completions are not stored for later
+   retrieval.
+4. If the client needs data kept in a region, create the project with **data
+   residency** (costs extra) and use its key.
+
+Phone numbers, ID numbers, e-mails and bank or card numbers are masked in each
+message before it is stored or sent to the model (`PII_REDACTION_ENABLED`, on by
+default). Results of private data tools still reach the model, because they are the answer.
 
 ## Hardware budget (12 GB VRAM, 8 cores / 16 threads, 16 GB RAM)
 
@@ -249,6 +297,9 @@ merged into the client branches, so a client branch differs only in the widget.
 | Find knowledge gaps                  | Admin → Đánh giá, Hội thoại filtered by *Không có thông tin*            |
 | Token usage / live activity          | Admin → Tổng quan                                                       |
 | Server-to-server API keys            | Admin → Tài khoản & khoá API                                            |
+| Retention, data-subject requests     | Admin → Cấu hình → Quyền riêng tư (owners)                              |
+| Legal hold                           | Conversation page or ticket drawer (owners)                             |
+| Mark feedback reviewed, build eval set | Admin → Đánh giá                                                      |
 
 ## Local development
 
