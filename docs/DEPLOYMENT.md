@@ -303,20 +303,63 @@ merged into the client branches, so a client branch differs only in the widget.
 
 ## Local development
 
+Natively, without the compose stack: Postgres in Docker, the API, then the admin
+web and/or the widget dev servers, each in its own terminal from the repository root.
+
+**1. Database** (first time; afterwards `docker start chatbot-pg`)
+
 ```bash
 docker run -d --name chatbot-pg -e POSTGRES_USER=chatbot -e POSTGRES_PASSWORD=dev \
   -e POSTGRES_DB=chatbot -p 5432:5432 pgvector/pgvector:pg17
-python -m venv venv && source venv/bin/activate      # Windows: venv\Scripts\Activate.ps1
-pip install torch torchvision --index-url https://download.pytorch.org/whl/cu126
-pip install -r requirements.txt
-cp .env.example .env    # APP_ENV=development, POSTGRES_PASSWORD=dev (host defaults to localhost)
-alembic upgrade head
-python main.py          # API on :8500, docs on /docs; parses uploads in-process
-                        # (INGESTION_WORKER=embedded). To mirror production, set
-                        # INGESTION_WORKER=external and also run: python worker.py
+```
 
+**2. API** (`:8500`, Swagger on `/docs`)
+
+```bash
+python -m venv venv && source venv/bin/activate      # Windows: venv\Scripts\Activate.ps1
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu126   # no GPU: .../whl/cpu
+pip install -r requirements.txt
+cp .env.example .env
+alembic upgrade head
+python -m scripts.manage create-admin --email you@example.com --role owner   # once; prompts for the password
+python main.py
+```
+
+In `.env`:
+
+- `APP_ENV=development`: the admin session cookie is only `Secure` in production,
+  and missing secrets are startup warnings instead of a refusal to start.
+- `POSTGRES_PASSWORD=dev`, the same as the container (the host defaults to `localhost`).
+- `ADMIN_JWT_SECRET` and `BFF_SERVICE_TOKEN`: any 32+ characters
+  (`python -c "import secrets; print(secrets.token_hex(32))"`).
+- `OPENAI_API_KEY` (or the key of your `LLM_PROVIDER`). The admin web works without
+  it; chat answers and the model test in *Mô hình & truy xuất* do not.
+- `HOST_AUTH_MODE=none` keeps every visitor anonymous and silences the host-token
+  warning; leave it unset to test signed-in users (then set `HOST_JWT_*`).
+- Leave `MODEL_SERVER_URL` unset: embedding, reranking and OCR then run inside the
+  API process, and the first upload downloads their weights into `model_weights/`.
+- Uploads are parsed in-process (`INGESTION_WORKER=embedded`). To mirror
+  production, set `INGESTION_WORKER=external` and also run `python worker.py`.
+  `python model_server.py` (with `MODEL_SERVER_URL=http://127.0.0.1:8600` and a
+  32+ character `MODEL_SERVER_TOKEN` in `.env`) does the same for the model server.
+
+**3. Admin web** (`http://localhost:5174`)
+
+```bash
+cd frontends/admin && npm ci && npm run dev
+```
+
+Sign in with the account from step 2. The Vite dev server proxies `/api/v1/admin`
+to `BACKEND_URL` (default `http://127.0.0.1:8500`), so the session cookie stays on
+one origin as it does behind Caddy, and no CORS setup is needed.
+
+**4. Chat widget** (`http://localhost:3000`, `/embed-demo` shows it embedded), to
+produce conversations, feedback and handoffs to look at in the admin web:
+
+```bash
 cd frontends/widget && npm ci
-cp .env.example .env.local && npm run dev   # web on :3000, /embed-demo shows the widget
+cp .env.example .env.local   # BFF_SERVICE_TOKEN = the backend's; VISITOR_COOKIE_SECRET: 32+ random characters
+npm run dev
 ```
 
 The whole stack from this checkout, with images built locally
