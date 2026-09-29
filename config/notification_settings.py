@@ -47,6 +47,11 @@ class AlertConfig:
         """Label prefixed to every alert so several client boxes can share one channel."""
         return env_str("ALERT_DEPLOYMENT_NAME", "") or env_str("PUBLIC_DOMAIN_CHAT", "chatbot")
 
+    @staticmethod
+    def MONITOR_API_READY_URL() -> str:
+        """The API's readiness URL the worker probes for the service-down alert; empty skips it."""
+        return env_str("MONITOR_API_READY_URL", "")
+
 
 class SmtpConfig:
     """Outgoing mail server, shared by e-mail alerts and ticket replies."""

@@ -28,6 +28,8 @@ HANDOFF_STATUS_ASSIGNED = "assigned"
 HANDOFF_STATUS_ANSWERED = "answered"
 HANDOFF_STATUS_CLOSED = "closed"
 HANDOFF_STATUSES = (HANDOFF_STATUS_OPEN, HANDOFF_STATUS_ASSIGNED, HANDOFF_STATUS_ANSWERED, HANDOFF_STATUS_CLOSED)
+#: Tickets still waiting for staff.
+HANDOFF_ACTIVE_STATUSES = (HANDOFF_STATUS_OPEN, HANDOFF_STATUS_ASSIGNED)
 #: Outcome stored on a message written by a support agent (shown in the chat on the next visit).
 OUTCOME_AGENT_REPLY = "agent_reply"
 

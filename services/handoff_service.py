@@ -23,6 +23,7 @@ from core.storage.tables.base import utc_now
 from core.storage.tables.conversation_tables import (
     CONVERSATION_STATUS_ACTIVE,
     CONVERSATION_STATUS_HANDOFF,
+    HANDOFF_ACTIVE_STATUSES,
     HANDOFF_STATUS_ANSWERED,
     HANDOFF_STATUS_ASSIGNED,
     HANDOFF_STATUS_CLOSED,
@@ -46,8 +47,6 @@ PHONE_PATTERN = re.compile(r"^\+?[0-9][0-9 .\-]{7,18}$")
 MAX_DETAILS_LENGTH = 2000
 ANSWER_EMAIL_SUBJECT = "Phản hồi yêu cầu hỗ trợ của bạn"
 ANSWER_EMAIL_FOOTER = "\n\n—\nBạn cũng có thể xem câu trả lời này trong khung trò chuyện trên website."
-#: Statuses a ticket is still being worked in.
-ACTIVE_STATUSES = (HANDOFF_STATUS_OPEN, HANDOFF_STATUS_ASSIGNED)
 
 
 def mask_email(email: Optional[str]) -> Optional[str]:
@@ -114,7 +113,7 @@ class HandoffService:
         """Open a ticket unless the conversation already has one in progress (feedback trigger)."""
         async with self._database.session() as session:
             repository = ConversationRepository(session)
-            if await repository.active_handoff(conversation_id, ACTIVE_STATUSES) is not None:
+            if await repository.active_handoff(conversation_id, HANDOFF_ACTIVE_STATUSES) is not None:
                 return None
             conversation = await repository.get_conversation(conversation_id)
             request = self.open_request(repository, conversation, message_id, reason, user_id)
