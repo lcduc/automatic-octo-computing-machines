@@ -20,6 +20,7 @@ from dotenv import load_dotenv
 # Local imports
 from .env import env_bool, env_float, env_int, env_list, env_str
 from .identity_settings import HostAuthConfig
+from .model_server_settings import ModelServerConfig
 from .notification_settings import ALERT_CHANNELS, SMTP_SECURITY_MODES, AlertConfig, SmtpConfig
 from .platform_settings import ChatConfig, DatabaseConfig, SecurityConfig, ServerConfig
 
@@ -440,6 +441,7 @@ class Config:
     Alerts = AlertConfig
     Smtp = SmtpConfig
     HostAuth = HostAuthConfig
+    ModelServer = ModelServerConfig
 
     @staticmethod
     def problems() -> List[str]:
@@ -474,6 +476,8 @@ class Config:
         if SmtpConfig.SMTP_SECURITY() not in SMTP_SECURITY_MODES:
             issues.append(f"SMTP_SECURITY must be one of {', '.join(SMTP_SECURITY_MODES)}")
         issues.extend(HostAuthConfig.problems())
+        if ModelServerConfig.MODEL_SERVER_URL() and len(ModelServerConfig.MODEL_SERVER_TOKEN()) < MIN_JWT_SECRET_LENGTH:
+            issues.append("MODEL_SERVER_URL is set but MODEL_SERVER_TOKEN is missing or short (the installer generates it)")
         return issues
 
     @staticmethod
