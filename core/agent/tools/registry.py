@@ -1,71 +1,82 @@
 """
 Holds the tools available to a :class:`ToolCallingAgent` and dispatches calls by name.
+
+Tools a caller's tier may not use are never offered to the model (checklist
+Invariant 3), and are refused again at execution in case a model names one anyway.
 """
 
 # Standard library imports
 import logging
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional, Protocol
 
 # Local imports
+from models.tool_context import ToolContext
 from .base import BaseTool
 
 logger = logging.getLogger(__name__)
 
 
+class ToolSource(Protocol):
+    """Provides tools that can change at runtime (e.g. SQL tools toggled in the admin web)."""
+
+    def tools(self) -> List[BaseTool]:
+        """The currently enabled tools."""
+
+
 class ToolRegistry:
     """Looks up and executes tools by the name the model called."""
 
-    def __init__(self, tools: List[BaseTool]):
+    def __init__(self, tools: List[BaseTool], source: Optional[ToolSource] = None):
         """
         Args:
-            tools: Tools available to the model. May be empty.
+            tools: Fixed tools. May be empty.
+            source: Tools that change at runtime (read on every call).
         """
-        self._tools: Dict[str, BaseTool] = {tool.name: tool for tool in tools}
+        self._tools = list(tools)
+        self._source = source
 
-    def schemas(self) -> List[Dict[str, Any]]:
-        """OpenAI ``tools=`` schema list for every registered tool."""
-        return [tool.to_openai_schema() for tool in self._tools.values()]
+    def _all(self) -> Dict[str, BaseTool]:
+        """Every tool currently available, by name."""
+        tools = list(self._tools) + (self._source.tools() if self._source is not None else [])
+        return {tool.name: tool for tool in tools}
 
-    def execute(self, name: str, arguments: Dict[str, Any]) -> str:
+    def schemas(self, context: ToolContext) -> List[Dict[str, Any]]:
+        """OpenAI ``tools=`` schemas of the tools ``context`` may use."""
+        return [tool.to_openai_schema() for tool in self._all().values() if tool.permits(context)]
+
+    def locked(self, context: ToolContext) -> List[BaseTool]:
+        """Tools that exist but need a higher tier than ``context`` (described only, never offered)."""
+        return [tool for tool in self._all().values() if not tool.permits(context)]
+
+    async def execute(self, name: str, arguments: Dict[str, Any], context: ToolContext) -> str:
         """
         Run the named tool and return its result as text.
 
-        A tool that raises, a name that isn't registered, or a call missing
-        one of the tool's required arguments is turned into an error string
-        rather than propagated or run with incomplete data — the model can
-        react to (e.g. ask the user for the missing piece) instead of the
-        whole turn failing or the tool running on guessed input.
+        A tool that raises, a name that isn't registered or permitted, or a
+        call missing a required argument becomes an error string the model can
+        react to (e.g. ask the user) instead of failing the turn.
 
         Args:
             name: Tool name as called by the model.
             arguments: Parsed JSON arguments the model supplied.
-
-        Returns:
-            The tool's result, or an error message describing what went wrong.
+            context: The verified caller.
         """
-        tool = self._tools.get(name)
-        if tool is None:
-            logger.warning("Model called unknown tool %r", name)
+        tool = self._all().get(name)
+        if tool is None or not tool.permits(context):
+            logger.warning("Model called unavailable tool %r", name)
             return f"Error: no tool named '{name}' is available."
 
-        missing = self._missing_required_arguments(tool, arguments)
+        missing = [param for param in tool.parameters.get("required", []) if param not in arguments]
         if missing:
-            logger.warning(
-                "Model called %r missing required argument(s): %s", name, missing
-            )
+            logger.warning("Model called %r missing required argument(s): %s", name, missing)
             return (
                 f"Error: missing required argument(s) for '{name}': "
                 f"{', '.join(missing)}. Ask the user for the missing information."
             )
 
         try:
-            return tool.execute(**arguments)
+            return await tool.execute(arguments, context)
         except Exception as exc:
-            logger.exception("Tool %r failed with arguments %r", name, arguments)
-            return f"Error: tool '{name}' failed: {exc}"
-
-    @staticmethod
-    def _missing_required_arguments(tool: BaseTool, arguments: Dict[str, Any]) -> List[str]:
-        """Required parameter names from the tool's schema absent from ``arguments``."""
-        required = tool.parameters.get("required", [])
-        return [param_name for param_name in required if param_name not in arguments]
+            # Arguments are not logged: they may carry what the user typed.
+            logger.exception("Tool %r failed", name)
+            return f"Error: tool '{name}' failed ({type(exc).__name__})."
