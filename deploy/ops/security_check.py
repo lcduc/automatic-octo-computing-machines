@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 PUBLIC_SERVICE = "caddy"
 PUBLIC_PORTS = {80, 443}
 #: Services that must be attached to nothing but the internal network.
-INTERNAL_ONLY_SERVICES = ("postgres",)
+INTERNAL_ONLY_SERVICES = ("postgres", "model-server")
 INTERNAL_NETWORK = f"{COMPOSE_PROJECT}_internal"
 MIN_SECRET_LENGTH = 32
 #: Placeholder fragments that must never survive into a real .env.

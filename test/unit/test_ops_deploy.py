@@ -20,7 +20,7 @@ from deploy.ops.security_check import SecuritySelfCheck
 HEALTHY = [
     {"Service": name, "State": "running", "Health": "healthy" if name in ("postgres", "api") else "", "Name": f"chatbot-{name}-1",
      "Publishers": [{"PublishedPort": 443}, {"PublishedPort": 80}] if name == "caddy" else []}
-    for name in ("postgres", "api", "web", "admin", "caddy")
+    for name in ("postgres", "model-server", "api", "web", "admin", "caddy")
 ]
 
 

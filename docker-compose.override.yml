@@ -17,6 +17,8 @@ services:
     build: *backend-build
   ingestion-worker:
     build: *backend-build
+  model-server:
+    build: *backend-build
   web:
     build: ./frontends/widget
   admin:

@@ -20,6 +20,8 @@ GENERATED_SECRETS: Dict[str, int] = {
     "ADMIN_JWT_SECRET": 48,
     "VISITOR_COOKIE_SECRET": 48,
     "BFF_SERVICE_TOKEN": 48,
+    # api and ingestion-worker -> model-server.
+    "MODEL_SERVER_TOKEN": 48,
     # Used only with HOST_AUTH_MODE=hs256 (shared with the host backend through the hand-over bundle).
     "HOST_JWT_SECRET": 48,
 }

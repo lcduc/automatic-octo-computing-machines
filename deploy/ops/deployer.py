@@ -32,7 +32,7 @@ ENV_HEADER = (
 )
 APP_ROLE_SCRIPT = "/docker-entrypoint-initdb.d/10-app-role.sh"
 #: Services that must be healthy for a deploy to count as done.
-HEALTH_GATE_SERVICES = ("postgres", "api", "web", "admin", "caddy")
+HEALTH_GATE_SERVICES = ("postgres", "model-server", "api", "web", "admin", "caddy")
 HEALTH_TIMEOUT_SECONDS = 900
 
 
