@@ -26,6 +26,7 @@ from core.agent.tools.registry import ToolRegistry
 from core.agent.tools.sql_tool_executor import SqlToolExecutor
 from core.guardrails.input_guard import InputGuard
 from core.guardrails.pii_redactor import PiiRedactor
+from core.infrastructure.smtp_mailer import SmtpMailer
 from core.retrieval.remote_models import RemoteReranker, embedding_service, model_server_client
 from core.retrieval.knowledge_index import KnowledgeIndex
 from core.retrieval.retriever import ContextRetriever
@@ -78,8 +79,8 @@ class AppContainer:
         self.usage = UsageService(self.database, self.rate_limiter)
         self.pricing = PricingService(self.database)
         self.live_feed = LiveFeedService(self.database, asyncpg_dsn(Config.Database.DATABASE_URL()))
-        self.handoffs = HandoffService(self.database, self.live_feed)
-        self.conversations = ConversationService(self.database)
+        self.handoffs = HandoffService(self.database, self.live_feed, self.settings, SmtpMailer.from_config())
+        self.conversations = ConversationService(self.database, self.handoffs, self.settings)
         self.auth = AuthService(
             self.database,
             Config.Security.ADMIN_JWT_SECRET(),

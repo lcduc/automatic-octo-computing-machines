@@ -34,10 +34,18 @@ class TurnOutcome(str, Enum):
 
 
 class HandoffReason(str, Enum):
-    """Why a conversation was handed to a human."""
+    """Why a conversation was handed to a human (stored as the ticket's reason code)."""
 
     NO_KNOWLEDGE = "no_knowledge"
     USER_REQUEST = "user_request"
+    #: A configured sensitive topic (complaint, legal threat, payment dispute…), HND-06.
+    SENSITIVE_TOPIC = "sensitive_topic"
+    #: The bot had no answer twice in a row, HND-02.
+    REPEATED_NO_ANSWER = "repeated_no_answer"
+    #: Two answers in a row rated thumbs-down, HND-04.
+    NEGATIVE_FEEDBACK = "negative_feedback"
+    #: A private-data tool failed, HND-05.
+    TOOL_ERROR = "tool_error"
 
 
 @dataclass(frozen=True)
@@ -55,6 +63,8 @@ class ChatPolicy:
     #: Answer model and light model (rewrite/routing); ``None`` = the env default.
     chat_model: Optional[str] = None
     light_model: Optional[str] = None
+    #: Words or phrases that always go to a human (accent-insensitive); empty disables.
+    handoff_topics: Sequence[str] = ()
     #: Retrieval tuning; ``None`` = the env default.
     similarity_threshold: Optional[float] = None
     semantic_weight: Optional[float] = None

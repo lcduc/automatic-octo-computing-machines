@@ -226,13 +226,13 @@ def test_fallback_modes_skip_the_llm_and_record_handoffs(client):
     assert requested["outcome"] == "handoff"
     assert llm.stream_calls == 0
 
-    handoffs = client.get("/api/v1/admin/handoffs?status=pending", headers=admin).json()
+    handoffs = client.get("/api/v1/admin/handoffs?status=open", headers=admin).json()
     assert handoffs["total"] == 2
     resolved = client.patch(
-        f"/api/v1/admin/handoffs/{handoffs['items'][0]['id']}", json={"status": "resolved", "note": "đã gọi lại"},
+        f"/api/v1/admin/handoffs/{handoffs['items'][0]['id']}", json={"status": "closed", "note": "đã gọi lại"},
         headers=admin,
     )
-    assert resolved.json()["status"] == "resolved"
+    assert resolved.json()["status"] == "closed"
 
 
 def test_rate_limit_and_roles(client):
@@ -383,7 +383,7 @@ def test_support_agent_works_handoffs_but_cannot_change_knowledge_or_read_audit(
     ).json()["access_token"]
     agent = {"Authorization": f"Bearer {token}"}
     handoff_id = client.get("/api/v1/admin/handoffs", headers=agent).json()["items"][0]["id"]
-    assert client.patch(f"/api/v1/admin/handoffs/{handoff_id}", json={"status": "in_progress"}, headers=agent).status_code == 200
+    assert client.patch(f"/api/v1/admin/handoffs/{handoff_id}", json={"status": "assigned"}, headers=agent).status_code == 200
     denied = client.post(
         "/api/v1/admin/knowledge/documents/text", json={"source": "FAQ", "title": "x", "content": "y"}, headers=agent
     )

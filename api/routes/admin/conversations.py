@@ -12,13 +12,15 @@ from fastapi import APIRouter, Depends, Query
 
 # Local imports
 from api.container import AppContainer
-from api.dependencies import HANDOFF_ROLES, READ_ROLES, get_container, require_admin
+from api.dependencies import HANDOFF_ROLES, OWNER_ROLES, READ_ROLES, get_container, require_admin
 from core.storage.tables.access_tables import SCOPE_CONVERSATIONS_READ
 from api.schemas.admin import (
     AdminMessage,
     ConversationDetail,
     ConversationSummary,
     FeedbackItem,
+    HandoffAnswer,
+    HandoffContactOut,
     HandoffOut,
     HandoffUpdate,
 )
@@ -85,14 +87,32 @@ async def list_feedback(
 
 @router.get("/handoffs", response_model=Page[HandoffOut], dependencies=[read_access])
 async def list_handoffs(
-    status: Optional[str] = Query(None, pattern="^(pending|in_progress|resolved)$"),
+    status: Optional[str] = Query(None, pattern="^(open|assigned|answered|closed)$"),
     limit: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
     offset: int = Query(0, ge=0),
     container: AppContainer = Depends(get_container),
 ) -> Page[HandoffOut]:
-    """Transfer-to-human requests newest first."""
+    """Tickets, earliest due first."""
     requests, total = await container.handoffs.list(status, limit, offset)
-    return Page(items=[HandoffOut.model_validate(r) for r in requests], total=total, limit=limit, offset=offset)
+    return Page(items=[HandoffOut.from_request(r) for r in requests], total=total, limit=limit, offset=offset)
+
+
+@router.post("/handoffs/{handoff_id}/answer", response_model=HandoffOut)
+async def answer_handoff(
+    handoff_id: uuid.UUID,
+    body: HandoffAnswer,
+    principal: AdminPrincipal = Depends(require_admin(HANDOFF_ROLES)),
+    container: AppContainer = Depends(get_container),
+) -> HandoffOut:
+    """Reply to the visitor: shown in their chat and e-mailed when they left an address."""
+    return HandoffOut.from_request(await container.handoffs.answer(handoff_id, body.text, principal.email))
+
+
+@router.post("/handoffs/{handoff_id}/reveal-contact", response_model=HandoffContactOut,
+             dependencies=[Depends(require_admin(OWNER_ROLES))])
+async def reveal_handoff_contact(handoff_id: uuid.UUID, container: AppContainer = Depends(get_container)) -> HandoffContactOut:
+    """The unmasked contact details; a POST so every reveal is in the audit log (ADM-06)."""
+    return HandoffContactOut(**await container.handoffs.reveal_contact(handoff_id))
 
 
 @router.patch("/handoffs/{handoff_id}", response_model=HandoffOut)
@@ -102,6 +122,6 @@ async def update_handoff(
     principal: AdminPrincipal = Depends(require_admin(HANDOFF_ROLES)),
     container: AppContainer = Depends(get_container),
 ) -> HandoffOut:
-    """Mark a handoff in progress or resolved, optionally with a note."""
-    request = await container.handoffs.update(handoff_id, body.status, body.note, principal.email)
-    return HandoffOut.model_validate(request)
+    """Assign, re-open or close a ticket, or change its internal note."""
+    request = await container.handoffs.update(handoff_id, body.status, body.note, body.assigned_to, principal.email)
+    return HandoffOut.from_request(request)

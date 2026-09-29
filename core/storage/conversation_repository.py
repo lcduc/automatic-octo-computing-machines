@@ -188,10 +188,27 @@ class ConversationRepository:
             statement = statement.where(HandoffRequest.status == status)
             count_statement = count_statement.where(HandoffRequest.status == status)
         total = (await self._session.execute(count_statement)).scalar_one()
+        # Most urgent first: the earliest due ticket, then the newest.
         result = await self._session.execute(
-            statement.order_by(HandoffRequest.created_at.desc()).limit(limit).offset(offset)
+            statement.order_by(HandoffRequest.due_at.asc().nulls_last(), HandoffRequest.created_at.desc())
+            .limit(limit).offset(offset)
         )
         return list(result.scalars().all()), int(total)
+
+    async def active_handoff(self, conversation_id: uuid.UUID, statuses: Sequence[str]) -> Optional[HandoffRequest]:
+        """A ticket of the conversation still being worked, if any."""
+        result = await self._session.execute(
+            select(HandoffRequest).where(HandoffRequest.conversation_id == conversation_id, HandoffRequest.status.in_(statuses)).limit(1)
+        )
+        return result.scalar_one_or_none()
+
+    async def last_ratings(self, conversation_id: uuid.UUID, limit: int) -> List[int]:
+        """Ratings of the conversation's most recently rated answers, newest first."""
+        result = await self._session.execute(
+            select(Feedback.rating).join(Message, Feedback.message_id == Message.id)
+            .where(Message.conversation_id == conversation_id).order_by(Message.created_at.desc()).limit(limit)
+        )
+        return [int(rating) for rating in result.scalars().all()]
 
     # ------------------------------------------------------------------
     # Token usage and statistics

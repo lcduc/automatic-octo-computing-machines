@@ -13,6 +13,7 @@ from typing import Any, Dict, List, Literal, Optional
 from pydantic import BaseModel, Field
 
 # Local imports
+from services.handoff_service import mask_email, mask_phone
 from .chat import Citation
 from .common import ApiModel
 
@@ -176,6 +177,9 @@ MAX_RETRIEVAL_CHUNKS = 20
 MAX_REQUEST_LIMIT = 100_000
 MAX_TOKEN_BUDGET = 1_000_000_000
 MAX_SPEND_CAP_USD = 1_000_000
+MAX_HOLIDAYS = 100
+MAX_TICKET_REPLY_HOURS = 240
+MAX_HANDOFF_TOPICS = 100
 
 
 class SettingsUpdate(BaseModel):
@@ -208,6 +212,11 @@ class SettingsUpdate(BaseModel):
     tokens_ip_per_day: Optional[int] = Field(None, ge=0, le=MAX_TOKEN_BUDGET)
     spend_cap_monthly_usd: Optional[float] = Field(None, ge=0, le=MAX_SPEND_CAP_USD)
     spend_anonymous_cutoff_ratio: Optional[float] = Field(None, ge=0.0, le=1.0)
+    # Support calendar (HND-07) and handoff triggers (HND-06), validated by SettingsService.
+    support_hours: Optional[Dict[str, str]] = None
+    support_holidays: Optional[List[str]] = Field(None, max_length=MAX_HOLIDAYS)
+    ticket_reply_hours: Optional[float] = Field(None, gt=0, le=MAX_TICKET_REPLY_HOURS)
+    handoff_topics: Optional[List[str]] = Field(None, max_length=MAX_HANDOFF_TOPICS)
 
 
 # ---------------------------------------------------------------- conversations
@@ -297,8 +306,11 @@ class FeedbackItem(BaseModel):
 # ---------------------------------------------------------------- handoffs
 
 
-class HandoffOut(ApiModel):
-    """A transfer-to-human request."""
+HandoffStatusValue = Literal["open", "assigned", "answered", "closed"]
+
+
+class HandoffOut(BaseModel):
+    """A support ticket; contact details are masked (ADM-06)."""
 
     id: uuid.UUID
     conversation_id: uuid.UUID
@@ -306,15 +318,56 @@ class HandoffOut(ApiModel):
     reason: str
     status: str
     note: Optional[str] = None
+    signed_in: bool
+    contact_email: Optional[str] = None
+    contact_phone: Optional[str] = None
+    has_contact: bool
+    consent_at: Optional[datetime] = None
+    details: Optional[str] = None
+    assigned_to: Optional[str] = None
+    answer: Optional[str] = None
+    answered_at: Optional[datetime] = None
+    emailed_at: Optional[datetime] = None
+    due_at: Optional[datetime] = None
+    closed_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
 
+    @classmethod
+    def from_request(cls, request) -> "HandoffOut":
+        """Build from a ``HandoffRequest``, masking the contact."""
+        return cls(
+            id=request.id, conversation_id=request.conversation_id, message_id=request.message_id,
+            reason=request.reason, status=request.status, note=request.note, signed_in=request.user_id is not None,
+            contact_email=mask_email(request.contact_email), contact_phone=mask_phone(request.contact_phone),
+            has_contact=bool(request.contact_email or request.contact_phone), consent_at=request.consent_at,
+            details=request.details, assigned_to=request.assigned_to, answer=request.answer,
+            answered_at=request.answered_at, emailed_at=request.emailed_at, due_at=request.due_at,
+            closed_at=request.closed_at, created_at=request.created_at, updated_at=request.updated_at,
+        )
+
 
 class HandoffUpdate(BaseModel):
-    """Status change of a handoff request."""
+    """Assign, re-open or close a ticket, or change its internal note."""
 
-    status: Literal["pending", "in_progress", "resolved"]
+    status: Optional[HandoffStatusValue] = None
     note: Optional[str] = Field(None, max_length=2000)
+    #: An admin e-mail, or "" to unassign.
+    assigned_to: Optional[str] = Field(None, max_length=255)
+
+
+class HandoffAnswer(BaseModel):
+    """The support team's reply to the visitor."""
+
+    text: str = Field(..., min_length=1, max_length=5000)
+
+
+class HandoffContactOut(BaseModel):
+    """Unmasked contact details (owners only; audit-logged)."""
+
+    name: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
 
 
 # ---------------------------------------------------------------- observability
