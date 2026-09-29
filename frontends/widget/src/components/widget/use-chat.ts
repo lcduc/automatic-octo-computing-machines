@@ -21,6 +21,9 @@ export interface ChatMessage {
   citations: Citation[];
   streaming: boolean;
   rating?: 1 | -1;
+  /** A support ticket opened by this turn, waiting for the visitor's contact details. */
+  handoffId?: string;
+  replyBy?: string;
 }
 
 const CONVERSATION_KEY = "chatbot.conversation";
@@ -185,6 +188,8 @@ export function useChat(allowedOrigins: string[]) {
               outcome: payload.outcome,
               citations: payload.citations ?? [],
               streaming: false,
+              handoffId: payload.handoff_id ?? undefined,
+              replyBy: payload.reply_expected_by ?? undefined,
             });
           } else if (event.event === "error") {
             updateMessage(assistantId, { text: payload.message ?? GENERIC_ERROR, outcome: "error", streaming: false });
@@ -218,12 +223,33 @@ export function useChat(allowedOrigins: string[]) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message_id: messageId, rating, comment: comment || undefined }),
       }).catch(() => null);
-      if (!response?.ok) setNotice("Không gửi được đánh giá, vui lòng thử lại.");
+      if (!response?.ok) {
+        setNotice("Không gửi được đánh giá, vui lòng thử lại.");
+        return;
+      }
+      // Two thumbs-down in a row may hand the conversation to a person (a ticket to fill in).
+      const result = await response.json().catch(() => null);
+      if (result?.handoff_id) updateMessage(messageId, { handoffId: result.handoff_id });
     },
     [updateMessage, authorizedFetch],
   );
 
+  /** Send the ticket's contact details; returns a message to show, or null when accepted. */
+  const submitContact = useCallback(
+    async (handoffId: string, contact: object): Promise<string | null> => {
+      const response = await authorizedFetch(`/api/chat/handoffs/${handoffId}/contact`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(contact),
+      }).catch(() => null);
+      if (!response) return GENERIC_ERROR;
+      return response.ok ? null : errorDetail(response);
+    },
+    [authorizedFetch],
+  );
+
   return {
+    submitContact,
     config, messages, busy, notice, send, stop, rate, reset: clearConversation,
     signedIn: session.token !== null, requestLogin: session.requestLogin, close: session.close,
   };

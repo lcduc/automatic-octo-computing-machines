@@ -1,6 +1,6 @@
 /** Shapes returned by the public chat API (see the backend's api/schemas/chat.py). */
 
-export type Outcome = "answered" | "smalltalk" | "denied" | "handoff" | "blocked" | "login_required" | "error";
+export type Outcome = "answered" | "smalltalk" | "denied" | "handoff" | "blocked" | "login_required" | "agent_reply" | "error";
 
 export interface Citation {
   document_id: string;

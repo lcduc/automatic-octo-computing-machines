@@ -15,7 +15,7 @@ interface ChatWidgetProps {
 }
 
 export function ChatWidget({ allowedOrigins }: ChatWidgetProps) {
-  const { config, messages, busy, notice, send, stop, rate, reset, close, requestLogin } = useChat(allowedOrigins);
+  const { config, messages, busy, notice, send, stop, rate, reset, close, requestLogin, signedIn, submitContact } = useChat(allowedOrigins);
   const listEnd = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -66,7 +66,7 @@ export function ChatWidget({ allowedOrigins }: ChatWidgetProps) {
           </section>
         )}
         {messages.map((message) => (
-          <MessageBubble key={message.id} message={message} onRate={rate} onLogin={requestLogin} />
+          <MessageBubble key={message.id} message={message} onRate={rate} onLogin={requestLogin} signedIn={signedIn} onContact={submitContact} />
         ))}
         {notice && <p role="alert" className="text-center text-xs text-red-700">{notice}</p>}
         <div ref={listEnd} />
