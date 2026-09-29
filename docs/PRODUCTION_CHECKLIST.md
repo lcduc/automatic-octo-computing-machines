@@ -62,16 +62,16 @@ VRAM (12 GB): OCR ~2 GB · embed ~2.3 GB · rerank ~1.1 GB (fp16) + activations.
 
 ### 0.3 Locked decisions
 
-| Topic | Decision |
-|---|---|
-| Widget auth | Keep Next.js BFF. Anonymous = HMAC-signed partitioned (CHIPS) cookie with visitor ID only. Logged-in = host JWT in iframe memory → BFF as `Authorization: Bearer` → forwarded unchanged → FastAPI verifies |
-| Host auth | Per-deployment `HOST_AUTH_MODE = rs256 \| hs256 \| none`, default `rs256` |
-| API keys | Server-to-server only; never in browser |
-| Infra | No Redis. Postgres for all counters + `LISTEN/NOTIFY`. Separate model-server owns all GPU models |
-| Environments | Vendor-side staging; client box = production only; releases = tagged images |
-| Admin roles | `super_admin`, `content_editor`, `support_agent`, `viewer`; enforced server-side |
-| Admin security | Audit log in current scope; TOTP MFA = follow-up (required before public exposure of admin domain) |
-| Retention defaults | Chats 12m (anonymous 90d), traces 90d, tickets 24m, audit log 36m, rollups indefinite |
+| Topic                 | Decision |
+|-----------------------|-------------------------------------------------------------------------------------------------------------------|
+| Widget auth           | Logged-in = host JWT in iframe memory → BFF as `Authorization: Bearer` → forwarded unchanged → FastAPI verifies   |
+| Host auth             | Per-deployment `HOST_AUTH_MODE = rs256 \| hs256 \| none`, default `rs256`                                         |
+| API keys              | Server-to-server only; never in browser                                                                           |
+| Infra                 | No Redis. Postgres for all counters + `LISTEN/NOTIFY`. Separate model-server owns all GPU models                  |
+| Environments          | Vendor-side staging; client box = production only; releases = tagged images                                       |
+| Admin roles           | `super_admin`, `content_editor`, `support_agent`, `viewer`; enforced server-side                                  |
+| Admin security        | Audit log in current scope; TOTP MFA = follow-up (required before public exposure of admin domain)                |
+| Retention defaults    | Chats 12m (anonymous 90d), traces 90d, tickets 24m, audit log 36m, rollups indefinite                             |
 
 ---
 
@@ -128,7 +128,7 @@ Any code change breaking one is a blocker.
 - [x] WID-07 Host events handled: `login`, `logout`, `token_refresh` pushed into iframe — `Chatbot.login()/logout()`, `ChatbotConfig.getToken`
 - [~] WID-08 Mobile: full-screen on small viewports; input not hidden by keyboard (test iOS Safari) — full-screen ≤480px; no keyboard handling, iOS untested
 - [~] WID-09 UI: streaming, Markdown, tables, clickable citations, stop/regenerate, thumbs up/down + comment, example questions on empty state — no tables, no regenerate
-- [~] WID-10 WCAG 2.2 basics: contrast (SC 1.4.3), keyboard operable (SC 2.1.1), labeled controls — disclaimer text fails SC 1.4.3
+- [x] WID-10 WCAG 2.2 basics: contrast (SC 1.4.3), keyboard operable (SC 2.1.1), labeled controls — disclaimer and citation text raised to AA contrast
 
 ---
 
@@ -281,20 +281,20 @@ Any code change breaking one is a blocker.
 ### Access
 - [x] ADM-01 Roles: `super_admin`, `content_editor`, `support_agent`, `viewer` — permission matrix below — named `owner`, `editor`, `support_agent`, `viewer` in code
 - [~] ADM-01a Permissions enforced server-side on every admin endpoint (not only hidden UI). Tests: each role vs each endpoint class; e.g. `support_agent` → knowledge edit = 403 — checked server-side per route; tests cover a sample, not every role × endpoint class
-- [~] ADM-02 Audit log: append-only table (app role has INSERT only, no UPDATE/DELETE); fields `actor`, `role`, `action`, `target`, `before`, `after`, `timestamp`, `ip`; owner-only viewer page. Covers all admin writes, PII reveals, API key actions, deletions, legal hold changes — actor, role, IP, request/response bodies for every write and PII reveal; app role still has UPDATE/DELETE on it; legal hold not built
+- [x] ADM-02 Audit log: append-only table (app role has INSERT only, no UPDATE/DELETE); fields `actor`, `role`, `action`, `target`, `before`, `after`, `timestamp`, `ip`; owner-only viewer page. Covers all admin writes, PII reveals, API key actions, deletions, legal hold changes — actor, role, IP, request/response bodies for every admin write, PII reveal, API-key action, deletion and legal-hold change; immutability enforced by a trigger (only year-old rows may be purged) instead of grants
 - [ ] ADM-02b TOTP MFA (pyotp): enrolment + verify-on-login. FOLLOW-UP — mandatory before `admin.<domain>` is publicly reachable without SSO/VPN
 - [~] ADM-02c Session timeout: 30–60 min idle, 8–12 h max; keep-alive while `support_agent` has an active live chat — 8 h absolute token; no idle timeout
 
 | Capability | super_admin | content_editor | support_agent | viewer |
-|---|---|---|---|---|
-| Dashboards, costs, metrics | ✅ | ✅ | ✅ | ✅ |
-| Documents: upload/edit/enable/disable/metadata | ✅ | ✅ | ❌ | ❌ |
-| Approve KB drafts (HND-17) | ✅ | ✅ | ❌ | ❌ |
-| Handoff console, tickets | ✅ | ❌ | ✅ | ❌ |
-| Browse conversations/traces (PII masked) | ✅ | ✅ | ✅ | ✅ |
-| Reveal PII (ADM-06) | ✅ | ❌ | ❌ | ❌ |
-| Prompts, tools, limits, thresholds, hours, retention | ✅ | ❌ | ❌ | ❌ |
-| Admin users, roles, API keys, audit log viewer | ✅ | ❌ | ❌ | ❌ |
+|-------------------------------------------------------| ✅ | ✅ | ✅ | ✅ |
+| Dashboards, costs, metrics                            | ✅ | ✅ | ✅ | ✅ |
+| Documents: upload/edit/enable/disable/metadata        | ✅ | ✅ | ❌ | ❌ |
+| Approve KB drafts (HND-17)                            | ✅ | ✅ | ❌ | ❌ |
+| Handoff console, tickets                              | ✅ | ❌ | ✅ | ❌ |
+| Browse conversations/traces (PII masked)              | ✅ | ✅ | ✅ | ✅ |
+| Reveal PII (ADM-06)                                   | ✅ | ❌ | ❌ | ❌ |
+| Prompts, tools, limits, thresholds, hours, retention  | ✅ | ❌ | ❌ | ❌ |
+| Admin users, roles, API keys, audit log viewer        | ✅ | ❌ | ❌ | ❌ |
 
 ### Dashboard
 - [~] ADM-03 Messages/day, active users by tier, resolution rate, handoff rate by reason, p50/p95 latency, TTFT, error rate — read from rollups (RET-R4) so history survives purges — outcomes, tokens, latency, feedback, monthly history from the rollup; no tiers/TTFT
@@ -310,9 +310,9 @@ Any code change breaking one is a blocker.
 - [x] ADM-09 Spend alerts; hard cap (ARC-10 counters) throttles anonymous tier first
 
 ### Feedback and gaps
-- [~] ADM-10 Thumbs-down queue with comment + trace link — thumbs-down list with comment; no trace link, no reviewed state
+- [x] ADM-10 Thumbs-down queue with comment + trace link — thumbs-down inbox with comment, reviewed state, link to the conversation (answers open their trace)
 - [ ] ADM-11 Unanswered-question queue clustered by embedding similarity, with counts
-- [ ] ADM-12 Mark reviewed; "add to golden eval set" (copies PII-stripped data, see RET-R3)
+- [x] ADM-12 Mark reviewed; "add to golden eval set" (copies PII-stripped data, see RET-R3) — mark reviewed + "add to eval set"; export as `golden_queries.json`
 
 ### Documents
 - [~] ADM-13 Upload with OCR preview/correction before indexing — hold for review + text editing; no OCR side-by-side
@@ -325,7 +325,7 @@ Any code change breaking one is a blocker.
 ### Configuration
 - [-] ADM-19 Prompt versions (activate/rollback) — see GEN-01
 - [x] ADM-20 Tool enable/disable — TOOL-08
-- [~] ADM-21 Working hours/holidays, per-tier rate limits, thresholds, handoff triggers, retention periods — hours/holidays, per-tier limits, triggers, retrieval tuning editable; retention and router threshold not
+- [~] ADM-21 Working hours/holidays, per-tier rate limits, thresholds, handoff triggers, retention periods — hours/holidays, per-tier limits, triggers, retrieval tuning and retention editable; router threshold not
 
 ---
 
@@ -334,29 +334,29 @@ Any code change breaking one is a blocker.
 - [x] OBS-01 Trace table per message covering ADM-05 fields — `message_traces`
 - [x] OBS-02 Structured JSON logs with request ID; PII redacted
 - [~] OBS-03 Metrics: latency p50/p95, TTFT, error rate, tokens/day, cost/day, ingestion failures, GPU VRAM, disk — `metrics_daily` rollup + monthly history; VRAM only on model-server `/ready`, not charted; no TTFT
-- [~] OBS-04 Alerts via `ALERT_CHANNEL` (Telegram/Slack/SMTP): service down, error spike, spend threshold, disk > 80%, ingestion failure, handoff queue waiting > N min, purge/backup failure — worker `alert_checks` every 5 min, de-duplicated; failed jobs and backups alert; purge not built yet
+- [x] OBS-04 Alerts via `ALERT_CHANNEL` (Telegram/Slack/SMTP): service down, error spike, spend threshold, disk > 80%, ingestion failure, handoff queue waiting > N min, purge/backup failure — worker `alert_checks` every 5 min, de-duplicated; failed jobs (incl. the purge) and backups alert
 - [~] OBS-05 External uptime check (vendor-side monitor pinging each client's `/health`) — Uptime Kuma setup documented in `docs/DEPLOYMENT.md`; vendor monitor not set up
 
 ---
 
 ## 14. Retention (PRV-04 / OBS-06) — defaults, per-client configurable
 
-| Data | Default |
-|---|---|
-| Logged-in chats | 12 months |
-| Anonymous chats | 90 days |
-| Traces | 90 days |
-| Tickets | 24 months |
-| Audit log | 36 months (separate job) |
-| Aggregated rollups | Indefinite (no PII) |
-| Eval set | Exempt (PII-stripped copies) |
+| Data                  | Default                       |
+|-----------------------|-------------------------------|
+| Logged-in chats       | 12 months                     |
+| Anonymous chats       | 90 days                       |
+| Traces                | 90 days                       |
+| Tickets               | 24 months                     |
+| Audit log             | 36 months (separate job)      |
+| Aggregated rollups    | Indefinite (no PII)           |
+| Eval set              | Exempt (PII-stripped copies)  |
 
-- [ ] RET-R1 Daily purge job; logs deleted row counts per table; alerts on failure
-- [ ] RET-R2 Legal hold flag on conversation/ticket excludes it from purge; set/clear audit-logged
-- [ ] RET-R3 "Add to golden eval set" copies query, expected answer, source doc IDs with PII removed; no reference back to the original conversation
-- [x] RET-R4 Daily rollup job (counts, cost by model/tier, latency percentiles, handoff rates, intent distribution) runs BEFORE trace purge — `metrics_rollup` job in the worker; the purge will run it first
-- [ ] RET-R5 User deletion requests (PRV-03) override retention immediately, except legal hold
-- [ ] RET-R6 Setup CLI asks client sector; warns if sector rules (finance, healthcare, labor/legal) may require longer retention — confirm with client
+- [x] RET-R1 Daily purge job; logs deleted row counts per table; alerts on failure — worker `retention_purge` daily (`services/retention_service.py`); counts logged; failure → "Scheduled job failed" alert
+- [x] RET-R2 Legal hold flag on conversation/ticket excludes it from purge; set/clear audit-logged — owner-only `PUT …/legal-hold` on conversations and tickets; audit-logged by the admin middleware
+- [x] RET-R3 "Add to golden eval set" copies query, expected answer, source doc IDs with PII removed; no reference back to the original conversation — `eval_cases`, masked with `PiiRedactor`, no conversation/message id (`services/eval_case_service.py`)
+- [x] RET-R4 Daily rollup job (counts, cost by model/tier, latency percentiles, handoff rates, intent distribution) runs BEFORE trace purge — `metrics_rollup` job, and the purge refreshes the rollup before deleting
+- [x] RET-R5 User deletion requests (PRV-03) override retention immediately, except legal hold — owner-only data-subject delete (`services/privacy_service.py`); held items kept and counted
+- [x] RET-R6 Setup CLI asks client sector; warns if sector rules (finance, healthcare, labor/legal) may require longer retention — confirm with client — installer asks `sector`; finance/healthcare/labour-legal print a retention warning
 
 ---
 
@@ -378,12 +378,12 @@ Any code change breaking one is a blocker.
 
 ## 16. Privacy (Vietnam)
 
-- [ ] PRV-01 Map personal data flows against Law 91/2025/QH15 on Personal Data Protection (effective 1 Jan 2026). Chat content + private tool results sent to a foreign LLM API = cross-border transfer; document assessment. VERIFY current implementing decree before launch
+- [~] PRV-01 Map personal data flows against Law 91/2025/QH15 on Personal Data Protection (effective 1 Jan 2026). Chat content + private tool results sent to a foreign LLM API = cross-border transfer; document assessment. VERIFY current implementing decree before launch — data-flow map in `docs/PRIVACY_DATA_FLOWS.md`; legal assessment and decree check by the client's lawyer
 - [x] PRV-02 Consent notice in widget (esp. anonymous ticket contact info) — `consent_at` stored; contact refused without it
-- [ ] PRV-03 Data-subject requests: admin export/delete of one user's conversations + tickets
-- [ ] PRV-04 Retention: §14
-- [ ] PRV-05 LLM provider configured for no training, minimal/zero retention where available
-- [~] PRV-06 AI disclaimer in widget — present; fails contrast (WID-10)
+- [x] PRV-03 Data-subject requests: admin export/delete of one user's conversations + tickets — Admin → Cấu hình → Quyền riêng tư: export JSON / delete by user id, visitor id or ticket e-mail
+- [x] PRV-04 Retention: §14 — owner-editable periods in settings; daily purge (RET-R1)
+- [x] PRV-05 LLM provider configured for no training, minimal/zero retention where available — per-client OpenAI settings in `docs/DEPLOYMENT.md` (no training, ZDR request, no `store`, optional residency)
+- [x] PRV-06 AI disclaimer in widget — always shown; contrast fixed (WID-10)
 
 ---
 
