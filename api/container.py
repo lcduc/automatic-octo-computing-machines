@@ -13,6 +13,7 @@ from typing import Callable, List, Optional
 
 # Local imports
 from config.settings import Config
+from config.tool_settings import BusinessDbConfig
 from core.agent.chatbot import ChatbotService
 from core.agent.intent_router import IntentRouter
 from core.agent.openai_client import OpenAIClientProvider
@@ -22,6 +23,7 @@ from core.agent.response_cache import ResponseCache
 from core.agent.tool_calling_agent import ToolCallingAgent
 from core.agent.tools.current_time_tool import CurrentTimeTool
 from core.agent.tools.registry import ToolRegistry
+from core.agent.tools.sql_tool_executor import SqlToolExecutor
 from core.guardrails.input_guard import InputGuard
 from core.guardrails.pii_redactor import PiiRedactor
 from core.retrieval.remote_models import RemoteReranker, embedding_service, model_server_client
@@ -44,6 +46,7 @@ from services.pricing_service import PricingService
 from services.rate_limit_service import RateLimitService, TimeBuckets
 from services.readiness_service import ReadinessService
 from services.settings_service import SettingsService
+from services.sql_tool_catalog import SqlToolCatalog
 from services.transcription_service import TranscriptionService
 from services.usage_service import UsageService
 from utils.logging_setup import LOG_BACKUP_COUNT, json_log_path
@@ -90,6 +93,13 @@ class AppContainer:
         #: Set when the GPU models live in the model-server (MODEL_SERVER_URL).
         self.model_server = model_server_client()
         self.readiness = ReadinessService(self.database, self.model_server)
+        #: The client's business database (read-only role) behind the SQL tools; ``None`` without one.
+        self.business_database: Optional[Database] = None
+        self.sql_tools: Optional[SqlToolCatalog] = None
+        if BusinessDbConfig.BUSINESS_DB_URL():
+            self.business_database = Database(BusinessDbConfig.BUSINESS_DB_URL(), BusinessDbConfig.BUSINESS_DB_POOL_SIZE())
+            executor = SqlToolExecutor(self.business_database, BusinessDbConfig.SQL_TOOL_STATEMENT_TIMEOUT_MS())
+            self.sql_tools = SqlToolCatalog(self.database, executor, self.host_identity.tier_level)
         self.reranker = None
         self.llm = None
         self.pipeline: Optional[ChatbotService] = None
@@ -108,6 +118,9 @@ class AppContainer:
         await self.settings.load()
         await self.pricing.load()
         await self.live_feed.start()
+        if self.sql_tools is not None:
+            self.business_database.connect()
+            await self.sql_tools.load()
 
         embedding = await self._load_embedding_service()
         self.reranker = await self._load_reranker()
@@ -204,8 +217,8 @@ class AppContainer:
         moderator = openai.moderate if (openai is not None and Config.Security.MODERATION_ENABLED()) else None
         intent_router = tool_agent = None
         if Config.LLM.TOOL_CALLING_ENABLED() and openai is not None:
-            registry = ToolRegistry(tools=[CurrentTimeTool()])
-            intent_router = IntentRouter(self.llm, registry)
+            registry = ToolRegistry(tools=[CurrentTimeTool()], source=self.sql_tools)
+            intent_router = IntentRouter(self.llm, registry, login_available=self.host_identity.enabled)
             tool_agent = ToolCallingAgent(openai, registry, QueryRewriter(self.llm))
         return ChatbotService(
             llm_provider=self.llm,
@@ -235,5 +248,7 @@ class AppContainer:
             self.llm.close()
         if self.model_server is not None:
             self.model_server.close()
+        if self.business_database is not None:
+            await self.business_database.close()
         await self.database.close()
         logger.info("Services stopped")

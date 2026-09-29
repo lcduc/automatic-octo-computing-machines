@@ -22,7 +22,10 @@ from api.schemas.admin import (
     ModelPriceIn,
     ModelPriceOut,
     SettingsUpdate,
+    SqlToolOut,
+    SqlToolUpdate,
 )
+from services.errors import NotFoundError
 from api.schemas.common import MessageResponse
 from services.auth_service import AdminPrincipal
 
@@ -122,3 +125,24 @@ async def delete_price(model: str, container: AppContainer = Depends(get_contain
     """Remove a model's price."""
     await container.pricing.delete(model)
     return MessageResponse(message="Price removed")
+
+
+@router.get("/tools", response_model=List[SqlToolOut], dependencies=[Depends(require_admin(READ_ROLES))])
+async def list_tools(container: AppContainer = Depends(get_container)) -> List[SqlToolOut]:
+    """SQL tools of this deployment (empty without a business database)."""
+    if container.sql_tools is None:
+        return []
+    return [SqlToolOut.model_validate(tool) for tool in await container.sql_tools.list()]
+
+
+@router.patch("/tools/{name}", response_model=SqlToolOut)
+async def update_tool(
+    name: str,
+    body: SqlToolUpdate,
+    principal: AdminPrincipal = Depends(require_admin(WRITE_ROLES)),
+    container: AppContainer = Depends(get_container),
+) -> SqlToolOut:
+    """Enable or disable a tool without a deploy; applies to the next turn."""
+    if container.sql_tools is None:
+        raise NotFoundError("No business database is configured")
+    return SqlToolOut.model_validate(await container.sql_tools.set_enabled(name, body.enabled, principal.email))

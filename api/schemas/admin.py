@@ -120,6 +120,30 @@ class ApiKeyCreated(ApiKeyOut):
     key: str
 
 
+# ---------------------------------------------------------------- SQL tools
+
+
+class SqlToolOut(ApiModel):
+    """A SQL tool as the admin web lists it (its SQL is shown for review, never edited here)."""
+
+    name: str
+    description: str
+    required_tier: str
+    sql_template: str
+    allowed_columns: List[str]
+    masked_columns: List[str]
+    row_limit: int
+    enabled: bool
+    updated_by: Optional[str] = None
+    updated_at: datetime
+
+
+class SqlToolUpdate(BaseModel):
+    """Switch a tool on or off (TOOL-08)."""
+
+    enabled: bool
+
+
 # ---------------------------------------------------------------- prices
 
 

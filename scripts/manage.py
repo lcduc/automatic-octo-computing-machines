@@ -7,6 +7,8 @@ Usage (from the repository root, with the venv active, or inside the api contain
     python -m scripts.manage create-api-key --name "client backend"
     python -m scripts.manage bootstrap-admin --email you@example.com
     python -m scripts.manage test-alert
+    python -m scripts.manage sync-sql-tools --file deploy/business_db/demo_tools.json
+    python -m scripts.manage check-business-db
 
 ``create-admin`` prompts for the password (never passed on the command line).
 ``bootstrap-admin`` is what the installer runs: it creates the first owner with
@@ -33,10 +35,15 @@ load_dotenv()
 
 # Local imports
 from config.settings import Config  # noqa: E402
+from config.tool_settings import BusinessDbConfig  # noqa: E402
+from core.agent.tools.sql_tool_executor import SqlToolExecutor  # noqa: E402
 from core.infrastructure.alert_notifier import AlertDeliveryError, AlertNotifier  # noqa: E402
+from core.storage.business_db_probe import BusinessDbProbe  # noqa: E402
 from core.storage.database import Database  # noqa: E402
 from core.storage.tables.access_tables import ADMIN_ROLES, API_KEY_SCOPES, ROLE_OWNER, SCOPE_CHAT  # noqa: E402
 from services.auth_service import AuthService  # noqa: E402
+from services.host_identity_service import HostIdentityService  # noqa: E402
+from services.sql_tool_catalog import SqlToolCatalog  # noqa: E402
 from services.errors import ServiceError  # noqa: E402
 
 #: Bytes of randomness in a generated one-time admin password (~22 URL-safe characters).
@@ -96,10 +103,45 @@ class ManagementCli:
             raise ServiceError(str(exc)) from exc
         print(f"Test alert sent via {notifier.channel}")
 
+    async def sync_sql_tools(self, path: str) -> None:
+        """
+        Create or update SQL tool definitions from a JSON file (enabled flags are kept).
+
+        Raises:
+            ServiceError: Unreadable file or an invalid definition.
+        """
+        try:
+            with open(path, encoding="utf-8") as handle:
+                definitions = json.load(handle)
+        except (OSError, ValueError) as exc:
+            raise ServiceError(f"Cannot read {path}: {exc}") from exc
+        catalog = SqlToolCatalog(self._database, SqlToolExecutor(None, 0), HostIdentityService.from_config(None).tier_level)
+        names = await catalog.sync(definitions, "cli")
+        print(f"Synced SQL tools: {', '.join(names)}")
+
+    @staticmethod
+    async def check_business_db() -> None:
+        """
+        Prove the business database role can read but never write (TOOL-05).
+
+        Raises:
+            ServiceError: Not configured, unreachable, or the role can write.
+        """
+        url = BusinessDbConfig.BUSINESS_DB_URL()
+        if not url:
+            raise ServiceError("BUSINESS_DB_URL is not configured")
+        problems = await BusinessDbProbe(url).problems()
+        if problems:
+            raise ServiceError("Business database role is not read-only: " + "; ".join(problems))
+        print("Business database role is read-only")
+
     async def run(self, args: argparse.Namespace) -> None:
         """Dispatch the parsed command."""
         if args.command == "test-alert":
             await self.test_alert()
+            return
+        if args.command == "check-business-db":
+            await self.check_business_db()
             return
         self._database.connect()
         try:
@@ -107,6 +149,8 @@ class ManagementCli:
                 await self.create_admin(args.email, args.role)
             elif args.command == "bootstrap-admin":
                 await self.bootstrap_admin(args.email)
+            elif args.command == "sync-sql-tools":
+                await self.sync_sql_tools(args.file)
             elif args.command == "create-api-key":
                 await self.create_api_key(args.name, args.scope or [SCOPE_CHAT])
         finally:
@@ -127,6 +171,9 @@ def _parser() -> argparse.ArgumentParser:
     key.add_argument("--scope", action="append", choices=list(API_KEY_SCOPES),
                      help="Repeat for several scopes (default: chat)")
     commands.add_parser("test-alert", help="Send a test message to the configured alert channel")
+    tools = commands.add_parser("sync-sql-tools", help="Create or update SQL tool definitions from a JSON file")
+    tools.add_argument("--file", required=True)
+    commands.add_parser("check-business-db", help="Check the business database role cannot write")
     return parser
 
 
