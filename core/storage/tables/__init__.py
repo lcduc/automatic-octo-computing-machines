@@ -7,6 +7,7 @@ from .audit_tables import AdminAuditEntry
 from .base import Base
 from .conversation_tables import Conversation, Feedback, HandoffRequest, Message, TokenUsage
 from .knowledge_tables import KnowledgeChunk, KnowledgeDocument, KnowledgeSource
+from .tool_tables import SqlToolDefinition
 from .usage_tables import ModelPrice, UsageCounter
 
 __all__ = [
@@ -25,5 +26,6 @@ __all__ = [
     "KnowledgeDocument",
     "KnowledgeSource",
     "ModelPrice",
+    "SqlToolDefinition",
     "UsageCounter",
 ]
