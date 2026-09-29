@@ -184,12 +184,14 @@ export interface Handoff {
 
 export interface UsageSummary {
   since: string;
-  daily: Array<{ day: string; model: string; prompt_tokens: number; completion_tokens: number; calls: number }>;
+  daily: Array<{ day: string; model: string; prompt_tokens: number; completion_tokens: number; cost_micro_usd: number; calls: number }>;
   by_purpose: Array<{ purpose: string; tokens: number; calls: number }>;
+  by_tier: Array<{ tier: string; tokens: number; cost_micro_usd: number }>;
   outcomes: Partial<Record<Outcome, number>>;
   feedback: { positive: number; negative: number };
   latency: { p50_ms: number | null; p95_ms: number | null; conversations: number };
-  totals: { prompt_tokens: number; completion_tokens: number; calls: number };
+  totals: { prompt_tokens: number; completion_tokens: number; calls: number; cost_micro_usd: number };
+  month: { tokens: number; cost_micro_usd: number };
 }
 
 export interface LiveEvent {
@@ -250,6 +252,23 @@ export interface Settings {
   semantic_weight: number;
   retrieval_top_k: number;
   max_context_chunks: number;
+  limit_anonymous_per_minute: number;
+  limit_anonymous_per_hour: number;
+  tokens_anonymous_per_day: number;
+  limit_user_per_minute: number;
+  limit_user_per_hour: number;
+  tokens_user_per_day: number;
+  tokens_ip_per_day: number;
+  spend_cap_monthly_usd: number;
+  spend_anonymous_cutoff_ratio: number;
+}
+
+export interface ModelPrice {
+  model: string;
+  input_usd_per_million: string;
+  output_usd_per_million: string;
+  updated_by: string | null;
+  updated_at: string;
 }
 
 /** Scopes a server-to-server API key can carry (backend: core/storage/tables/access_tables.py). */
