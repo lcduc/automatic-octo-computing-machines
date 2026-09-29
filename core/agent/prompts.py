@@ -45,9 +45,16 @@ Nguyên tắc bắt buộc:
         "- \"action\": yêu cầu mà một trong các công cụ sau đây có thể thực hiện "
         "hoặc trả lời:\n"
         "{tool_descriptions}\n"
+        "{login_option}"
         "Nếu không công cụ nào phù hợp, hãy trả lời \"rag\".\n"
-        "Chỉ trả lời đúng một từ, \"rag\" hoặc \"action\", không kèm giải thích hay "
+        "Chỉ trả lời đúng một từ ({answers}), không kèm giải thích hay "
         "định dạng khác."
+    )
+
+    #: Added to the intent classifier for anonymous visitors when some tools need a signed-in user.
+    INTENT_LOGIN_OPTION = (
+        "- \"login\": yêu cầu về dữ liệu riêng của người dùng mà chỉ người đã "
+        "đăng nhập mới dùng được:\n{locked_descriptions}\n"
     )
 
     #: Rewrites a follow-up question into a standalone one using the history.
@@ -113,6 +120,8 @@ class AutoReplies:
     #: Monthly spend cap reached for everyone.
     SPEND_PAUSED = "Trợ lý ảo tạm ngừng hoạt động. Bạn vui lòng quay lại sau hoặc liên hệ bộ phận hỗ trợ."
     RATE_LIMITED = "Bạn gửi tin nhắn quá nhanh. Vui lòng thử lại sau ít giây."
+    #: An anonymous visitor asked for their own data (orders, account…); the widget shows a login button.
+    LOGIN_REQUIRED = "Để xem thông tin này, bạn vui lòng đăng nhập. Sau khi đăng nhập, hãy hỏi lại nhé."
 
 
 class PromptManager:

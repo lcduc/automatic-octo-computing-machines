@@ -9,6 +9,7 @@ from typing import Any, AsyncGenerator, Dict, List, Optional
 
 # Local imports
 from models.llm import StreamDelta
+from models.tool_context import ToolContext
 from .history import recent_history
 from .openai_client import OpenAIClientProvider
 from .prompts import SystemPrompts
@@ -59,18 +60,16 @@ class ToolCallingAgent:
             {"role": "user", "content": query},
         ]
 
-    def _execute_tool_call(self, tool_call: Any) -> str:
+    async def _execute_tool_call(self, tool_call: Any, context: ToolContext) -> str:
         """Parse a model tool call's JSON arguments and dispatch it through the registry."""
         try:
             arguments = json.loads(tool_call.function.arguments or "{}")
         except (TypeError, ValueError):
-            logger.warning(
-                "Malformed tool call arguments for %r: %r",
-                tool_call.function.name,
-                tool_call.function.arguments,
-            )
+            logger.warning("Malformed tool call arguments for %r", tool_call.function.name)
             return f"Error: arguments for '{tool_call.function.name}' were not valid JSON."
-        return self._tool_registry.execute(tool_call.function.name, arguments)
+        if not isinstance(arguments, dict):
+            return f"Error: arguments for '{tool_call.function.name}' must be a JSON object."
+        return await self._tool_registry.execute(tool_call.function.name, arguments, context)
 
     @staticmethod
     def _assistant_tool_call_message(message: Any, tool_calls: List[Any]) -> Dict[str, Any]:
@@ -94,6 +93,7 @@ class ToolCallingAgent:
         history: Optional[List[Dict[str, str]]] = None,
         model: Optional[str] = None,
         light_model: Optional[str] = None,
+        context: ToolContext = ToolContext(),
     ) -> AsyncGenerator[StreamDelta, None]:
         """
         Answer a query, letting the model call a registered tool first if it chooses to.
@@ -103,6 +103,7 @@ class ToolCallingAgent:
             history: Prior conversation turns, most recent last.
             model: Answer model; defaults to the configured one.
             light_model: Model for the query rewrite; defaults to the configured one.
+            context: The verified caller: only tools its tier permits are offered.
 
         Yields:
             Text deltas and usage deltas (one per LLM call made).
@@ -117,7 +118,7 @@ class ToolCallingAgent:
         messages = self._build_messages(standalone_query, history)
 
         message, decision_usage = await self._client_provider.complete_with_tools_async(
-            messages, tools=self._tool_registry.schemas(), model=model
+            messages, tools=self._tool_registry.schemas(context), model=model
         )
         if decision_usage is not None:
             yield StreamDelta(usage=decision_usage)
@@ -135,7 +136,7 @@ class ToolCallingAgent:
                     "role": "tool",
                     "tool_call_id": tool_call.id,
                     "name": tool_call.function.name,
-                    "content": self._execute_tool_call(tool_call),
+                    "content": await self._execute_tool_call(tool_call, context),
                 }
             )
 

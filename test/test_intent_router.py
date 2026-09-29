@@ -24,7 +24,7 @@ class _DummyTool(BaseTool):
     def parameters(self):
         return {"type": "object", "properties": {}}
 
-    def execute(self, **kwargs) -> str:
+    async def execute(self, arguments, context) -> str:
         return "2026-01-01 00:00:00"
 
 
@@ -137,4 +137,47 @@ async def test_no_tools_registered_defaults_to_rag_without_calling_llm():
     result, _usage = await router.classify("Bây giờ là mấy giờ?")
 
     assert result == IntentType.RAG
+    assert client.calls == []
+
+
+class _PrivateTool(_DummyTool):
+    """A tool only signed-in users may use."""
+
+    @property
+    def name(self) -> str:
+        return "list_my_orders"
+
+    @property
+    def description(self) -> str:
+        return "List the signed-in user's own orders."
+
+    @property
+    def required_tier_level(self) -> int:
+        return 1
+
+
+@pytest.mark.asyncio
+async def test_anonymous_request_for_private_data_asks_for_login_without_offering_the_tool():
+    from models.tool_context import ToolContext
+
+    client = _StubClientProvider(response="login")
+    router = IntentRouter(client, ToolRegistry(tools=[_DummyTool(), _PrivateTool()]), login_available=True)
+    intent, _ = await router.classify("đơn hàng của tôi", context=ToolContext())
+    assert intent == IntentType.LOGIN_REQUIRED
+    prompt = client.calls[0][0]["content"]
+    assert "List the signed-in user's own orders." in prompt and "list_my_orders" not in prompt
+
+    signed_in, _ = await IntentRouter(client, ToolRegistry(tools=[_PrivateTool()]), login_available=True).classify(
+        "đơn hàng của tôi", context=ToolContext(user_id="user-42", tier_level=1))
+    assert signed_in == IntentType.RAG  # the stub still says "login"; a signed-in user is never asked to log in
+    assert "list_my_orders" in client.calls[-1][0]["content"]
+
+
+@pytest.mark.asyncio
+async def test_login_is_never_offered_when_the_host_has_no_sign_in():
+    from models.tool_context import ToolContext
+
+    client = _StubClientProvider(response="login")
+    router = IntentRouter(client, ToolRegistry(tools=[_PrivateTool()]), login_available=False)
+    assert await router.classify("đơn hàng của tôi", context=ToolContext()) == (IntentType.RAG, None)
     assert client.calls == []

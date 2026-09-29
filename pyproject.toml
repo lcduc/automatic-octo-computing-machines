@@ -34,3 +34,6 @@ ignore = [
 testpaths = ["test"]
 # All async tests carry an explicit @pytest.mark.asyncio, matching strict mode.
 asyncio_mode = "strict"
+markers = [
+    "hard_gate: must pass 100% before any merge (EVAL-09): tier gating, per-user data isolation, retrieval filters",
+]

@@ -172,11 +172,16 @@ class ChatbotService:
             return
 
         if self._intent_router is not None and self._tool_agent is not None:
-            intent, intent_usage = await self._intent_router.classify(request.query, history, light_model)
+            intent, intent_usage = await self._intent_router.classify(
+                request.query, history, light_model, request.context
+            )
             if intent_usage is not None:
                 yield TurnUsage(PURPOSE_INTENT, intent_usage)
+            if intent == IntentType.LOGIN_REQUIRED:
+                yield TurnResult(TurnOutcome.LOGIN_REQUIRED, AutoReplies.LOGIN_REQUIRED)
+                return
             if intent == IntentType.ACTION:
-                async for event in self._run_tool_agent(request.query, history, deadline, chat_model, light_model):
+                async for event in self._run_tool_agent(request, history, deadline, chat_model, light_model):
                     yield event
                 return
 
@@ -241,13 +246,13 @@ class ChatbotService:
         )
 
     async def _run_tool_agent(
-        self, query: str, history: List[Dict[str, str]], deadline: float, chat_model: str, light_model: str
+        self, request: TurnRequest, history: List[Dict[str, str]], deadline: float, chat_model: str, light_model: str
     ) -> AsyncIterator[TurnEvent]:
-        """Answer an action request through the tool-calling agent."""
+        """Answer an action request through the tool-calling agent (never cached: results may be private)."""
         pieces: List[str] = []
         # The tool agent always answers through OpenAI, so an admin-chosen chat model (which may be
         # another provider's) is not passed; its query rewrite runs on the chat provider's light model.
-        stream = self._tool_agent.stream(query, history, light_model=light_model)
+        stream = self._tool_agent.stream(request.query, history, light_model=light_model, context=request.context)
         async for delta in self._with_deadline(stream, deadline):
             if delta.usage is not None:
                 yield TurnUsage(PURPOSE_TOOL, delta.usage)

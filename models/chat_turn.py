@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional, Sequence
 
 # Local imports
 from .llm import LLMUsage
+from .tool_context import ToolContext
 
 FALLBACK_MODE_DENY = "deny"
 FALLBACK_MODE_HANDOFF = "handoff"
@@ -27,6 +28,8 @@ class TurnOutcome(str, Enum):
     HANDOFF = "handoff"
     #: Rejected by the guardrails (no LLM call).
     BLOCKED = "blocked"
+    #: Needs a signed-in user; the widget offers the host site's login (ID-11).
+    LOGIN_REQUIRED = "login_required"
     ERROR = "error"
 
 
@@ -70,6 +73,8 @@ class TurnRequest:
     policy: ChatPolicy
     #: Restrict retrieval to these source names; ``None`` searches all.
     sources: Optional[Sequence[str]] = None
+    #: The verified caller, for tools (tier gate, ``user_id``).
+    context: ToolContext = field(default_factory=ToolContext)
 
 
 @dataclass(frozen=True)

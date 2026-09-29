@@ -22,6 +22,7 @@ from core.storage.tables.base import utc_now
 from core.storage.tables.conversation_tables import Conversation, Message, TokenUsage
 from models.caller import ChatCaller
 from models.chat_turn import TurnDelta, TurnOutcome, TurnRequest, TurnResult, TurnUsage
+from models.tool_context import ToolContext
 from .errors import NotFoundError, RateLimitedError, ServiceUnavailableError
 from .handoff_service import HandoffService
 from .live_feed_service import LiveFeedService
@@ -133,7 +134,13 @@ class ChatService:
             conversation.last_activity_at = utc_now()
 
         history = [{"role": row.role, "content": row.content} for row in history_rows]
-        request = TurnRequest(query=redacted, history=history, policy=self._settings.chat_policy(), sources=sources)
+        request = TurnRequest(
+            query=redacted,
+            history=history,
+            policy=self._settings.chat_policy(),
+            sources=sources,
+            context=ToolContext(user_id=caller.user_id, tier_level=caller.tier_level),
+        )
         return PreparedTurn(caller, conversation.id, uuid.uuid4(), request, time.perf_counter())
 
     @staticmethod
