@@ -336,6 +336,14 @@ class FeedbackItem(BaseModel):
     question: Optional[str] = None
     answer: str
     outcome: Optional[str] = None
+    reviewed_at: Optional[datetime] = None
+    reviewed_by: Optional[str] = None
+
+
+class FeedbackReview(BaseModel):
+    """Mark a rating reviewed (``true``) or back to unreviewed."""
+
+    reviewed: bool
 
 
 # ---------------------------------------------------------------- handoffs

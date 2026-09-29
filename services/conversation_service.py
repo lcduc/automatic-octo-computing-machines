@@ -11,6 +11,7 @@ from typing import List, Optional, Tuple
 # Local imports
 from core.storage.conversation_repository import ConversationRepository
 from core.storage.database import Database
+from core.storage.tables.base import utc_now
 from core.storage.tables.conversation_tables import Conversation, Feedback, Message, TokenUsage
 from core.storage.tables.observability_tables import MessageTrace
 from models.caller import ChatCaller
@@ -122,7 +123,7 @@ class ConversationService:
             return trace, await repository.message_usage(message_id)
 
     async def list_feedback(
-        self, rating: Optional[int], limit: int, offset: int
+        self, rating: Optional[int], limit: int, offset: int, reviewed: Optional[bool] = None
     ) -> Tuple[List[Tuple[Feedback, Message, Optional[str]]], int]:
         """
         Admin feedback inbox: each rating with the rated answer and the question asked.
@@ -132,6 +133,21 @@ class ConversationService:
         """
         async with self._database.session() as session:
             repository = ConversationRepository(session)
-            rows, total = await repository.list_feedback(rating, limit, offset)
+            rows, total = await repository.list_feedback(rating, limit, offset, reviewed)
             questions = await repository.questions_for([message for _, message in rows])
         return [(feedback, message, questions.get(message.id)) for feedback, message in rows], total
+
+    async def mark_feedback_reviewed(self, feedback_id: uuid.UUID, reviewed: bool, reviewed_by: str) -> Feedback:
+        """
+        Mark a rating as looked at (ADM-12), or back to unreviewed.
+
+        Raises:
+            NotFoundError: Unknown rating.
+        """
+        async with self._database.session() as session:
+            feedback = await ConversationRepository(session).get_feedback(feedback_id)
+            if feedback is None:
+                raise NotFoundError("Feedback not found")
+            feedback.reviewed_at = utc_now() if reviewed else None
+            feedback.reviewed_by = reviewed_by if reviewed else None
+        return feedback

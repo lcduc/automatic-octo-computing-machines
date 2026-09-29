@@ -123,19 +123,28 @@ class ConversationRepository:
         )
 
     async def list_feedback(
-        self, rating: Optional[int], limit: int, offset: int
+        self, rating: Optional[int], limit: int, offset: int, reviewed: Optional[bool] = None
     ) -> Tuple[List[Tuple[Feedback, Message]], int]:
         """Feedback newest first, joined with the rated assistant message."""
         statement = select(Feedback, Message).join(Message, Feedback.message_id == Message.id)
         count_statement = select(func.count(Feedback.id))
+        filters = []
         if rating is not None:
-            statement = statement.where(Feedback.rating == rating)
-            count_statement = count_statement.where(Feedback.rating == rating)
+            filters.append(Feedback.rating == rating)
+        if reviewed is not None:
+            filters.append(Feedback.reviewed_at.is_not(None) if reviewed else Feedback.reviewed_at.is_(None))
+        if filters:
+            statement = statement.where(*filters)
+            count_statement = count_statement.where(*filters)
         total = (await self._session.execute(count_statement)).scalar_one()
         result = await self._session.execute(
             statement.order_by(Feedback.created_at.desc()).limit(limit).offset(offset)
         )
         return [(feedback, message) for feedback, message in result.all()], int(total)
+
+    async def get_feedback(self, feedback_id: uuid.UUID) -> Optional[Feedback]:
+        """One rating by id."""
+        return await self._session.get(Feedback, feedback_id)
 
     async def questions_for(self, assistant_messages: Sequence[Message]) -> Dict[uuid.UUID, str]:
         """
