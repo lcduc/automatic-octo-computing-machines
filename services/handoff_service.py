@@ -25,7 +25,7 @@ from core.storage.tables.conversation_tables import (
     HandoffRequest,
 )
 from .errors import InvalidRequestError, NotFoundError
-from .usage_service import UsageService
+from .live_feed_service import LiveFeedService
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +36,7 @@ HANDOFF_STATUSES = ("pending", "in_progress", "resolved")
 class HandoffService:
     """Creates, lists and resolves handoff requests."""
 
-    def __init__(self, database: Database, live_feed: UsageService):
+    def __init__(self, database: Database, live_feed: LiveFeedService):
         """
         Args:
             database: Connected database.
@@ -71,14 +71,14 @@ class HandoffService:
         conversation.status = CONVERSATION_STATUS_HANDOFF
         return request
 
-    def notify(self, request: HandoffRequest) -> None:
+    async def notify(self, request: HandoffRequest) -> None:
         """
         Tell staff about a new request (after it was committed).
 
         Extension point for a real live-agent integration.
         """
         logger.info("Handoff requested for conversation %s (%s)", request.conversation_id, request.reason)
-        self._live_feed.publish(
+        await self._live_feed.publish(
             {
                 "type": "handoff",
                 "handoff_id": str(request.id),

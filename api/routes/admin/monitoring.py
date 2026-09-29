@@ -41,13 +41,13 @@ async def usage_live(container: AppContainer = Depends(get_container)) -> Stream
     """Streams a ``turn`` event after every answered message and a ``handoff`` event per new request."""
 
     async def events() -> AsyncIterator[Dict[str, Any]]:
-        queue = container.usage.subscribe()
+        queue = container.live_feed.subscribe()
         try:
             yield {"type": "hello", "ts": time.time()}
             while True:
                 yield await queue.get()
         finally:
-            container.usage.unsubscribe(queue)
+            container.live_feed.unsubscribe(queue)
 
     return StreamingResponse(sse_stream(events()), media_type="text/event-stream", headers=STREAM_HEADERS)
 
