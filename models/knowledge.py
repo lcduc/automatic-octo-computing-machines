@@ -4,6 +4,7 @@ Internal data classes describing indexed knowledge and retrieval results.
 
 # Standard library imports
 from dataclasses import dataclass, field
+from datetime import date
 from typing import Any, Dict, List, Optional
 
 #: Chunking strategy that keeps each file type's built-in splitting.
@@ -74,6 +75,11 @@ class IndexedChunk:
     source_priority: float
     #: Document metadata overlaid with chunk metadata (chunk keys win).
     metadata: Dict[str, Any] = field(default_factory=dict)
+    #: Lowest caller access level answered from this chunk's document (0 = everyone).
+    access_level: int = 0
+    #: Validity of the chunk's document (inclusive; ``None`` = open-ended).
+    effective_from: Optional[date] = None
+    effective_to: Optional[date] = None
 
 
 @dataclass

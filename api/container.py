@@ -73,7 +73,7 @@ class AppContainer:
         self.started_at = time.time()
         self.database = Database(Config.Database.DATABASE_URL(), Config.Database.DB_POOL_SIZE())
         self.rate_limiter = RateLimitService(self.database, TimeBuckets(Config.Server.APP_TIMEZONE()))
-        self.index = KnowledgeIndex(self.database)
+        self.index = KnowledgeIndex(self.database, self._document_tier_level)
         self.settings = SettingsService(self.database)
         self.usage = UsageService(self.database, self.rate_limiter)
         self.pricing = PricingService(self.database)
@@ -108,6 +108,10 @@ class AppContainer:
         self.ingestion_worker: Optional[IngestionWorker] = None
         self.transcription: Optional[TranscriptionService] = None
         self._background_loops: List[asyncio.Task] = []
+
+    def _document_tier_level(self, tier: str) -> int:
+        """Access level of a document tier (the host's tiers; unknown ones are unreachable)."""
+        return self.host_identity.tier_level(tier)
 
     async def start(self) -> None:
         """Connect, load models, build the pipeline and the first knowledge snapshot."""

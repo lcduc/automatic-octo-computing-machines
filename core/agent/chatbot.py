@@ -17,6 +17,8 @@ persists what it yields.
 import asyncio
 import hashlib
 import logging
+from datetime import datetime
+from zoneinfo import ZoneInfo
 from typing import Any, AsyncIterator, Callable, Dict, List, Optional, Union
 
 # Local imports
@@ -38,6 +40,7 @@ from models.chat_turn import (
 from models.intent import IntentType
 from models.knowledge import RetrievedChunk
 from models.llm import StreamDelta
+from models.tool_context import ToolContext
 from .base_llm_provider import BaseLLMProvider
 from .confidence import ConfidenceScorer
 from .history import recent_history
@@ -190,7 +193,7 @@ class ChatbotService:
             yield TurnUsage(PURPOSE_REWRITE, rewrite_usage)
         rewritten = search_query if search_query != request.query else None
 
-        results = await self._retrieve(search_query, request.sources, policy, deadline)
+        results = await self._retrieve(search_query, request.sources, policy, deadline, request.context)
         matched = [item for item in results if item.matched]
         if not matched:
             yield self._fallback(request, rewritten)
@@ -261,7 +264,9 @@ class ChatbotService:
                 yield TurnDelta(delta.text)
         yield TurnResult(TurnOutcome.ANSWERED, "".join(pieces).strip(), model=chat_model)
 
-    async def _retrieve(self, query: str, sources, policy: ChatPolicy, deadline: float) -> List[RetrievedChunk]:
+    async def _retrieve(
+        self, query: str, sources, policy: ChatPolicy, deadline: float, context: ToolContext
+    ) -> List[RetrievedChunk]:
         """
         Run hybrid search in a worker thread, bounded by the retrieval slots and the deadline.
 
@@ -282,6 +287,8 @@ class ChatbotService:
                     max_context_chunks=_or_default(policy.max_context_chunks, Config.RAG.MAX_CONTEXT_CHUNKS),
                     expansion_radius=Config.RAG.CONTEXT_EXPANSION_RADIUS(),
                     sources=sources,
+                    access_level=context.tier_level,
+                    today=datetime.now(ZoneInfo(Config.Server.APP_TIMEZONE())).date(),
                 ),
                 timeout=self._remaining(deadline),
             )

@@ -9,6 +9,7 @@ document so the LLM reads contiguous passages.
 
 # Standard library imports
 import logging
+from datetime import date
 from typing import Dict, List, Optional, Sequence, Tuple
 
 # Third-party imports
@@ -41,14 +42,16 @@ class ContextRetriever:
         self._reranker = reranker
 
     @staticmethod
-    def _candidate_indices(snapshot: KnowledgeSnapshot, sources: Optional[Sequence[str]]) -> np.ndarray:
-        """Indices of the chunks a search may return, honouring a source filter."""
+    def _candidate_indices(
+        snapshot: KnowledgeSnapshot, sources: Optional[Sequence[str]], access_level: int, today: date
+    ) -> np.ndarray:
+        """Indices of the chunks a search may return: source filter, then tier and effective dates."""
         if not sources:
-            return np.arange(len(snapshot.chunks))
-        selected = [snapshot.source_indices[name] for name in sources if name in snapshot.source_indices]
-        if not selected:
-            return np.zeros(0, dtype=np.int64)
-        return np.concatenate(selected)
+            candidates = np.arange(len(snapshot.chunks))
+        else:
+            selected = [snapshot.source_indices[name] for name in sources if name in snapshot.source_indices]
+            candidates = np.concatenate(selected) if selected else np.zeros(0, dtype=np.int64)
+        return snapshot.visible(candidates, access_level, today)
 
     @staticmethod
     def _min_max(values: np.ndarray) -> np.ndarray:
@@ -91,6 +94,8 @@ class ContextRetriever:
         max_context_chunks: int,
         expansion_radius: int,
         sources: Optional[Sequence[str]] = None,
+        access_level: int = 0,
+        today: Optional[date] = None,
     ) -> List[RetrievedChunk]:
         """
         Return matched chunks (plus neighbours for context), best first.
@@ -105,6 +110,8 @@ class ContextRetriever:
             max_context_chunks: Cap on returned chunks including neighbours.
             expansion_radius: Neighbours added on each side of a match (same document).
             sources: Restrict to these source names; ``None`` searches all.
+            access_level: The caller's tier level; higher-tier documents are skipped.
+            today: The local date for effective-date filtering (default: today).
 
         Returns:
             Matched chunks first-ranked-first, each followed by its neighbours in
@@ -112,7 +119,7 @@ class ContextRetriever:
         """
         if snapshot.is_empty or not query.strip():
             return []
-        candidates = self._candidate_indices(snapshot, sources)
+        candidates = self._candidate_indices(snapshot, sources, access_level, today or date.today())
         if candidates.size == 0:
             return []
 
