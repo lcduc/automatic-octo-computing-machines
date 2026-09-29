@@ -9,6 +9,7 @@ export const OUTCOME_TONES: Record<Outcome, Tone> = {
   handoff: "info",
   blocked: "danger",
   login_required: "warning",
+  agent_reply: "info",
   error: "danger",
 };
 
@@ -19,9 +20,10 @@ export const DOCUMENT_STATUS_TONES: Record<DocumentStatus, Tone> = {
 };
 
 export const HANDOFF_STATUS_TONES: Record<HandoffStatus, Tone> = {
-  pending: "warning",
-  in_progress: "info",
-  resolved: "success",
+  open: "warning",
+  assigned: "info",
+  answered: "success",
+  closed: "neutral",
 };
 
 /** Audit status codes: 2xx success, 4xx refused, 5xx failed. */

@@ -18,7 +18,7 @@ export function ConsoleLayout() {
   const { t } = useI18n();
   const { data: admin, error, reload } = useApi<AdminUser>("auth/me");
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const pending = useApi<Page<Handoff>>(admin ? `handoffs${query({ status: "pending", limit: 1 })}` : null, ALERT_REFRESH_MS);
+  const pending = useApi<Page<Handoff>>(admin ? `handoffs${query({ status: "open", limit: 1 })}` : null, ALERT_REFRESH_MS);
   const failed = useApi<Page<KnowledgeDocument>>(admin ? `knowledge/documents${query({ status: "failed", limit: 1 })}` : null, ALERT_REFRESH_MS);
 
   if (error) return <ErrorState message={error} onRetry={reload} />;

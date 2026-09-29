@@ -3,8 +3,8 @@
 export type Role = "owner" | "editor" | "viewer" | "support_agent";
 export const ROLES: Role[] = ["owner", "editor", "support_agent", "viewer"];
 
-export type Outcome = "answered" | "smalltalk" | "denied" | "handoff" | "blocked" | "login_required" | "error";
-export const OUTCOMES: Outcome[] = ["answered", "smalltalk", "denied", "handoff", "blocked", "login_required", "error"];
+export type Outcome = "answered" | "smalltalk" | "denied" | "handoff" | "blocked" | "login_required" | "agent_reply" | "error";
+export const OUTCOMES: Outcome[] = ["answered", "smalltalk", "denied", "handoff", "blocked", "login_required", "agent_reply", "error"];
 
 export type MetadataValue = string | number | boolean | null;
 export type Metadata = Record<string, MetadataValue | MetadataValue[]>;
@@ -180,7 +180,8 @@ export interface FeedbackItem {
   outcome: Outcome | null;
 }
 
-export type HandoffStatus = "pending" | "in_progress" | "resolved";
+export type HandoffStatus = "open" | "assigned" | "answered" | "closed";
+export const HANDOFF_REASONS = ["no_knowledge", "user_request", "sensitive_topic", "repeated_no_answer", "negative_feedback", "tool_error"] as const;
 
 export interface Handoff {
   id: string;
@@ -189,8 +190,27 @@ export interface Handoff {
   reason: string;
   status: HandoffStatus;
   note: string | null;
+  signed_in: boolean;
+  /** Masked (a***@example.com, ***123); owners can reveal them. */
+  contact_email: string | null;
+  contact_phone: string | null;
+  has_contact: boolean;
+  consent_at: string | null;
+  details: string | null;
+  assigned_to: string | null;
+  answer: string | null;
+  answered_at: string | null;
+  emailed_at: string | null;
+  due_at: string | null;
+  closed_at: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface HandoffContact {
+  name: string | null;
+  email: string | null;
+  phone: string | null;
 }
 
 // ---------------------------------------------------------------- monitoring
@@ -274,6 +294,10 @@ export interface Settings {
   tokens_ip_per_day: number;
   spend_cap_monthly_usd: number;
   spend_anonymous_cutoff_ratio: number;
+  support_hours: Record<string, string>;
+  support_holidays: string[];
+  ticket_reply_hours: number;
+  handoff_topics: string[];
 }
 
 export interface SqlTool {
