@@ -145,6 +145,10 @@ class TokenUsage(Base):
     model: Mapped[str] = mapped_column(String(128), nullable=False)
     prompt_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     completion_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    #: Cost at the model's price when the call was recorded (0 when no price was set).
+    cost_micro_usd: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0, server_default="0")
+    #: Access tier of the caller (``anonymous`` or a host tier), for cost by tier.
+    tier: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now, server_default=func.now(), nullable=False, index=True
     )
