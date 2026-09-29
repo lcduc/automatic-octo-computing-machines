@@ -81,7 +81,7 @@ These are security/correctness rules. Any code change breaking one is a blocker.
 ## 2. Architecture
 
 - [x] ARC-01 Docker Compose services: `caddy` (TLS entry), `web` (Next.js widget + BFF), `api` (FastAPI, SSE), `worker` (ingestion jobs), `model-server` (OCR/embed/rerank on GPU), `postgres` (+pgvector), `admin` (static SPA). No Redis: rate-limit/spend counters are Postgres time-bucket rows, cross-process events use Postgres LISTEN/NOTIFY
-- [ ] ARC-02 Two DBs: `chatbot_db` (conversations, docs, vectors, traces, config) and `business_db` (read-only access via dedicated role/views)
+- [x] ARC-02 Two DBs: `chatbot_db` (conversations, docs, vectors, traces, config) and `business_db` (read-only access via dedicated role/views) — `BUSINESS_DB_URL`; DBA template in the hand-over, preflight proves the role cannot write
 - [~] ARC-03 Hostnames: `chat.<domain>` (iframe-able) and `admin.<domain>` (not iframe-able; MFA; IP/VPN restriction recommended) — domains separated; no MFA, no IP allowlist
 - [~] ARC-04 LLM provider abstraction: tool calling, structured output, streaming, timeout, retry w/ exponential backoff, fallback model — no fallback model; tool calling OpenAI-only
 - [x] ARC-05 Config via env vars; secrets never in repo; `.env.example` maintained
@@ -123,8 +123,8 @@ Single-tenant env vars (minimum): `HOST_ORIGIN`, `HOST_AUTH_MODE` (`rs256` | `hs
 - [x] ID-09 Logout clears token and hides private history immediately (widget clears it; the API refuses it to anonymous callers)
 
 ### Tier gating
-- [ ] ID-10 Tool list filtered by tier before every LLM call (Invariant 3)
-- [ ] ID-11 Anonymous user asking for private data → "please log in" reply + button triggering host login (not a refusal)
+- [x] ID-10 Tool list filtered by tier before every LLM call (Invariant 3) — also refused at execution (hard-gate tests)
+- [x] ID-11 Anonymous user asking for private data → "please log in" reply + button triggering host login (not a refusal) — locked tools are described to the router as text only
 
 ---
 
@@ -183,15 +183,15 @@ Single-tenant env vars (minimum): `HOST_ORIGIN`, `HOST_AUTH_MODE` (`rs256` | `hs
 
 ## 9. SQL tool layer
 
-- [ ] TOOL-01 Registry (DB table): `name`, `description` (bilingual examples), `args_schema` (JSON Schema), `required_tier`, `sql_template`, `allowed_columns`, `row_limit`, `enabled`
-- [~] TOOL-02 Args validated with Pydantic before execution (types, enums, ranges, lengths) — required-argument check only
-- [ ] TOOL-03 Parameterized queries only (Invariant 2)
-- [ ] TOOL-04 `user_id` injected server-side from JWT `sub` (Invariant 1)
-- [ ] TOOL-05 Read-only role with SELECT on specific views only; `statement_timeout` (e.g. 3 s); row-level security on per-user tables
-- [ ] TOOL-06 Output minimization: only `allowed_columns`; mask sensitive fields; truncate large results
-- [ ] TOOL-07 Vietnamese date/number parsing tested ("tháng trước", "quý 3", "1.000.000 đ" vs "1,000,000")
-- [ ] TOOL-08 Admin enable/disable per tool without deploy
-- [ ] TOOL-09 Tests per tool: valid, invalid args, empty result, timeout, cross-user attempt
+- [x] TOOL-01 Registry (DB table): `name`, `description` (bilingual examples), `args_schema` (JSON Schema), `required_tier`, `sql_template`, `allowed_columns`, `row_limit`, `enabled` — `sql_tools`; integrators load definitions with `manage.py sync-sql-tools`
+- [x] TOOL-02 Args validated with Pydantic before execution (types, enums, ranges, lengths); extra and reserved (`user_id`) arguments refused
+- [x] TOOL-03 Parameterized queries only (Invariant 2) — SELECT/WITH templates with bound parameters, validated at load; read-only transaction
+- [x] TOOL-04 `user_id` injected server-side from JWT `sub` (Invariant 1) — bound as `:user_id` and set as `app.user_id` for RLS
+- [x] TOOL-05 Read-only role with SELECT on specific views only; `statement_timeout` (e.g. 3 s); row-level security on per-user tables — demo schema + DBA template; RLS holds even for a template without a user filter (test)
+- [x] TOOL-06 Output minimization: only `allowed_columns`; mask sensitive fields; truncate large results (rows and characters)
+- [x] TOOL-07 Vietnamese date/number parsing tested ("tháng trước", "quý 3", "1.000.000 đ" vs "1,000,000") — `vn-period` / `vn-amount` argument formats
+- [x] TOOL-08 Admin enable/disable per tool without deploy (Settings → Data tools)
+- [x] TOOL-09 Tests per tool: valid, invalid args, empty result, timeout, cross-user attempt (`test/integration/test_sql_tools.py`, against the demo shop)
 
 ---
 
@@ -260,7 +260,7 @@ Single-tenant env vars (minimum): `HOST_ORIGIN`, `HOST_AUTH_MODE` (`rs256` | `hs
 
 ### Configuration
 - [-] ADM-19 Prompt versions (activate/rollback) — see GEN-01
-- [ ] ADM-20 Tool enable/disable — TOOL-08
+- [x] ADM-20 Tool enable/disable — TOOL-08
 - [~] ADM-21 Working hours/holidays, per-tier rate limits, retrieval thresholds, router threshold, handoff triggers — retrieval tuning and fallback mode only
 
 ---
@@ -314,7 +314,7 @@ Single-tenant env vars (minimum): `HOST_ORIGIN`, `HOST_AUTH_MODE` (`rs256` | `hs
 - [ ] EVAL-06 Effective-date correctness (answer depends on active version)
 - [ ] EVAL-07 Handoff trigger precision/recall
 - [ ] EVAL-08 Out-of-scope and injection sets (bot declines / resists)
-- [ ] EVAL-09 HARD GATES (must be 100%, block merge): anonymous never reaches private tool; user A never receives user B's rows; disabled/expired docs never cited
+- [~] EVAL-09 HARD GATES (must be 100%, block merge): anonymous never reaches private tool; user A never receives user B's rows; disabled/expired docs never cited — `pytest -m hard_gate` step in CI; document gate pending
 - [ ] EVAL-10 Scores tracked over time (table in repo or admin)
 
 ---

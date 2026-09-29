@@ -172,6 +172,24 @@ browser no longer sees it. `mode = "hs256"` shares a generated secret instead
 (a startup warning reminds you to move to rs256); `mode = "none"` keeps every
 visitor anonymous.
 
+## Data tools (the client's business database)
+
+The assistant can answer from the client's own data through predefined,
+parameterized queries ("SQL tools"); the model only picks a tool and fills its
+validated arguments, it never writes SQL. Per client:
+
+1. The client's DBA runs `handover/business_db_grants.sql` (a read-only role,
+   views, row-level security keyed on `app.user_id`).
+2. Put its URL in the answers file (`[business_db] url = ...`) and rerun
+   `chatbot install`; preflight proves the role cannot write.
+3. Write the tool definitions (see `deploy/business_db/demo_tools.json`) and load
+   them: `docker compose -p chatbot exec api python -m scripts.manage sync-sql-tools --file tools.json`.
+4. Admins switch tools on and off in **Settings → Data tools**.
+
+Tools marked with a tier above `anonymous` are never offered to anonymous
+visitors; they are asked to log in instead. `:user_id` is always the signed-in
+user from the host token. Every query runs read-only with a 3 s timeout.
+
 ## Client deployments
 
 `main` carries a generic chat widget in `frontends/widget`. For a client, branch off `main`
