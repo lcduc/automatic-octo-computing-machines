@@ -165,7 +165,7 @@ Single-tenant env vars (minimum): `HOST_ORIGIN`, `HOST_AUTH_MODE` (`rs256` | `hs
 - [ ] ORC-03 Confidence below threshold → one clarifying question, not a guess
 - [x] ORC-04 Deterministic fast paths for `smalltalk`, `handoff_request`, `out_of_scope` (no RAG/tool pass)
 - [x] ORC-05 Loop limits: max 3 tool calls/turn, max total latency, graceful stop message
-- [~] ORC-06 Log intent, confidence, route, and each step's latency/tokens per message (feeds OBS-*) — tokens per call purpose and turn latency only
+- [x] ORC-06 Log intent, confidence, route, and each step's latency/tokens per message (feeds OBS-*) — `message_traces` (route, intent, `steps_ms`) + `token_usage` per call purpose
 
 ---
 
@@ -237,13 +237,13 @@ Single-tenant env vars (minimum): `HOST_ORIGIN`, `HOST_AUTH_MODE` (`rs256` | `hs
 
 ### Conversation explorer / trace view
 - [~] ADM-04 Filters: date, user/visitor, tier, intent, language, feedback, handoff status, cost — date, outcome, status
-- [~] ADM-05 Per-message trace: original query → rewritten query → intent+confidence → chunks+scores+active filters → tool calls (args, tool name, rows, duration) → prompt version → response → tokens/cost/latency per step — message, citations, model, tokens, latency
+- [x] ADM-05 Per-message trace: original query → rewritten query → intent+confidence → chunks+scores+active filters → tool calls (args, tool name, rows, duration) → prompt version → response → tokens/cost/latency per step — `models/turn_trace.py`, `GET /admin/messages/{id}/trace`, transcript "Processing details"; tool arguments are kept as names only (values may be personal data) and row counts are not recorded
 - [x] ADM-06 PII masked by default; reveal requires `owner` and is audit-logged — PII is redacted before storage, so no unmasked copy exists to reveal
 
 ### Costs
 - [x] ADM-07 Cost by day, model, call type, tier — cost stored per LLM call at the price then; dashboard shows period and month cost
 - [x] ADM-08 Price table in DB (not hard-coded) — Settings → Limits & costs (owners edit)
-- [~] ADM-09 Spend alerts; hard cap throttles anonymous tier first — cap with anonymous cut-off ratio done; alerts pending (OBS-04)
+- [x] ADM-09 Spend alerts; hard cap throttles anonymous tier first — cut-off and cap alerts once a month each (`services/alert_monitor_service.py`)
 
 ### Feedback and gaps
 - [~] ADM-10 Thumbs-down queue with comment + trace link
@@ -267,11 +267,11 @@ Single-tenant env vars (minimum): `HOST_ORIGIN`, `HOST_AUTH_MODE` (`rs256` | `hs
 
 ## 12. Observability (stored in `chatbot_db`, surfaced in admin)
 
-- [~] OBS-01 Trace table per message covering every field in ADM-05
+- [x] OBS-01 Trace table per message covering every field in ADM-05 — `message_traces`
 - [x] OBS-02 Structured JSON logs with request ID; PII redacted
-- [~] OBS-03 Metrics: latency p50/p95, TTFT, error rate, tokens/day, cost/day, ingestion failures, GPU VRAM, disk
-- [ ] OBS-04 Alerts (Telegram/Slack/email): service down, error spike, spend threshold, disk > 80%, ingestion failure, handoff queue waiting > N min
-- [ ] OBS-05 External uptime check (e.g. Uptime Kuma on another host)
+- [~] OBS-03 Metrics: latency p50/p95, TTFT, error rate, tokens/day, cost/day, ingestion failures, GPU VRAM, disk — hourly `metrics_daily` rollup (kept forever) and admin monthly history; disk via alert; GPU VRAM only on model-server `/ready`, not charted
+- [x] OBS-04 Alerts (Telegram/Slack/email): service down, error spike, spend threshold, disk > 80%, ingestion failure, handoff queue waiting > N min — worker `alert_checks` every 5 min with de-duplicated state; failed jobs and backups alert too; `test/integration/test_observability.py`
+- [~] OBS-05 External uptime check (e.g. Uptime Kuma on another host) — setup documented in `docs/DEPLOYMENT.md`; set up once per client box
 - [ ] OBS-06 Trace retention + purge job (PRV-04)
 
 ---
