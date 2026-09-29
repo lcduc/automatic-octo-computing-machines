@@ -111,7 +111,7 @@ Single-tenant env vars (minimum): `HOST_ORIGIN`, `HOST_AUTH_MODE` (`rs256` | `hs
 
 ### Anonymous
 - [x] ID-01 Server-issued signed random visitor ID on first open (not derived from IP)
-- [~] ID-02 Rate limit by visitor ID AND IP; stricter message/hour and token/day caps than logged-in — per-minute limits and a daily token budget, in process memory; no tiers, no hourly cap, no per-IP token cap
+- [x] ID-02 Rate limit by visitor ID AND IP; stricter message/hour and token/day caps than logged-in — Postgres time-bucket counters (minute/hour/day/month), per-IP token budget, editable per tier in the admin web
 - [ ] ID-03 Bot protection (e.g. Cloudflare Turnstile) triggered on abuse signals only
 - [~] ID-04 Access: public documents + public tools only — true only because nothing private exists yet
 
@@ -241,9 +241,9 @@ Single-tenant env vars (minimum): `HOST_ORIGIN`, `HOST_AUTH_MODE` (`rs256` | `hs
 - [x] ADM-06 PII masked by default; reveal requires `owner` and is audit-logged — PII is redacted before storage, so no unmasked copy exists to reveal
 
 ### Costs
-- [~] ADM-07 Cost by day, model, call type, tier — tokens by day/model/purpose, no money
-- [ ] ADM-08 Price table in DB (not hard-coded)
-- [ ] ADM-09 Spend alerts; hard cap throttles anonymous tier first
+- [x] ADM-07 Cost by day, model, call type, tier — cost stored per LLM call at the price then; dashboard shows period and month cost
+- [x] ADM-08 Price table in DB (not hard-coded) — Settings → Limits & costs (owners edit)
+- [~] ADM-09 Spend alerts; hard cap throttles anonymous tier first — cap with anonymous cut-off ratio done; alerts pending (OBS-04)
 
 ### Feedback and gaps
 - [~] ADM-10 Thumbs-down queue with comment + trace link
@@ -285,7 +285,7 @@ Single-tenant env vars (minimum): `HOST_ORIGIN`, `HOST_AUTH_MODE` (`rs256` | `hs
 - [x] SEC-05 LLM06 Excessive Agency: tools read-only; any future write tool requires explicit user confirmation
 - [x] SEC-06 LLM07 System Prompt Leakage: assume prompt leaks; contains nothing sensitive
 - [~] SEC-07 LLM08 Vector/Embedding Weaknesses: RET-05 filters in code
-- [~] SEC-08 LLM10 Unbounded Consumption: tiered rate limits, max input length, max output tokens, ORC-05 loop limits, spend cap — no tiers, no spend cap, counters reset on restart
+- [x] SEC-08 LLM10 Unbounded Consumption: tiered rate limits, max input length, max output tokens, ORC-05 loop limits, spend cap — durable counters survive restarts and span processes
 - [~] SEC-09 Web: TLS + HSTS, CSP, CORS locked, dependency scanning (`pip-audit`, Dependabot), container image scanning — chat CSP framing-only, pip-audit advisory, no npm/docker Dependabot, no image scan
 - [x] SEC-10 Admin/chat domain separation (Invariant 7)
 - [~] SEC-11 Internal authentication wired automatically (Invariant 10): per-service tokens (BFF → api, worker → api, api/worker → model-server); `edge`/`internal` networks; postgres not bound on the host — BFF token, networks and DML-only app role done; model-server token pending
