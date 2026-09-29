@@ -78,6 +78,10 @@ jobs:
           DATABASE_URL: ${{ env.TEST_DATABASE_URL }}
         run: alembic upgrade head && alembic downgrade base && alembic upgrade head
 
+      # EVAL-09: must pass 100% before any merge (tier gating, per-user data isolation, retrieval filters).
+      - name: Hard gates
+        run: pytest -m hard_gate -v
+
       - name: Run tests
         run: pytest
 
