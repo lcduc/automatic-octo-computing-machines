@@ -30,6 +30,7 @@ from api.schemas.knowledge import (
     ChunkCreate,
     ChunkOut,
     ChunkUpdate,
+    CitingAnswer,
     DocumentDetail,
     DocumentOut,
     DocumentUpdate,
@@ -153,9 +154,17 @@ async def get_document(document_id: uuid.UUID, container: AppContainer = Depends
 async def update_document(
     document_id: uuid.UUID, body: DocumentUpdate, container: AppContainer = Depends(get_container)
 ) -> DocumentDetail:
-    """Edit title, source, metadata or enabled flag."""
+    """Edit title, source, metadata, enabled flag, tier, language, version, validity or superseded version."""
     document = await container.knowledge.update_document(document_id, body.model_dump(exclude_unset=True))
     return DocumentDetail.from_document(document)
+
+
+@router.get("/documents/{document_id}/citations", response_model=List[CitingAnswer], dependencies=[read_access])
+async def document_citations(
+    document_id: uuid.UUID, limit: int = Query(20, ge=1, le=100), container: AppContainer = Depends(get_container)
+) -> List[CitingAnswer]:
+    """Recent answers that cited this document, newest first."""
+    return [CitingAnswer(**row) for row in await container.knowledge.answers_citing(document_id, limit)]
 
 
 @router.delete("/documents/{document_id}", response_model=MessageResponse, dependencies=[Depends(write_access)])

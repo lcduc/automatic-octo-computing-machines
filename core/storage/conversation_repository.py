@@ -162,6 +162,16 @@ class ConversationRepository:
                 answers[message.id] = earlier[-1]
         return answers
 
+    async def answers_citing(self, document_id: uuid.UUID, limit: int) -> List[Dict[str, Any]]:
+        """Newest assistant messages whose citations include ``document_id``."""
+        result = await self._session.execute(
+            select(Message.id, Message.conversation_id, Message.content, Message.created_at)
+            .where(Message.role == "assistant", Message.citations.contains([{"document_id": str(document_id)}]))
+            .order_by(Message.created_at.desc())
+            .limit(limit)
+        )
+        return [dict(row._mapping) for row in result.all()]
+
     # ------------------------------------------------------------------
     # Handoffs
     # ------------------------------------------------------------------

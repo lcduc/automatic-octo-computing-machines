@@ -4,8 +4,8 @@ Admin knowledge-base contract: sources, documents and chunks.
 
 # Standard library imports
 import uuid
-from datetime import datetime
-from typing import Any, Dict, List, Optional
+from datetime import date, datetime
+from typing import Any, Dict, List, Literal, Optional
 
 # Third-party imports
 from pydantic import BaseModel, Field, field_validator
@@ -85,6 +85,12 @@ class DocumentOut(ApiModel):
     created_by: Optional[str] = None
     created_at: datetime
     updated_at: datetime
+    access_tier: str = "anonymous"
+    language: Optional[str] = None
+    version: Optional[str] = None
+    effective_from: Optional[date] = None
+    effective_to: Optional[date] = None
+    supersedes_id: Optional[uuid.UUID] = None
 
     @classmethod
     def from_document(cls, document) -> "DocumentOut":
@@ -105,6 +111,12 @@ class DocumentOut(ApiModel):
             created_by=document.created_by,
             created_at=document.created_at,
             updated_at=document.updated_at,
+            access_tier=document.access_tier,
+            language=document.language,
+            version=document.version,
+            effective_from=document.effective_from,
+            effective_to=document.effective_to,
+            supersedes_id=document.supersedes_id,
         )
 
 
@@ -146,6 +158,23 @@ class DocumentUpdate(_MetadataModel):
     source: Optional[str] = Field(None, pattern=SOURCE_NAME_PATTERN)
     metadata: Optional[Dict[str, Any]] = None
     enabled: Optional[bool] = None
+    #: ``anonymous`` or one of the host's tiers (HOST_TIERS).
+    access_tier: Optional[str] = Field(None, min_length=1, max_length=16)
+    language: Optional[Literal["vi", "en", "mixed"]] = None
+    version: Optional[str] = Field(None, max_length=32)
+    effective_from: Optional[date] = None
+    effective_to: Optional[date] = None
+    #: The earlier version this document replaces; its validity ends the day before this one starts.
+    supersedes_id: Optional[uuid.UUID] = None
+
+
+class CitingAnswer(BaseModel):
+    """An answer that cited a document."""
+
+    id: uuid.UUID
+    conversation_id: uuid.UUID
+    content: str
+    created_at: datetime
 
 
 class ChunkCreate(_MetadataModel):
