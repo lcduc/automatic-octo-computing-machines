@@ -7,12 +7,14 @@ import type { ChatMessage } from "./use-chat";
 interface MessageBubbleProps {
   message: ChatMessage;
   onRate: (messageId: string, rating: 1 | -1, comment?: string) => void;
+  /** Opens the host site's sign-in (answers that need a signed-in user). */
+  onLogin: () => void;
 }
 
 /** Outcomes whose answers can be rated (canned replies and errors cannot). */
 const RATEABLE = new Set(["answered"]);
 
-export function MessageBubble({ message, onRate }: MessageBubbleProps) {
+export function MessageBubble({ message, onRate, onLogin }: MessageBubbleProps) {
   const [commenting, setCommenting] = useState(false);
   const [comment, setComment] = useState("");
   const isUser = message.role === "user";
@@ -44,6 +46,11 @@ export function MessageBubble({ message, onRate }: MessageBubbleProps) {
             <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-slate-400 [animation-delay:120ms]" />
             <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-slate-400 [animation-delay:240ms]" />
           </span>
+        )}
+        {message.outcome === "login_required" && (
+          <button type="button" onClick={onLogin} className="rounded bg-[var(--brand)] px-3 py-1.5 text-xs font-semibold text-white">
+            Đăng nhập
+          </button>
         )}
         {message.outcome === "handoff" && (
           <p className="rounded border border-amber-300 bg-amber-50 px-2 py-1 text-xs text-amber-900">
