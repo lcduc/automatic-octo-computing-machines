@@ -125,6 +125,47 @@ Rebuilding a lost box: install the same release on a fresh VM with the same
 answers file, then `chatbot restore`. Secrets are regenerated on the new box, so
 admins sign in again and anonymous visitors start a new history.
 
+A failed `chatbot backup` (the nightly run included) is sent to the alert channel.
+
+## Monitoring and alerts
+
+The ingestion worker runs the scheduled jobs. Each one takes a PostgreSQL
+advisory lock, so a second worker replica never runs the same job twice.
+
+| Job              | Every     | What it does                                                                  |
+|------------------|-----------|-------------------------------------------------------------------------------|
+| `metrics_rollup` | hour      | Recomputes today and yesterday into `metrics_daily`, which is never purged    |
+| `alert_checks`   | 5 minutes | Evaluates the rules below and sends new problems to the alert channel         |
+
+| Alert                   | Fires when                                                                 |
+|-------------------------|----------------------------------------------------------------------------|
+| Chat API down/not ready | the API's readiness check fails; names the failing checks                  |
+| Chat error spike        | ≥ 5 failed answers and ≥ 20 % of answers in 15 minutes                     |
+| Disk almost full        | the data disk is ≥ 80 % used                                               |
+| Support tickets overdue | an open or assigned ticket is past its due time                            |
+| Spend threshold / cap   | anonymous visitors are paused, then everyone at the cap; once a month each |
+| Uploads failed          | new uploads failed to ingest (named in the alert)                          |
+| Scheduled job failed    | a job raised; its next success sends "Resolved"                            |
+| Backup failed           | `chatbot backup` failed                                                    |
+
+A lasting condition is repeated every 6 hours, and sends one "Resolved" message
+when it clears. Alert state lives in the database, so a restart neither repeats
+nor loses an alert.
+
+Nothing on the box can report the whole box being down. Watch it from outside
+(OBS-05), for example with [Uptime Kuma](https://github.com/louislam/uptime-kuma)
+on a different host (a small VPS, or the vendor's staging box):
+
+1. `docker run -d --restart=always -p 3001:3001 -v uptime-kuma:/app/data --name uptime-kuma louislam/uptime-kuma:1`.
+2. Add an **HTTP(s)** monitor for `https://<chat domain>/widget` and one for
+   `https://<admin domain>/`, both expecting 200 (interval 60 s, 3 retries). The API
+   is not public; its readiness is the worker's "Chat API down" alert.
+3. Add a **Certificate expiry** notification (14 days) on both monitors.
+4. Set up notifications on the same Telegram/Slack channel as `ALERT_CHANNEL`.
+
+Uptime Kuma catches what the worker cannot: the box, Caddy or DNS being down,
+and expiring certificates.
+
 ## Hardware budget (12 GB VRAM, 8 cores / 16 threads, 16 GB RAM)
 
 - **One GPU user.** `model-server` loads the embedding model, the reranker and the
