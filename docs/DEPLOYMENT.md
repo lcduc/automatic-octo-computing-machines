@@ -13,15 +13,16 @@ curl -fsSL https://raw.githubusercontent.com/lcduc/automatic-octo-computing-mach
 
 Without `--answers` it asks six questions on the terminal, plus the OpenAI key.
 
-| Service            | What it is                                              | Networks                |
-|--------------------|---------------------------------------------------------|-------------------------|
-| `caddy`            | HTTPS entry point (automatic Let's Encrypt), ports 80/443 | edge                  |
-| `web`              | Next.js: chat widget, `embed.js`, BFF routes            | edge                    |
-| `admin`            | Admin web (static SPA), served on the admin domain      | edge                    |
-| `api`              | FastAPI: RAG pipeline, admin API (GPU)                  | edge, internal          |
-| `ingestion-worker` | Parses, OCRs and embeds uploaded files (same image)     | internal, egress        |
-| `migrate`          | One-shot `alembic upgrade head` as the schema owner     | internal                |
-| `postgres`         | PostgreSQL 17 + pgvector: all data and embeddings       | internal only, no port  |
+| Service            | What it is                                                | Networks                |
+|--------------------|-----------------------------------------------------------|-------------------------|
+| `caddy`            | HTTPS entry point (automatic Let's Encrypt), ports 80/443 | edge                    |
+| `web`              | Next.js: chat widget, `embed.js`, BFF routes              | edge                    |
+| `admin`            | Admin web (static SPA), served on the admin domain        | edge                    |
+| `api`              | FastAPI: RAG pipeline, admin API (GPU)                    | edge, internal          |
+| `ingestion-worker` | Parses, OCRs and embeds uploaded files (same image)       | internal, egress        |
+| `model-server`     | The only GPU user: embedding, reranker, OCR (resident)    | internal only, no port  |
+| `migrate`          | One-shot `alembic upgrade head` as the schema owner       | internal                |
+| `postgres`         | PostgreSQL 17 + pgvector: all data and embeddings         | internal only, no port  |
 
 `internal` is a Docker network with no route to the internet. Only Caddy
 publishes ports. On the chat domain Caddy proxies to `web`; on the admin domain
@@ -67,7 +68,7 @@ with the client's credentials; `install.sh --answers` makes a reinstall one comm
 | `admin_domain`  | `admin.client.vn`                    | the admin web (never the chat domain)           |
 | `host_origin`   | `https://www.client.vn`              | the only sites allowed to frame the widget      |
 | `admin_email`   | `ops@client.vn`                      | the first owner account                         |
-| `[backup]`      | `s3://bucket/prefix`, `sftp://…`, `/mnt/backups` | nightly and pre-migration backups   |
+| `[backup]`      | `s3://bucket/prefix`                 | nightly and pre-migration backups               |
 | `[alert]`       | `telegram`, `slack` or `smtp`        | operator alerts                                 |
 | `openai_api_key`| `sk-…`                               | the LLM provider (a third-party secret)         |
 
@@ -89,7 +90,7 @@ GHCR; the same images are then deployed to each client box.
 | Upgrade to a release                   | `chatbot deploy v1.1.0`                                            |
 | Undo the last upgrade                  | `chatbot rollback` (or `chatbot rollback v1.0.0`)                  |
 | Back up now / list backups             | `chatbot backup` / `chatbot backups`                               |
-| Restore (the newest by default)        | `chatbot restore [NAME]` — prints the time taken (the RTO)          |
+| Restore (the newest by default)        | `chatbot restore [NAME]` — prints the time taken (the RTO)         |
 | Re-check the box                       | `chatbot preflight` and `chatbot preflight --after-deploy`         |
 | Change an answer (domain, alerts, …)   | `chatbot install` again; existing values are the defaults          |
 | Rotate the generated secrets           | `chatbot rotate-secrets` (admins sign in again)                    |
@@ -126,15 +127,17 @@ admins sign in again and anonymous visitors start a new history.
 
 ## Hardware budget (12 GB VRAM, 8 cores / 16 threads, 16 GB RAM)
 
-- **One API worker.** The models and the in-memory knowledge index live in that
-  process. Concurrency comes from async I/O:
+- **One GPU user.** `model-server` loads the embedding model, the reranker and the
+  OCR engine once and keeps them resident; `api` and `ingestion-worker` call it over
+  the internal network with a generated token. Chat requests (query embedding,
+  reranking) always get a slot; ingestion (bulk embedding, OCR) waits behind them and
+  runs one job at a time (`MODEL_SERVER_SLOTS` 3, `MODEL_SERVER_INGESTION_SLOTS` 1).
+- **One API worker.** The in-memory knowledge index lives in that process.
   - `MAX_CONCURRENT_CHATS` (default 16) caps turns generated at once.
-  - `RETRIEVAL_MAX_CONCURRENCY` (default 4) caps GPU retrieval at once.
-- **Memory limits** (compose, overridable in `.env`): postgres 3 GB, api 4 GB,
-  worker 5 GB (and 3 CPUs), web 384 MB, caddy 256 MB, admin 128 MB.
-- **CPU:** parsing/OCR in the worker uses `OCR_CPU_THREADS` (2) of its `WORKER_CPUS` (3).
-- **GPU:** embedding model and reranker in `api`; the worker loads its own copy of
-  the embedding model plus the OCR engine.
+  - `RETRIEVAL_MAX_CONCURRENCY` (default 4) caps retrieval at once.
+- **Memory limits** (compose, overridable in `.env`): model-server 5 GB, postgres 3 GB,
+  worker 3 GB (and 3 CPUs), api 2 GB, web 384 MB, caddy 256 MB, admin 128 MB.
+- **CPU:** parsing in the worker uses `OCR_CPU_THREADS` (2) of its `WORKER_CPUS` (3).
 
 ## Embedding the chat on the client site
 
@@ -178,15 +181,15 @@ merged into the client branches, so a client branch differs only in the widget.
 
 ## Everyday admin tasks
 
-| Task                                 | Where                                                                                            |
-|--------------------------------------|--------------------------------------------------------------------------------------------------|
-| Switch *deny* ↔ *handoff* fallback   | Admin → Cấu hình → Cách trả lời (applies immediately)                                            |
-| Change chat model / retrieval tuning | Admin → Cấu hình → Mô hình & truy xuất (tested before saving; *Về mặc định* restores `.env`)     |
-| See who changed what                 | Admin → Nhật ký thao tác (owners; append-only)                                                   |
-| Answer handed-off visitors           | Admin → Chuyển nhân viên                                                                         |
-| Find knowledge gaps                  | Admin → Đánh giá (👎 first), Hội thoại filtered by *Không có thông tin*                          |
-| Token usage / live activity          | Admin → Tổng quan                                                                                |
-| Server-to-server API keys            | Admin → Tài khoản & khoá API                                                                     |
+| Task                                 | Where                                                                   |
+---------------------------------------|-------------------------------------------------------------------------|
+| Switch *deny* ↔ *handoff* fallback   | Admin → Cấu hình → Cách trả lời (applies immediately)                   |
+| Change chat model / retrieval tuning | Admin → Cấu hình → Mô hình & truy xuất                                  |
+| See who changed what                 | Admin → Nhật ký thao tác (owners; append-only)                          |
+| Answer handed-off visitors           | Admin → Chuyển nhân viên                                                |
+| Find knowledge gaps                  | Admin → Đánh giá, Hội thoại filtered by *Không có thông tin*            |
+| Token usage / live activity          | Admin → Tổng quan                                                       |
+| Server-to-server API keys            | Admin → Tài khoản & khoá API                                            |
 
 ## Local development
 
