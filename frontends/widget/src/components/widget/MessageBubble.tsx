@@ -79,7 +79,8 @@ export function MessageBubble({ message, onRate, onLogin, signedIn, onContact }:
                   </a>
                 ) : (
                   citation.title
-                )}{" "}
+                )}
+                {citation.section && <span> · {citation.section}</span>}{" "}
                 <span className="text-slate-500">· {citation.source}</span>
               </li>
             ))}

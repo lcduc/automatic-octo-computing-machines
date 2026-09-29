@@ -8,6 +8,8 @@ export interface Citation {
   title: string;
   source: string;
   url?: string | null;
+  /** Where in the document, e.g. "Chương II · Điều 35" (GEN-03). */
+  section?: string | null;
   score: number;
 }
 

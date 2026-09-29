@@ -52,6 +52,7 @@ export function Transcript({ messages }: { messages: AdminMessage[] }) {
                   ) : (
                     citation.title
                   )}
+                  {citation.section && <span> · {citation.section}</span>}
                   <span className="muted"> · {citation.source}</span>
                 </Badge>
               ))}
