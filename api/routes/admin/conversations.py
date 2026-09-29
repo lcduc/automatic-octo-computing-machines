@@ -23,6 +23,8 @@ from api.schemas.admin import (
     HandoffContactOut,
     HandoffOut,
     HandoffUpdate,
+    MessageTraceOut,
+    TraceCall,
 )
 from api.schemas.common import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, Page
 from services.auth_service import AdminPrincipal
@@ -30,7 +32,7 @@ from services.auth_service import AdminPrincipal
 router = APIRouter(tags=["Admin: conversations"])
 read_access = Depends(require_admin(READ_ROLES, key_scope=SCOPE_CONVERSATIONS_READ))
 
-OUTCOME_PATTERN = "^(answered|smalltalk|denied|handoff|blocked|error)$"
+OUTCOME_PATTERN = "^(answered|smalltalk|denied|handoff|blocked|login_required|agent_reply|error)$"
 
 
 @router.get("/conversations", response_model=Page[ConversationSummary], dependencies=[read_access])
@@ -57,6 +59,13 @@ async def conversation_detail(
     conversation = await container.conversations.conversation_detail(conversation_id)
     summary = ConversationSummary.model_validate(conversation).model_dump()
     return ConversationDetail(**summary, messages=[AdminMessage.from_message(m) for m in conversation.messages])
+
+
+@router.get("/messages/{message_id}/trace", response_model=MessageTraceOut, dependencies=[read_access])
+async def message_trace(message_id: uuid.UUID, container: AppContainer = Depends(get_container)) -> MessageTraceOut:
+    """How one answer was produced (kept for the trace retention period)."""
+    trace, calls = await container.conversations.message_trace(message_id)
+    return MessageTraceOut.model_validate(trace).model_copy(update={"calls": [TraceCall.model_validate(c) for c in calls]})
 
 
 @router.get("/feedback", response_model=Page[FeedbackItem], dependencies=[read_access])

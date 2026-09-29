@@ -11,7 +11,8 @@ from typing import List, Optional, Tuple
 # Local imports
 from core.storage.conversation_repository import ConversationRepository
 from core.storage.database import Database
-from core.storage.tables.conversation_tables import Conversation, Feedback, Message
+from core.storage.tables.conversation_tables import Conversation, Feedback, Message, TokenUsage
+from core.storage.tables.observability_tables import MessageTrace
 from models.caller import ChatCaller
 from models.chat_turn import FALLBACK_MODE_HANDOFF, HandoffReason
 from .errors import InvalidRequestError, NotFoundError
@@ -105,6 +106,20 @@ class ConversationService:
         if conversation is None:
             raise NotFoundError("Conversation not found")
         return conversation
+
+    async def message_trace(self, message_id: uuid.UUID) -> Tuple[MessageTrace, List[TokenUsage]]:
+        """
+        What the pipeline did for one answer (ADM-05) and the LLM calls it made.
+
+        Raises:
+            NotFoundError: No trace (unknown message, a user message, or purged).
+        """
+        async with self._database.session() as session:
+            repository = ConversationRepository(session)
+            trace = await repository.message_trace(message_id)
+            if trace is None:
+                raise NotFoundError("No trace for this message")
+            return trace, await repository.message_usage(message_id)
 
     async def list_feedback(
         self, rating: Optional[int], limit: int, offset: int

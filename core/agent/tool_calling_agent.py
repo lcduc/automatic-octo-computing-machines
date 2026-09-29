@@ -4,11 +4,13 @@ Minimal tool-calling orchestrator: rewrite -> let the model pick a tool (or not)
 
 # Standard library imports
 import json
+import time
 import logging
 from typing import Any, AsyncGenerator, Dict, List, Optional
 
 # Local imports
 from models.llm import StreamDelta
+from models.turn_trace import ToolCallRecord
 from models.tool_context import ToolContext
 from .history import recent_history
 from .openai_client import OpenAIClientProvider
@@ -59,6 +61,15 @@ class ToolCallingAgent:
             *recent_history(history, _HISTORY_WINDOW),
             {"role": "user", "content": query},
         ]
+
+    @staticmethod
+    def _argument_names(tool_call: Any) -> List[str]:
+        """Names (never values) of the arguments the model passed, for the trace."""
+        try:
+            arguments = json.loads(tool_call.function.arguments or "{}")
+        except (TypeError, ValueError):
+            return []
+        return sorted(arguments) if isinstance(arguments, dict) else []
 
     async def _execute_tool_call(self, tool_call: Any, context: ToolContext) -> str:
         """Parse a model tool call's JSON arguments and dispatch it through the registry."""
@@ -132,8 +143,13 @@ class ToolCallingAgent:
         private_failure = False
         for tool_call in tool_calls:
             logger.info("Executing tool %s", tool_call.function.name)
+            started = time.perf_counter()
             content = await self._execute_tool_call(tool_call, context)
-            private_failure |= content.startswith("Error:") and self._tool_registry.is_private(tool_call.function.name)
+            failed = content.startswith("Error:")
+            private_failure |= failed and self._tool_registry.is_private(tool_call.function.name)
+            yield StreamDelta(tool_call=ToolCallRecord(
+                tool_call.function.name, not failed, int((time.perf_counter() - started) * 1000), self._argument_names(tool_call)
+            ))
             messages.append(
                 {
                     "role": "tool",

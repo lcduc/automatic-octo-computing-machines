@@ -20,6 +20,7 @@ from core.storage.conversation_repository import ConversationRepository
 from core.storage.database import Database
 from core.storage.tables.base import utc_now
 from core.storage.tables.conversation_tables import Conversation, HandoffRequest, Message, TokenUsage
+from core.storage.tables.observability_tables import MessageTrace
 from models.caller import ChatCaller
 from models.chat_turn import FALLBACK_MODE_HANDOFF, HandoffReason, TurnDelta, TurnOutcome, TurnRequest, TurnResult, TurnUsage
 from models.tool_context import ToolContext
@@ -211,6 +212,8 @@ class ChatService:
                     if isinstance(event, TurnUsage):
                         turn.usages.append(event)
                     elif isinstance(event, TurnDelta):
+                        if not streamed:
+                            turn.request.trace.steps_ms["first_token"] = int((time.perf_counter() - turn.started_at) * 1000)
                         streamed.append(event.text)
                         yield {"type": "delta", "text": event.text}
                     else:
@@ -311,6 +314,7 @@ class ChatService:
                     )
                 )
                 await repository.flush()
+                repository.add(self._trace_row(turn, result))
                 repository.add_all(
                     [
                         TokenUsage(
@@ -362,6 +366,23 @@ class ChatService:
         if handoff is not None:
             await self._handoffs.notify(handoff)
         return handoff
+
+    def _trace_row(self, turn: PreparedTurn, result: TurnResult) -> MessageTrace:
+        """The answer's trace (ADM-05); the rewritten query is redacted like the messages."""
+        trace = turn.request.trace
+        return MessageTrace(
+            message_id=turn.assistant_message_id,
+            conversation_id=turn.conversation_id,
+            route=trace.route,
+            intent=trace.intent,
+            confidence=result.confidence,
+            rewritten_query=self._redact(result.rewritten_query) if result.rewritten_query else None,
+            filters=trace.filters,
+            chunks=trace.chunks,
+            tool_calls=trace.tool_calls_json(),
+            prompt_version=trace.prompt_version,
+            steps_ms={**trace.steps_ms, "total": int((time.perf_counter() - turn.started_at) * 1000)},
+        )
 
     async def wait_for_pending_writes(self) -> None:
         """Await background persistence of interrupted turns (shutdown and tests)."""

@@ -241,6 +241,33 @@ class FeedbackOut(BaseModel):
     comment: Optional[str] = None
 
 
+class TraceCall(ApiModel):
+    """One LLM call of an answer."""
+
+    purpose: str
+    model: str
+    prompt_tokens: int
+    completion_tokens: int
+    cost_micro_usd: int
+
+
+class MessageTraceOut(ApiModel):
+    """How one answer was produced: route, retrieval, tools, prompt and per-step timings (ADM-05)."""
+
+    message_id: uuid.UUID
+    route: Optional[str] = None
+    intent: Optional[str] = None
+    confidence: Optional[float] = None
+    rewritten_query: Optional[str] = None
+    filters: Dict[str, Any] = {}
+    chunks: List[Dict[str, Any]] = []
+    tool_calls: List[Dict[str, Any]] = []
+    prompt_version: Optional[str] = None
+    steps_ms: Dict[str, int] = {}
+    calls: List[TraceCall] = []
+    created_at: datetime
+
+
 class AdminMessage(BaseModel):
     """A message with its full diagnostics."""
 

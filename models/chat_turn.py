@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional, Sequence
 # Local imports
 from .llm import LLMUsage
 from .tool_context import ToolContext
+from .turn_trace import TurnTrace
 
 FALLBACK_MODE_DENY = "deny"
 FALLBACK_MODE_HANDOFF = "handoff"
@@ -85,6 +86,8 @@ class TurnRequest:
     sources: Optional[Sequence[str]] = None
     #: The verified caller, for tools (tier gate, ``user_id``).
     context: ToolContext = field(default_factory=ToolContext)
+    #: Filled in by the pipeline as it runs; stored with the answer (ADM-05).
+    trace: TurnTrace = field(default_factory=TurnTrace)
 
 
 @dataclass(frozen=True)

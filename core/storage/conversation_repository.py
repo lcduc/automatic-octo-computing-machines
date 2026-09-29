@@ -15,6 +15,7 @@ from sqlalchemy.orm import selectinload
 
 # Local imports
 from .tables.conversation_tables import Conversation, Feedback, HandoffRequest, Message, TokenUsage
+from .tables.observability_tables import MessageTrace
 
 
 class ConversationRepository:
@@ -209,6 +210,17 @@ class ConversationRepository:
             .where(Message.conversation_id == conversation_id).order_by(Message.created_at.desc()).limit(limit)
         )
         return [int(rating) for rating in result.scalars().all()]
+
+    async def message_trace(self, message_id: uuid.UUID) -> Optional[MessageTrace]:
+        """The pipeline trace of one assistant message."""
+        return await self._session.get(MessageTrace, message_id)
+
+    async def message_usage(self, message_id: uuid.UUID) -> List[TokenUsage]:
+        """The LLM calls one answer made, in order."""
+        result = await self._session.execute(
+            select(TokenUsage).where(TokenUsage.message_id == message_id).order_by(TokenUsage.id)
+        )
+        return list(result.scalars().all())
 
     # ------------------------------------------------------------------
     # Token usage and statistics

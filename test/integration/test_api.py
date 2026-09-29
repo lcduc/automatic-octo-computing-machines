@@ -204,6 +204,13 @@ def test_knowledge_chat_feedback_and_admin_views(client):
 
     detail = client.get(f"/api/v1/admin/conversations/{conversation_id}", headers=admin).json()
     assert detail["messages"][1]["prompt_tokens"] == 120
+    trace = client.get(f"/api/v1/admin/messages/{message_id}/trace", headers=admin).json()
+    assert trace["route"] == "rag"
+    assert trace["chunks"] and trace["filters"]["access_level"] == 0
+    assert {"guard", "retrieval", "generation", "total"} <= set(trace["steps_ms"])
+    assert trace["prompt_version"] and trace["calls"][0]["prompt_tokens"] > 0
+    user_message_id = detail["messages"][0]["id"]
+    assert client.get(f"/api/v1/admin/messages/{user_message_id}/trace", headers=admin).status_code == 404
     summary = client.get("/api/v1/admin/usage/summary?days=1", headers=admin).json()
     assert summary["totals"]["completion_tokens"] >= 60
     assert summary["outcomes"]["answered"] == 2
