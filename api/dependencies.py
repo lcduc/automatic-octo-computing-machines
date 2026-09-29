@@ -32,7 +32,9 @@ from fastapi import Depends, Header, HTTPException, Request, status
 from core.storage.tables.access_tables import ROLE_EDITOR, ROLE_OWNER, ROLE_SUPPORT_AGENT, ROLE_VIEWER, SCOPE_CHAT
 from models.caller import ANONYMOUS_LEVEL, TIER_ANONYMOUS, ChatCaller
 from services.auth_service import SERVICE_BFF, AdminPrincipal, VerifiedApiKey
+from core.storage.tables.usage_tables import WINDOW_MINUTE
 from services.host_identity_service import HostIdentity, HostTokenError
+from services.rate_limit_service import Limit
 from utils.request_context import current_request_id
 from .container import AppContainer
 
@@ -87,7 +89,7 @@ async def _verified_api_key(request: Request, container: AppContainer, raw_key: 
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid, expired or missing API key")
     if scope not in key.scopes:
         raise HTTPException(status.HTTP_403_FORBIDDEN, f"API key lacks the {scope} scope")
-    retry_after = container.rate_limiter.hit(f"apikey:{key.id}", key.rate_limit_per_minute)
+    retry_after = await container.rate_limiter.hit([Limit(f"apikey:{key.id}", WINDOW_MINUTE, key.rate_limit_per_minute)])
     if retry_after is not None:
         raise HTTPException(
             status.HTTP_429_TOO_MANY_REQUESTS, "API key rate limit exceeded", headers={"Retry-After": str(retry_after)}
