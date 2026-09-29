@@ -6,3 +6,4 @@
 !deploy/postgres/
 !docker-compose.yml
 !host-sdk/
+!deploy/business_db/reader_grants.sql

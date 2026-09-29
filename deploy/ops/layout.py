@@ -10,6 +10,8 @@ from pathlib import Path
 
 #: Files and folders copied from the ops image (or a checkout) into the install directory.
 TEMPLATE_FILES = ("docker-compose.yml", "deploy/Caddyfile", "deploy/postgres/10-app-role.sh")
+#: Hand-over file for the client's DBA (read-only role, views, row-level security).
+BUSINESS_DB_GRANTS_TEMPLATE = "deploy/business_db/reader_grants.sql"
 #: Name of the owner role's password file under ``secrets/``.
 OWNER_PASSWORD_FILE = "postgres_owner_password"
 #: Compose project name (prefix of container, network and volume names).

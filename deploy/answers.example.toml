@@ -38,6 +38,11 @@ telegram_chat_id = "-1001234567890"
 # jwks_url = "https://www.example.com/.well-known/jwks.json"   # use the host's own keys instead
 # tiers = "user,premium"                  # values the host may send in the tier claim
 
+# [business_db]
+# The client's business database for the SQL tools: a read-only role (the DBA
+# runs handover/business_db_grants.sql). Preflight proves it cannot write.
+# url = "postgresql+asyncpg://chatbot_reader:...@db.internal:5432/erp"
+
 # [env]
 # Extra backend settings written verbatim into .env, e.g. tuning for this client.
 # OPENAI_MODEL = "gpt-5-mini"

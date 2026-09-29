@@ -23,7 +23,7 @@ EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 #: Top-level keys of the answers file.
 TOP_LEVEL_ANSWERS = ("chat_domain", "admin_domain", "host_origin", "admin_email", "openai_api_key")
 #: Tables of the answers file (``env`` passes extra settings straight into .env).
-ANSWER_SECTIONS = ("backup", "alert", "host_auth", "env")
+ANSWER_SECTIONS = ("backup", "alert", "host_auth", "business_db", "env")
 #: Hosts a development/staging host page may use over plain HTTP.
 LOCAL_HOSTS = ("localhost", "127.0.0.1")
 ALERT_CHANNELS = ("telegram", "slack", "smtp")
@@ -83,6 +83,14 @@ class HostAuthAnswers:
 
 
 @dataclass(frozen=True)
+class BusinessDbAnswers:
+    """The client's business database for the SQL tools (optional)."""
+
+    #: ``postgresql+asyncpg://chatbot_reader:…@host:5432/db`` of a read-only role; empty = no SQL tools.
+    url: str = ""
+
+
+@dataclass(frozen=True)
 class InstallAnswers:
     """Everything a person decides for one client box."""
 
@@ -95,6 +103,7 @@ class InstallAnswers:
     backup: BackupAnswers
     alert: AlertAnswers
     host_auth: HostAuthAnswers = field(default_factory=HostAuthAnswers)
+    business_db: BusinessDbAnswers = field(default_factory=BusinessDbAnswers)
     extra_env: Dict[str, str] = field(default_factory=dict)
 
     # ------------------------------------------------------------------
@@ -125,6 +134,8 @@ class InstallAnswers:
             issues.append(f"host_auth.mode must be one of {', '.join(HOST_AUTH_MODES)}")
         if self.host_auth.jwks_url and not self.host_auth.jwks_url.startswith("https://"):
             issues.append("host_auth.jwks_url must be an https:// URL")
+        if self.business_db.url and not self.business_db.url.startswith("postgresql+asyncpg://"):
+            issues.append("business_db.url must be a postgresql+asyncpg:// URL of a read-only role")
         return issues
 
     def _origin_problems(self) -> List[str]:
@@ -205,6 +216,7 @@ class InstallAnswers:
             "HOST_JWT_ISSUER": self.host_auth.issuer or self.host_origins[0],
             "HOST_JWT_AUDIENCE": self.host_auth.audience or f"https://{self.chat_domain}",
             "HOST_TIERS": self.host_auth.tiers,
+            "BUSINESS_DB_URL": self.business_db.url,
         }
         values.update(self.extra_env)
         return values
@@ -254,8 +266,10 @@ class AnswersFile:
         backup_data, backup_unknown = _section(data.get("backup", {}), BackupAnswers)
         alert_data, alert_unknown = _section(data.get("alert", {}), AlertAnswers)
         host_auth_data, host_auth_unknown = _section(data.get("host_auth", {}), HostAuthAnswers)
+        business_db_data, business_db_unknown = _section(data.get("business_db", {}), BusinessDbAnswers)
         unknown += [f"backup.{key}" for key in backup_unknown] + [f"alert.{key}" for key in alert_unknown]
         unknown += [f"host_auth.{key}" for key in host_auth_unknown]
+        unknown += [f"business_db.{key}" for key in business_db_unknown]
         missing += [name for name, section in (("backup.target", backup_data), ("alert.channel", alert_data))
                     if not section.get(name.split(".")[1])]
         if missing or unknown:
@@ -271,6 +285,7 @@ class AnswersFile:
             backup=BackupAnswers(**backup_data),
             alert=AlertAnswers(**alert_data),
             host_auth=HostAuthAnswers(**host_auth_data),
+            business_db=BusinessDbAnswers(**business_db_data),
             extra_env={str(key): str(value) for key, value in data.get("env", {}).items()},
         )
 

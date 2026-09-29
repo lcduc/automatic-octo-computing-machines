@@ -83,6 +83,7 @@ class Preflight:
             *self.check_dns(),
             self.check_backup_target(),
             self.check_alert(),
+            *([self.check_business_db()] if self._env.get("BUSINESS_DB_URL") else []),
         ]
 
     def api_image(self) -> str:
@@ -164,6 +165,15 @@ class Preflight:
         except CommandError as exc:
             return CheckResult("alert channel", False, str(exc)[:300])
         return CheckResult("alert channel", True, output.strip().splitlines()[-1] if output.strip() else "sent")
+
+
+    def check_business_db(self) -> CheckResult:
+        """The business database role given to the SQL tools cannot write (TOOL-05)."""
+        try:
+            output = self._compose.run_once("api", ["python", "-m", "scripts.manage", "check-business-db"], timeout=120).stdout
+        except CommandError as exc:
+            return CheckResult("business db read-only", False, str(exc)[:300])
+        return CheckResult("business db read-only", True, output.strip().splitlines()[-1] if output.strip() else "ok")
 
 
 def _resolve(domain: str) -> List[str]:

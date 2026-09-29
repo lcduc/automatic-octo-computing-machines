@@ -21,7 +21,7 @@ from .context import OpsContext
 from .deployer import ENV_HEADER
 from .env_file import EnvFile
 from .host_bundle import HostIntegrationBundle
-from .layout import copy_templates
+from .layout import BUSINESS_DB_GRANTS_TEMPLATE, copy_templates
 from .prompter import InteractivePrompter
 from .secret_generator import SecretGenerator
 
@@ -82,7 +82,15 @@ class Installer:
         ops_env.save(OPS_ENV_HEADER)
         self._context.out(f"Settings written to {layout.env_file} ({len(generated)} secrets generated now).")
         self._hand_over_host_keys(env, "HOST_JWT_SECRET" in generated)
+        self._hand_over_business_db_grants()
         return answers
+
+    def _hand_over_business_db_grants(self) -> None:
+        """The SQL the client's DBA runs to give the SQL tools read-only access."""
+        source = self._context.templates_dir / BUSINESS_DB_GRANTS_TEMPLATE
+        if source.exists():
+            target = self._context.layout.handover_dir / "business_db_grants.sql"
+            target.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
 
     def _hand_over_host_keys(self, env: EnvFile, new_shared_secret: bool) -> None:
         """Generate the host signing key on first install and package it for the host's developers."""
