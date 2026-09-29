@@ -82,6 +82,9 @@ jobs:
       - name: Hard gates
         run: pytest -m hard_gate -v
 
+      - name: Red team (prompt injection)
+        run: pytest -m red_team -v
+
       - name: Run tests
         run: pytest
 
