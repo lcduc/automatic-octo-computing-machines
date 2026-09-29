@@ -199,27 +199,27 @@ Single-tenant env vars (minimum): `HOST_ORIGIN`, `HOST_AUTH_MODE` (`rs256` | `hs
 
 ### Triggers (each stores a `reason_code`)
 - [x] HND-01 Explicit request ("gặp nhân viên", "talk to a human")
-- [ ] HND-02 Model declines / out of scope after clarification
+- [x] HND-02 Model declines / out of scope after clarification — a second unanswered turn in a row opens a `repeated_no_answer` ticket (`ChatService._escalate_repeated_failure`)
 - [x] HND-03 Retrieval below threshold (RET-07)
-- [ ] HND-04 ≥2 consecutive clarifications or thumbs-down
-- [ ] HND-05 Tool error on private-data request
-- [ ] HND-06 Configurable sensitive topics (complaints, legal threats, payment disputes)
+- [x] HND-04 ≥2 consecutive clarifications or thumbs-down — `ConversationService` (`NEGATIVE_STREAK=2`) and repeated no-answer; `test/integration/test_tickets.py`
+- [x] HND-05 Tool error on private-data request — `StreamDelta.tool_failed` → `tool_error` ticket; `test_chatbot_action_routing.py`
+- [x] HND-06 Configurable sensitive topics (complaints, legal threats, payment disputes) — `handoff_topics` setting, accent-insensitive whole-phrase match (`core/guardrails/topic_matcher.py`), admin Settings → Support
 
 ### Routing
-- [ ] HND-07 Working hours + holiday calendar (Tết, 30/4–1/5, 2/9, etc.) in `Asia/Ho_Chi_Minh`, editable in admin
-- [ ] HND-08 In hours + agent online → live queue; otherwise → async ticket (post-launch)
-- [ ] HND-09 Live → async fallback if no agent accepts within N minutes (configurable); user informed (post-launch)
+- [x] HND-07 Working hours + holiday calendar (Tết, 30/4–1/5, 2/9, etc.) in `Asia/Ho_Chi_Minh`, editable in admin — `services/business_calendar.py`; lunar dates (Tết, Giỗ Tổ) entered per year as `YYYY-MM-DD`
+- [-] HND-08 In hours + agent online → live queue; otherwise → async ticket (post-launch) — deferred: every handoff is an async ticket at launch
+- [-] HND-09 Live → async fallback if no agent accepts within N minutes (configurable); user informed (post-launch) — deferred with HND-08
 
 ### Live (post-launch)
-- [ ] HND-10 Agent console in admin: queue, accept, full history incl. bot turns + retrieved sources, reply box
-- [ ] HND-11 WebSocket + Postgres LISTEN/NOTIFY; bot paused while agent owns conversation; user sees agent takeover notice
-- [ ] HND-12 Agent can hand back to bot or close; typing indicator; idle timeout
+- [-] HND-10 Agent console in admin: queue, accept, full history incl. bot turns + retrieved sources, reply box
+- [-] HND-11 WebSocket + Postgres LISTEN/NOTIFY; bot paused while agent owns conversation; user sees agent takeover notice
+- [-] HND-12 Agent can hand back to bot or close; typing indicator; idle timeout — deferred with live handoff (HND-08); the ticket drawer covers answer/close
 
 ### Async
-- [ ] HND-13 Ticket form: prefilled for logged-in; anonymous must give email/phone with consent notice (PRV-02)
-- [ ] HND-14 Expected response time shown to user
-- [ ] HND-15 Delivery: in-chat on next visit (reliable for logged-in only) + email. Zalo OA = later phase (requires OA registration + approved templates)
-- [~] HND-16 States `open → assigned → answered → closed`; SLA timers in admin — `pending → in_progress → resolved`, no SLA
+- [x] HND-13 Ticket form: prefilled for logged-in; anonymous must give email/phone with consent notice (PRV-02) — `TicketForm.tsx`; signed-in users are answered in chat so contact is optional; server enforces contact + consent (`POST /api/v1/chat/handoffs/{id}/contact`)
+- [x] HND-14 Expected response time shown to user — `reply_expected_by` on the done event, from `ticket_reply_hours` over the business calendar
+- [x] HND-15 Delivery: in-chat on next visit (reliable for logged-in only) + email — admin answer adds an `agent_reply` message and e-mails via `SmtpMailer`. Zalo OA = later phase (requires OA registration + approved templates)
+- [x] HND-16 States `open → assigned → answered → closed`; SLA timers in admin — `due_at` per ticket, overdue badge, queue ordered by due time; masked contact, owner-only reveal (audit-logged)
 
 ### Loop closure
 - [ ] HND-17 "Add to knowledge base" on agent answers → draft FAQ doc pending admin approval
@@ -296,7 +296,7 @@ Single-tenant env vars (minimum): `HOST_ORIGIN`, `HOST_AUTH_MODE` (`rs256` | `hs
 ## 14. Privacy (Vietnam)
 
 - [ ] PRV-01 Map personal data flows against Law 91/2025/QH15 on Personal Data Protection (effective 1 Jan 2026). Chat content + private tool results sent to a foreign LLM API = cross-border transfer; document assessment. VERIFY current implementing decree before launch
-- [ ] PRV-02 Consent notice in widget (esp. anonymous ticket contact info)
+- [x] PRV-02 Consent notice in widget (esp. anonymous ticket contact info) — ticket form checkbox; `consent_at` stored, contact refused without it
 - [ ] PRV-03 Data-subject requests: admin export/delete of one user's conversations + tickets
 - [ ] PRV-04 Retention periods per data type (chats, traces, tickets) + automated purge
 - [ ] PRV-05 LLM provider configured for no training, minimal/zero retention where available
