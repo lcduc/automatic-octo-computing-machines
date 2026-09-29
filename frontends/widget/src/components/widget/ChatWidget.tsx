@@ -9,13 +9,13 @@ const FALLBACK_COLOR = "#0B5FFF";
 
 const noopSubscribe = () => () => {};
 
-/** Ask the embedding page (embed.js) to close the widget panel. */
-function requestClose() {
-  window.parent?.postMessage({ type: "chatbot:close" }, "*");
+interface ChatWidgetProps {
+  /** Origins allowed to frame the widget (the host site); messages go only to these, exactly. */
+  allowedOrigins: string[];
 }
 
-export function ChatWidget() {
-  const { config, messages, busy, notice, send, stop, rate, reset } = useChat();
+export function ChatWidget({ allowedOrigins }: ChatWidgetProps) {
+  const { config, messages, busy, notice, send, stop, rate, reset, close, requestLogin, signedIn, submitContact } = useChat(allowedOrigins);
   const listEnd = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -38,7 +38,7 @@ export function ChatWidget() {
             </button>
           )}
           {embedded && (
-            <button type="button" onClick={requestClose} aria-label="Đóng cửa sổ trò chuyện" className="rounded px-2 py-1 text-lg leading-none hover:bg-white/15">
+            <button type="button" onClick={close} aria-label="Đóng cửa sổ trò chuyện" className="rounded px-2 py-1 text-lg leading-none hover:bg-white/15">
               ×
             </button>
           )}
@@ -66,14 +66,14 @@ export function ChatWidget() {
           </section>
         )}
         {messages.map((message) => (
-          <MessageBubble key={message.id} message={message} onRate={rate} />
+          <MessageBubble key={message.id} message={message} onRate={rate} onLogin={requestLogin} signedIn={signedIn} onContact={submitContact} />
         ))}
         {notice && <p role="alert" className="text-center text-xs text-red-700">{notice}</p>}
         <div ref={listEnd} />
       </main>
 
       <Composer busy={busy} onSend={send} onStop={stop} />
-      <p className="px-4 pb-2 text-center text-[11px] text-slate-400">
+      <p className="px-4 pb-2 text-center text-xs text-slate-600">
         Trợ lý ảo có thể trả lời chưa chính xác. Vui lòng không chia sẻ thông tin cá nhân nhạy cảm.
       </p>
     </div>

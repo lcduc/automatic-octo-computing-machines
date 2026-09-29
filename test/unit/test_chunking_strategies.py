@@ -3,6 +3,7 @@
 import pytest
 
 from core.document_processing.chunking import Chunker, InvalidChunkingError, MAX_CHUNK_CHARS
+from core.document_processing.chunking.chunker import section_label
 from core.document_processing.chunking.heading_strategy import HeadingChunker
 from core.document_processing.chunking.legal_article_strategy import LegalArticleChunker
 from core.document_processing.chunking.qa_pair_strategy import QaPairChunker
@@ -153,3 +154,10 @@ def test_spec_round_trips_through_its_stored_form():
 
     assert ChunkingSpec.from_json(spec.to_json()) == spec
     assert ChunkingSpec.from_json({}) == ChunkingSpec()
+
+
+def test_section_label_for_citations():
+    articles = [d for d in LegalArticleChunker().split(LAW) if "article" in d.metadata]
+    assert section_label(articles[2].metadata) == "Chương II · Điều 6"
+    assert section_label({"heading": "Quên mật khẩu"}) == "Quên mật khẩu"
+    assert section_label({"url": "https://x"}) is None

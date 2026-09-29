@@ -1,6 +1,9 @@
 """Unit tests for CurrentTimeTool - the reference BaseTool implementation."""
 
+import asyncio
+
 from core.agent.tools.current_time_tool import CurrentTimeTool
+from models.tool_context import ToolContext
 
 
 def test_schema_has_no_required_parameters():
@@ -10,19 +13,19 @@ def test_schema_has_no_required_parameters():
 
 def test_defaults_to_utc_when_no_timezone_given():
     tool = CurrentTimeTool()
-    result = tool.execute()
+    result = asyncio.run(tool.execute({}, ToolContext()))
     assert "(UTC)" in result
 
 
 def test_uses_requested_timezone():
     tool = CurrentTimeTool()
-    result = tool.execute(timezone="Asia/Ho_Chi_Minh")
+    result = asyncio.run(tool.execute({'timezone': "Asia/Ho_Chi_Minh"}, ToolContext()))
     assert "(Asia/Ho_Chi_Minh)" in result
 
 
 def test_unknown_timezone_returns_error_string_not_raise():
     tool = CurrentTimeTool()
-    result = tool.execute(timezone="Not/AZone")
+    result = asyncio.run(tool.execute({'timezone': "Not/AZone"}, ToolContext()))
     assert "Error" in result
     assert "Not/AZone" in result
 

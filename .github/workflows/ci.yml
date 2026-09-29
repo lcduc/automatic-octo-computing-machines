@@ -78,11 +78,18 @@ jobs:
           DATABASE_URL: ${{ env.TEST_DATABASE_URL }}
         run: alembic upgrade head && alembic downgrade base && alembic upgrade head
 
+      # EVAL-09: must pass 100% before any merge (tier gating, per-user data isolation, retrieval filters).
+      - name: Hard gates
+        run: pytest -m hard_gate -v
+
+      - name: Red team (prompt injection)
+        run: pytest -m red_team -v
+
       - name: Run tests
         run: pytest
 
   widget:
-    name: Chat widget (lint, types, build)
+    name: Chat widget (lint, types, tests, build)
     runs-on: ubuntu-latest
     timeout-minutes: 15
     defaults:
@@ -101,6 +108,7 @@ jobs:
       - run: npm run lint
       - run: npx next typegen
       - run: npx tsc --noEmit
+      - run: npm test
       - run: npm run build
 
   admin-web:

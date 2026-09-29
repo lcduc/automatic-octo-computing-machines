@@ -9,10 +9,16 @@ import { useSession } from "../../lib/session";
 import { OUTCOMES, type MessageResponse, type SystemStatus, type UsageSummary } from "../../lib/types";
 import { useApi } from "../../lib/use-api";
 import { LiveFeed } from "./LiveFeed";
+import { MonthlyHistory } from "./MonthlyHistory";
 import { TokenChart } from "./TokenChart";
 
 const PERIODS = [1, 7, 30] as const;
 type Maintenance = "cache/clear" | "reindex";
+
+/** Micro-dollars as dollars, for the cost hint. */
+function usd(microUsd: number): string {
+  return `$${(microUsd / 1_000_000).toFixed(2)}`;
+}
 
 export function OverviewPage() {
   const { t, formatNumber } = useI18n();
@@ -62,7 +68,7 @@ export function OverviewPage() {
       {data && (
         <div className="kpi-grid">
           <KpiCard icon={<MessagesSquare size={20} />} label={t("overview.conversations")} value={formatNumber(data.latency.conversations)} hint={t("overview.turns", { count: formatNumber(turns) })} />
-          <KpiCard icon={<Coins size={20} />} tone="gold" label={t("overview.tokens")} value={formatNumber(data.totals.prompt_tokens + data.totals.completion_tokens)} hint={t("overview.calls", { count: formatNumber(data.totals.calls) })} />
+          <KpiCard icon={<Coins size={20} />} tone="gold" label={t("overview.tokens")} value={formatNumber(data.totals.prompt_tokens + data.totals.completion_tokens)} hint={t("overview.cost", { period: usd(data.totals.cost_micro_usd), month: usd(data.month.cost_micro_usd) })} />
           <KpiCard
             icon={<Headset size={20} />}
             tone="rose"
@@ -157,6 +163,10 @@ export function OverviewPage() {
           )}
         </Card>
       </div>
+
+      <Card title={t("history.title")} flush>
+        <MonthlyHistory />
+      </Card>
 
       {confirming && (
         <ConfirmDialog

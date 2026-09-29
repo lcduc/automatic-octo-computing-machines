@@ -1,6 +1,6 @@
 """
 Runtime settings editable from the admin web (fallback mode, canned replies,
-widget look, chat models and retrieval tuning).
+widget look, chat models, retrieval tuning, limits, support hours and retention).
 
 Values live in the ``app_settings`` table; anything never saved falls back to
 its default (canned replies come from ``core/agent/prompts.py``). The current values are cached in memory so a chat
@@ -9,7 +9,7 @@ turn never waits on the database for them.
 
 # Standard library imports
 import logging
-from typing import Any, Awaitable, Callable, Dict, Optional
+from typing import Any, Awaitable, Callable, Dict, Iterable, Optional
 
 # Third-party imports
 from sqlalchemy import delete, select
@@ -19,12 +19,31 @@ from config.settings import Config
 from core.agent.prompts import AutoReplies
 from core.storage.database import Database
 from core.storage.tables.access_tables import AppSetting
+from core.storage.tables.access_tables import ROLE_OWNER
 from models.chat_turn import FALLBACK_MODES, ChatPolicy
-from .errors import InvalidRequestError
+from models.retention_policy import (
+    DEFAULT_ANONYMOUS_CHAT_DAYS,
+    DEFAULT_AUDIT_DAYS,
+    DEFAULT_CHAT_DAYS,
+    DEFAULT_TICKET_DAYS,
+    DEFAULT_TRACE_DAYS,
+    RetentionPolicy,
+)
+from models.usage_policy import UsagePolicy
+from .business_calendar import DEFAULT_HOLIDAYS, DEFAULT_SUPPORT_HOURS, BusinessCalendar, CalendarError
+from .errors import InvalidRequestError, PermissionDeniedError
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_WIDGET_TITLE = "Trợ lý ảo"
+#: Working hours within which a ticket should be answered (HND-14).
+DEFAULT_TICKET_REPLY_HOURS = 8
+#: Topics that always go to a human when handoff is on (HND-06); matched without accents.
+DEFAULT_HANDOFF_TOPICS = [
+    # Whole phrases only: "kiện" alone also means "parcel" (kiện hàng).
+    "khiếu nại", "tranh chấp", "luật sư", "khởi kiện", "kiện tụng", "đi kiện", "hoàn tiền", "lừa đảo", "bồi thường",
+    "complaint", "lawyer", "lawsuit", "refund", "chargeback", "fraud",
+]
 DEFAULT_WIDGET_COLOR = "#0B5FFF"
 
 
@@ -48,6 +67,24 @@ def _defaults() -> Dict[str, Any]:
         "semantic_weight": Config.RAG.SEMANTIC_WEIGHT(),
         "retrieval_top_k": Config.RAG.RETRIEVAL_TOP_K(),
         "max_context_chunks": Config.RAG.MAX_CONTEXT_CHUNKS(),
+        "limit_anonymous_per_minute": Config.Security.RATE_LIMIT_ANONYMOUS_PER_MINUTE(),
+        "limit_anonymous_per_hour": Config.Security.RATE_LIMIT_ANONYMOUS_PER_HOUR(),
+        "tokens_anonymous_per_day": Config.Security.TOKEN_BUDGET_ANONYMOUS_PER_DAY(),
+        "limit_user_per_minute": Config.Security.RATE_LIMIT_USER_PER_MINUTE(),
+        "limit_user_per_hour": Config.Security.RATE_LIMIT_USER_PER_HOUR(),
+        "tokens_user_per_day": Config.Security.TOKEN_BUDGET_USER_PER_DAY(),
+        "tokens_ip_per_day": Config.Security.TOKEN_BUDGET_IP_PER_DAY(),
+        "spend_cap_monthly_usd": Config.Security.SPEND_CAP_MONTHLY_USD(),
+        "spend_anonymous_cutoff_ratio": Config.Security.SPEND_ANONYMOUS_CUTOFF_RATIO(),
+        "support_hours": dict(DEFAULT_SUPPORT_HOURS),
+        "support_holidays": list(DEFAULT_HOLIDAYS),
+        "ticket_reply_hours": DEFAULT_TICKET_REPLY_HOURS,
+        "handoff_topics": list(DEFAULT_HANDOFF_TOPICS),
+        "retention_chat_days": DEFAULT_CHAT_DAYS,
+        "retention_anonymous_chat_days": DEFAULT_ANONYMOUS_CHAT_DAYS,
+        "retention_trace_days": DEFAULT_TRACE_DAYS,
+        "retention_ticket_days": DEFAULT_TICKET_DAYS,
+        "retention_audit_days": DEFAULT_AUDIT_DAYS,
     }
 
 
@@ -55,6 +92,13 @@ def _defaults() -> Dict[str, Any]:
 MODEL_KEYS = ("chat_model", "light_model")
 #: Checks a model name works with the provider; raises when it does not.
 ModelCheck = Callable[[str], Awaitable[None]]
+
+
+#: Settings only an owner may change (they decide when personal data is deleted).
+OWNER_ONLY_KEYS = frozenset({
+    "retention_chat_days", "retention_anonymous_chat_days", "retention_trace_days",
+    "retention_ticket_days", "retention_audit_days",
+})
 
 
 #: Keys safe to expose to the public widget.
@@ -73,12 +117,13 @@ class SettingsService:
         self._values: Dict[str, Any] = _defaults()
 
     async def load(self) -> None:
-        """Load saved values over the defaults (called once at start-up)."""
+        """Load saved values over the defaults (at start-up; the worker reloads before each purge)."""
         async with self._database.session() as session:
             result = await session.execute(select(AppSetting))
             saved = {row.key: row.value for row in result.scalars().all()}
-        known = {key: value for key, value in saved.items() if key in self._values}
-        self._values.update(known)
+        defaults = _defaults()
+        known = {key: value for key, value in saved.items() if key in defaults}
+        self._values = {**defaults, **known}
         logger.info("Runtime settings loaded (%d saved overrides)", len(known))
 
     def all(self) -> Dict[str, Any]:
@@ -106,6 +151,51 @@ class SettingsService:
             semantic_weight=values["semantic_weight"],
             retrieval_top_k=values["retrieval_top_k"],
             max_context_chunks=values["max_context_chunks"],
+            handoff_topics=tuple(values["handoff_topics"]),
+        )
+
+    def support_calendar(self) -> BusinessCalendar:
+        """Support working hours and holidays (validated when saved)."""
+        return BusinessCalendar(self._values["support_hours"], self._values["support_holidays"], Config.Server.APP_TIMEZONE())
+
+    def ticket_reply_hours(self) -> float:
+        """Working hours within which a ticket should be answered."""
+        return float(self._values["ticket_reply_hours"])
+
+    def retention_policy(self) -> RetentionPolicy:
+        """How long each kind of data is kept (PRV-04)."""
+        values = self._values
+        return RetentionPolicy(
+            chat_days=int(values["retention_chat_days"]),
+            anonymous_chat_days=int(values["retention_anonymous_chat_days"]),
+            trace_days=int(values["retention_trace_days"]),
+            ticket_days=int(values["retention_ticket_days"]),
+            audit_days=int(values["retention_audit_days"]),
+        )
+
+    @staticmethod
+    def check_role(keys: Iterable[str], role: str) -> None:
+        """
+        Raises:
+            PermissionDeniedError: A non-owner tries to change an owner-only setting.
+        """
+        restricted = sorted(OWNER_ONLY_KEYS.intersection(keys))
+        if restricted and role != ROLE_OWNER:
+            raise PermissionDeniedError(f"Only an owner can change: {', '.join(restricted)}")
+
+    def usage_policy(self) -> UsagePolicy:
+        """Current request limits, token budgets and spend cap."""
+        values = self._values
+        return UsagePolicy(
+            anonymous_per_minute=int(values["limit_anonymous_per_minute"]),
+            anonymous_per_hour=int(values["limit_anonymous_per_hour"]),
+            anonymous_tokens_per_day=int(values["tokens_anonymous_per_day"]),
+            user_per_minute=int(values["limit_user_per_minute"]),
+            user_per_hour=int(values["limit_user_per_hour"]),
+            user_tokens_per_day=int(values["tokens_user_per_day"]),
+            ip_tokens_per_day=int(values["tokens_ip_per_day"]),
+            spend_cap_usd=float(values["spend_cap_monthly_usd"]),
+            anonymous_cutoff_ratio=float(values["spend_anonymous_cutoff_ratio"]),
         )
 
     @staticmethod
@@ -134,6 +224,14 @@ class SettingsService:
             raise InvalidRequestError(f"Unknown settings: {', '.join(sorted(unknown))}")
         if "fallback_mode" in changes and changes["fallback_mode"] not in FALLBACK_MODES:
             raise InvalidRequestError(f"fallback_mode must be one of {', '.join(FALLBACK_MODES)}")
+        if "support_hours" in changes or "support_holidays" in changes:
+            try:
+                BusinessCalendar.validate(
+                    changes.get("support_hours", self._values["support_hours"]),
+                    changes.get("support_holidays", self._values["support_holidays"]),
+                )
+            except CalendarError as exc:
+                raise InvalidRequestError(str(exc)) from exc
         if model_check is not None:
             for key in MODEL_KEYS:
                 if key in changes and changes[key] != self._values[key]:

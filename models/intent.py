@@ -11,3 +11,5 @@ class IntentType(str, Enum):
 
     RAG = "rag"
     ACTION = "action"
+    #: The request needs a tool only signed-in users may use (ID-11): ask them to log in.
+    LOGIN_REQUIRED = "login"

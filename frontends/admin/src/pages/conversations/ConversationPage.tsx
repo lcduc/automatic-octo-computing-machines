@@ -1,6 +1,7 @@
 import { ArrowLeft } from "lucide-react";
 import { Link, useParams } from "react-router";
 import { Transcript } from "../../components/conversations/Transcript";
+import { LegalHoldButton } from "../../components/privacy/LegalHoldButton";
 import { Card, ErrorState, LoadingState, PageHeader } from "../../components/ui/primitives";
 import { useI18n } from "../../i18n/I18nProvider";
 import type { ConversationDetail } from "../../lib/types";
@@ -9,7 +10,7 @@ import { useApi } from "../../lib/use-api";
 export function ConversationPage() {
   const { t, formatDateTime } = useI18n();
   const { id } = useParams();
-  const { data, error, reload } = useApi<ConversationDetail>(id ? `conversations/${id}` : null);
+  const { data, error, reload, setData } = useApi<ConversationDetail>(id ? `conversations/${id}` : null);
 
   if (error) return <ErrorState message={error} onRetry={reload} />;
   if (!data) return <LoadingState />;
@@ -23,6 +24,7 @@ export function ConversationPage() {
       <PageHeader
         title={t("conversations.detailTitle", { visitor: data.end_user_id })}
         description={t("conversations.detailMeta", { channel: data.channel, started: formatDateTime(data.created_at), count: data.message_count })}
+        actions={<LegalHoldButton path={`conversations/${data.id}`} held={data.legal_hold} onChange={(held) => setData({ ...data, legal_hold: held })} />}
       />
       <Card>
         <Transcript messages={data.messages} />

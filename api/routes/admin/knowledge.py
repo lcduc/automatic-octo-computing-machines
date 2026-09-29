@@ -14,6 +14,7 @@ from pydantic import ValidationError
 # Local imports
 from api.container import AppContainer
 from api.dependencies import READ_ROLES, WRITE_ROLES, get_container, require_admin
+from core.storage.tables.access_tables import SCOPE_ADMIN_READ, SCOPE_DOCUMENTS_WRITE
 from api.schemas.chunking import (
     CHUNKING_ADAPTER,
     ChunkingPreview,
@@ -29,6 +30,7 @@ from api.schemas.knowledge import (
     ChunkCreate,
     ChunkOut,
     ChunkUpdate,
+    CitingAnswer,
     DocumentDetail,
     DocumentOut,
     DocumentUpdate,
@@ -42,8 +44,8 @@ from services.auth_service import AdminPrincipal
 
 router = APIRouter(prefix="/knowledge", tags=["Admin: knowledge"])
 
-read_access = Depends(require_admin(READ_ROLES))
-write_access = require_admin(WRITE_ROLES)
+read_access = Depends(require_admin(READ_ROLES, key_scope=SCOPE_ADMIN_READ))
+write_access = require_admin(WRITE_ROLES, key_scope=SCOPE_DOCUMENTS_WRITE)
 
 
 # ---------------------------------------------------------------- sources
@@ -152,9 +154,17 @@ async def get_document(document_id: uuid.UUID, container: AppContainer = Depends
 async def update_document(
     document_id: uuid.UUID, body: DocumentUpdate, container: AppContainer = Depends(get_container)
 ) -> DocumentDetail:
-    """Edit title, source, metadata or enabled flag."""
+    """Edit title, source, metadata, enabled flag, tier, language, version, validity or superseded version."""
     document = await container.knowledge.update_document(document_id, body.model_dump(exclude_unset=True))
     return DocumentDetail.from_document(document)
+
+
+@router.get("/documents/{document_id}/citations", response_model=List[CitingAnswer], dependencies=[read_access])
+async def document_citations(
+    document_id: uuid.UUID, limit: int = Query(20, ge=1, le=100), container: AppContainer = Depends(get_container)
+) -> List[CitingAnswer]:
+    """Recent answers that cited this document, newest first."""
+    return [CitingAnswer(**row) for row in await container.knowledge.answers_citing(document_id, limit)]
 
 
 @router.delete("/documents/{document_id}", response_model=MessageResponse, dependencies=[Depends(write_access)])

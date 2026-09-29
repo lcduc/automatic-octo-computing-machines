@@ -1,67 +1,148 @@
 """
-Per-key sliding-window request limiting (per end user, per client IP).
+Request limits and usage totals kept in PostgreSQL time buckets.
 
-# ceiling: counters live in this process only — correct for the single-worker
-# VPS deployment; move them to Redis if the API ever runs as several processes.
+Each check adds one request to every bucket it names (per minute, hour, day
+or month) in a single upsert and compares the new counts with the limits, so
+limits are exact across restarts and across several API processes. Days and
+months follow the application time zone, so "per day" means the local day.
+
+# ceiling: fixed windows allow up to 2x a limit across a bucket boundary;
+# switch to a two-bucket sliding estimate if bursts at boundaries matter.
 """
 
 # Standard library imports
+import hashlib
 import logging
 import math
-import threading
-import time
-from collections import deque
-from typing import Deque, Dict, Optional
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
+from typing import Callable, Dict, Optional, Sequence, Tuple
+from zoneinfo import ZoneInfo
+
+# Local imports
+from core.storage.database import Database
+from core.storage.tables.usage_tables import WINDOW_DAY, WINDOW_HOUR, WINDOW_MINUTE, WINDOW_MONTH
+from core.storage.usage_counter_repository import CounterKey, CounterTotals, UsageCounterRepository
 
 logger = logging.getLogger(__name__)
 
-#: Length of every rate-limit window, in seconds.
-WINDOW_SECONDS = 60
-#: Idle keys are dropped once the table grows past this many entries.
-PRUNE_THRESHOLD = 20_000
+#: Characters of a SHA-256 kept when an IP or e-mail is part of a counter key (never stored in clear).
+KEY_HASH_LENGTH = 24
+
+
+def hashed(value: str) -> str:
+    """Stable, non-reversible stand-in for personal data inside counter keys."""
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()[:KEY_HASH_LENGTH]
+
+
+@dataclass(frozen=True)
+class Limit:
+    """At most ``limit`` requests for ``scope_key`` per ``window`` (``limit <= 0`` disables it)."""
+
+    scope_key: str
+    window: str
+    limit: int
+
+
+class TimeBuckets:
+    """Bucket boundaries in the application time zone."""
+
+    def __init__(self, time_zone: str, clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc)):
+        """
+        Args:
+            time_zone: IANA zone that days and months follow.
+            clock: Current UTC time (injectable for tests).
+        """
+        self._zone = ZoneInfo(time_zone)
+        self._clock = clock
+
+    def now(self) -> datetime:
+        """The current moment in the application zone."""
+        return self._clock().astimezone(self._zone)
+
+    def start(self, window: str, moment: Optional[datetime] = None) -> datetime:
+        """Start of the bucket containing ``moment`` (default: now)."""
+        local = (moment or self.now()).astimezone(self._zone)
+        if window == WINDOW_MINUTE:
+            return local.replace(second=0, microsecond=0)
+        if window == WINDOW_HOUR:
+            return local.replace(minute=0, second=0, microsecond=0)
+        if window == WINDOW_DAY:
+            return local.replace(hour=0, minute=0, second=0, microsecond=0)
+        if window == WINDOW_MONTH:
+            return local.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        raise ValueError(f"Unknown window {window!r}")
+
+    def end(self, window: str, start: datetime) -> datetime:
+        """Start of the bucket after ``start``."""
+        if window == WINDOW_MINUTE:
+            return start + timedelta(minutes=1)
+        if window == WINDOW_HOUR:
+            return start + timedelta(hours=1)
+        if window == WINDOW_DAY:
+            return (start + timedelta(days=1, hours=2)).replace(hour=0)
+        if window == WINDOW_MONTH:
+            return (start + timedelta(days=32)).replace(day=1)
+        raise ValueError(f"Unknown window {window!r}")
 
 
 class RateLimitService:
-    """Sliding-window limiter keyed by an arbitrary string (``user:…``, ``ip:…``)."""
+    """Checks limits and accumulates tokens/cost in the ``usage_counters`` table."""
 
-    def __init__(self, clock=time.monotonic):
+    def __init__(self, database: Database, buckets: TimeBuckets):
         """
         Args:
-            clock: Monotonic time source in seconds (injectable for tests).
+            database: Connected database.
+            buckets: Bucket boundaries (application time zone).
         """
-        self._clock = clock
-        self._hits: Dict[str, Deque[float]] = {}
-        self._lock = threading.Lock()
+        self._database = database
+        self._buckets = buckets
 
-    def hit(self, key: str, limit: int) -> Optional[int]:
+    @property
+    def buckets(self) -> TimeBuckets:
+        """The bucket calendar in use."""
+        return self._buckets
+
+    def key(self, scope_key: str, window: str) -> CounterKey:
+        """The current bucket of ``scope_key`` in ``window``."""
+        return scope_key, window, self._buckets.start(window)
+
+    async def hit(self, limits: Sequence[Limit]) -> Optional[int]:
         """
-        Record one request for ``key`` if it is within ``limit`` per window.
-
-        Args:
-            key: Bucket identity.
-            limit: Requests allowed per window; ``<= 0`` disables the check.
+        Count one request against every active limit.
 
         Returns:
-            ``None`` when allowed, otherwise seconds until a slot frees up.
+            ``None`` when all are within bounds, else seconds until the
+            tightest exceeded bucket ends (for ``Retry-After``).
         """
-        if limit <= 0:
+        active = [limit for limit in limits if limit.limit > 0]
+        if not active:
             return None
-        now = self._clock()
-        with self._lock:
-            if len(self._hits) > PRUNE_THRESHOLD:
-                self._prune(now)
-            window = self._hits.setdefault(key, deque())
-            while window and now - window[0] >= WINDOW_SECONDS:
-                window.popleft()
-            if len(window) >= limit:
-                retry_after = max(1, math.ceil(WINDOW_SECONDS - (now - window[0])))
-                logger.warning("Rate limit hit for %s", key.split(":", 1)[0])
-                return retry_after
-            window.append(now)
+        keys = {limit: self.key(limit.scope_key, limit.window) for limit in active}
+        async with self._database.session() as session:
+            totals = await UsageCounterRepository(session).add(list(keys.values()), requests=1)
+        exceeded = [limit for limit in active if totals[keys[limit]].requests > limit.limit]
+        if not exceeded:
             return None
+        now = self._buckets.now()
+        waits = [self._buckets.end(limit.window, keys[limit][2]) - now for limit in exceeded]
+        logger.warning("Rate limit hit: %s", ", ".join(f"{limit.scope_key.split(':')[0]}/{limit.window}" for limit in exceeded))
+        return max(1, math.ceil(max(wait.total_seconds() for wait in waits)))
 
-    def _prune(self, now: float) -> None:
-        """Forget keys with no request in the current window. Caller holds the lock."""
-        idle = [key for key, window in self._hits.items() if not window or now - window[-1] >= WINDOW_SECONDS]
-        for key in idle:
-            del self._hits[key]
+    async def add_usage(self, scopes: Sequence[Tuple[str, str]], tokens: int, cost_micro_usd: int) -> None:
+        """Add tokens and cost to the current bucket of each ``(scope_key, window)``."""
+        keys = [self.key(scope_key, window) for scope_key, window in scopes]
+        async with self._database.session() as session:
+            await UsageCounterRepository(session).add(keys, tokens=tokens, cost_micro_usd=cost_micro_usd)
+
+    async def totals(self, scopes: Sequence[Tuple[str, str]]) -> Dict[Tuple[str, str], CounterTotals]:
+        """Current-bucket totals of each ``(scope_key, window)``."""
+        keys = {scope: self.key(*scope) for scope in scopes}
+        async with self._database.session() as session:
+            found = await UsageCounterRepository(session).totals(list(keys.values()))
+        return {scope: found[key] for scope, key in keys.items()}
+
+    async def purge_before(self, cutoff: datetime) -> int:
+        """Delete counter buckets older than ``cutoff`` (they can no longer affect a limit)."""
+        async with self._database.session() as session:
+            return await UsageCounterRepository(session).purge_before(cutoff)

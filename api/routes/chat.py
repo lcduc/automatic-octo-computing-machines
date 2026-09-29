@@ -20,6 +20,8 @@ from api.schemas.chat import (
     ConversationHistory,
     ConversationMessage,
     FeedbackRequest,
+    FeedbackResult,
+    HandoffContact,
     TranscriptionResponse,
     WidgetConfig,
 )
@@ -71,7 +73,7 @@ async def get_conversation(
     container: AppContainer = Depends(get_container),
 ) -> ConversationHistory:
     """The visitor's own conversation, to restore the widget after a page reload."""
-    conversation = await container.conversations.visitor_conversation(conversation_id, caller.end_user_id)
+    conversation = await container.conversations.visitor_conversation(conversation_id, caller)
     return ConversationHistory(
         id=conversation.id,
         status=conversation.status,
@@ -90,15 +92,27 @@ async def get_conversation(
     )
 
 
-@router.post("/feedback", response_model=MessageResponse)
+@router.post("/feedback", response_model=FeedbackResult)
 async def submit_feedback(
     body: FeedbackRequest,
     caller: ChatCaller = Depends(require_chat_caller),
     container: AppContainer = Depends(get_container),
+) -> FeedbackResult:
+    """Rate an assistant answer; a second thumbs-down in a row may open a ticket (HND-04)."""
+    handoff_id = await container.conversations.submit_feedback(body.message_id, caller, body.rating, body.comment)
+    return FeedbackResult(message="Feedback recorded", handoff_id=handoff_id)
+
+
+@router.post("/handoffs/{handoff_id}/contact", response_model=MessageResponse)
+async def handoff_contact(
+    handoff_id: uuid.UUID,
+    body: HandoffContact,
+    caller: ChatCaller = Depends(require_chat_caller),
+    container: AppContainer = Depends(get_container),
 ) -> MessageResponse:
-    """Rate an assistant answer (thumbs up/down, optional comment)."""
-    await container.conversations.submit_feedback(body.message_id, caller.end_user_id, body.rating, body.comment)
-    return MessageResponse(message="Feedback recorded")
+    """Leave contact details for the reply to one's own ticket."""
+    await container.handoffs.add_contact(handoff_id, caller, body.name, body.email, body.phone, body.details, body.consent)
+    return MessageResponse(message="Contact recorded")
 
 
 @router.get("/widget/config", response_model=WidgetConfig, dependencies=[Depends(require_client_key)])

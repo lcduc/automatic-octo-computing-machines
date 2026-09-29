@@ -23,7 +23,9 @@ from api.dependencies import (
 from api.schemas.admin import AdminCreate, AdminOut, AdminUpdate, LoginRequest, PasswordChange, TokenResponse
 from api.schemas.common import MessageResponse
 from config.settings import Config
+from core.storage.tables.usage_tables import WINDOW_MINUTE
 from services.auth_service import AdminPrincipal
+from services.rate_limit_service import Limit, hashed
 
 router = APIRouter(tags=["Admin: accounts"])
 
@@ -41,14 +43,17 @@ async def login(
     The token is also set as an HttpOnly cookie scoped to the admin API, which
     is what the admin web uses; scripts use the returned token as a Bearer.
     """
-    for key in (f"login-ip:{client_ip(request)}", f"login-email:{body.email.lower()}"):
-        retry_after = container.rate_limiter.hit(key, LOGIN_ATTEMPTS_PER_MINUTE)
-        if retry_after is not None:
-            raise HTTPException(
-                status.HTTP_429_TOO_MANY_REQUESTS,
-                "Too many sign-in attempts; try again shortly",
-                headers={"Retry-After": str(retry_after)},
-            )
+    limits = [
+        Limit(f"login:ip:{hashed(client_ip(request))}", WINDOW_MINUTE, LOGIN_ATTEMPTS_PER_MINUTE),
+        Limit(f"login:email:{hashed(body.email.lower())}", WINDOW_MINUTE, LOGIN_ATTEMPTS_PER_MINUTE),
+    ]
+    retry_after = await container.rate_limiter.hit(limits)
+    if retry_after is not None:
+        raise HTTPException(
+            status.HTTP_429_TOO_MANY_REQUESTS,
+            "Too many sign-in attempts; try again shortly",
+            headers={"Retry-After": str(retry_after)},
+        )
     user = await container.auth.authenticate(body.email, body.password)
     if user is None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Incorrect e-mail or password")

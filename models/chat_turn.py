@@ -9,6 +9,8 @@ from typing import Any, Dict, List, Optional, Sequence
 
 # Local imports
 from .llm import LLMUsage
+from .tool_context import ToolContext
+from .turn_trace import TurnTrace
 
 FALLBACK_MODE_DENY = "deny"
 FALLBACK_MODE_HANDOFF = "handoff"
@@ -27,14 +29,24 @@ class TurnOutcome(str, Enum):
     HANDOFF = "handoff"
     #: Rejected by the guardrails (no LLM call).
     BLOCKED = "blocked"
+    #: Needs a signed-in user; the widget offers the host site's login (ID-11).
+    LOGIN_REQUIRED = "login_required"
     ERROR = "error"
 
 
 class HandoffReason(str, Enum):
-    """Why a conversation was handed to a human."""
+    """Why a conversation was handed to a human (stored as the ticket's reason code)."""
 
     NO_KNOWLEDGE = "no_knowledge"
     USER_REQUEST = "user_request"
+    #: A configured sensitive topic (complaint, legal threat, payment dispute…), HND-06.
+    SENSITIVE_TOPIC = "sensitive_topic"
+    #: The bot had no answer twice in a row, HND-02.
+    REPEATED_NO_ANSWER = "repeated_no_answer"
+    #: Two answers in a row rated thumbs-down, HND-04.
+    NEGATIVE_FEEDBACK = "negative_feedback"
+    #: A private-data tool failed, HND-05.
+    TOOL_ERROR = "tool_error"
 
 
 @dataclass(frozen=True)
@@ -52,6 +64,8 @@ class ChatPolicy:
     #: Answer model and light model (rewrite/routing); ``None`` = the env default.
     chat_model: Optional[str] = None
     light_model: Optional[str] = None
+    #: Words or phrases that always go to a human (accent-insensitive); empty disables.
+    handoff_topics: Sequence[str] = ()
     #: Retrieval tuning; ``None`` = the env default.
     similarity_threshold: Optional[float] = None
     semantic_weight: Optional[float] = None
@@ -70,6 +84,10 @@ class TurnRequest:
     policy: ChatPolicy
     #: Restrict retrieval to these source names; ``None`` searches all.
     sources: Optional[Sequence[str]] = None
+    #: The verified caller, for tools (tier gate, ``user_id``).
+    context: ToolContext = field(default_factory=ToolContext)
+    #: Filled in by the pipeline as it runs; stored with the answer (ADM-05).
+    trace: TurnTrace = field(default_factory=TurnTrace)
 
 
 @dataclass(frozen=True)

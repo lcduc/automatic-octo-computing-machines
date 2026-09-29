@@ -12,7 +12,7 @@ from config.settings import Config
 from models.knowledge import AUTO_STRATEGY, EXTRACTION_DOCLING, ChunkDraft, ChunkingResult, ChunkingSpec
 from .errors import InvalidChunkingError
 from .heading_strategy import HeadingChunker
-from .legal_article_strategy import LegalArticleChunker
+from .legal_article_strategy import LEVELS, LegalArticleChunker
 from .qa_pair_strategy import QaPairChunker
 from .size_strategy import SizeChunker
 from .table_rows_strategy import TableRowsChunker
@@ -40,12 +40,28 @@ STRATEGY_DESCRIPTIONS = {
 }
 #: Metadata key a structural strategy sets when it found the structure it looks for.
 STRUCTURE_KEYS = {"heading": ("heading", "markdown headings"), "legal_article": ("article", "Điều markers")}
+#: Joins the parts of a section label ("Chương I · Điều 12").
+SECTION_SEPARATOR = " · "
 #: Extraction paths whose ``auto`` splitting is by heading (the others split by size).
 HEADING_EXTRACTIONS = {EXTRACTION_DOCLING}
 #: Chunks shorter than this are flagged in previews.
 MIN_USEFUL_CHUNK_CHARS = 50
 #: Chunks longer than this multiple of the strategy's limit are flagged in previews.
 OVERSIZE_FACTOR = 1.5
+
+
+def section_label(metadata: Dict[str, object]) -> Optional[str]:
+    """
+    Where a chunk sits in its document, for citations (GEN-03).
+
+    Legal chunks give their Chương/Mục/Điều/Khoản labels outermost first;
+    heading chunks give their heading; other chunks have no section.
+    """
+    legal = [str(metadata[level]) for level in LEVELS if metadata.get(level)]
+    if legal:
+        return SECTION_SEPARATOR.join(legal)
+    heading = metadata.get("heading")
+    return str(heading) if heading else None
 
 
 class Chunker:

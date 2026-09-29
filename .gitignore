@@ -184,3 +184,12 @@ frontends/*/*.tsbuildinfo
 frontends/*/next-env.d.ts
 frontends/*/.env*
 !frontends/*/.env.example
+
+# Install-directory artifacts of `python -m deploy.ops --dir . install` (generated secrets)
+/secrets/
+/ops.env
+/backups/
+/handover/
+/.deploy_history
+/.answers.toml
+*.answers.toml

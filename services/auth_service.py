@@ -21,13 +21,28 @@ import jwt
 from core.storage.access_repository import AccessRepository
 from core.storage.database import Database
 from core.storage.tables.base import utc_now
-from core.storage.tables.access_tables import ADMIN_ROLES, ROLE_OWNER, SCOPE_CHAT, AdminUser, ApiKey
+from core.storage.tables.access_tables import (
+    ADMIN_ROLES,
+    API_KEY_SCOPES,
+    DEFAULT_API_KEY_RATE_LIMIT,
+    ROLE_OWNER,
+    SCOPE_CHAT,
+    AdminUser,
+    ApiKey,
+)
 from .errors import ConflictError, InvalidRequestError, NotFoundError
 
 logger = logging.getLogger(__name__)
 
-#: Every issued API key starts with this marker so leaked keys are easy to spot.
-API_KEY_PREFIX = "cbk_"
+#: Every issued API key starts with this marker so leaked keys are easy to spot (and scanners can match it).
+API_KEY_PREFIX = "cb_live_"
+#: Prefix of keys issued before the ``cb_live_`` format; still accepted.
+LEGACY_API_KEY_PREFIX = "cbk_"
+#: Longest per-key rate limit and expiry an owner can set.
+MAX_API_KEY_RATE_LIMIT = 10_000
+MAX_API_KEY_LIFETIME_DAYS = 3650
+#: How long a rotated key keeps working by default, so clients can switch without downtime.
+DEFAULT_ROTATION_GRACE_DAYS = 7
 #: Characters of the key kept in clear for display.
 DISPLAY_PREFIX_LENGTH = 12
 #: Seconds a verified key stays cached before the database is asked again.
@@ -47,6 +62,9 @@ MIN_PASSWORD_LENGTH = 10
 
 JWT_ALGORITHM = "HS256"
 
+#: Name of the chat widget's server (BFF) among the internal services.
+SERVICE_BFF = "bff"
+
 
 @dataclass(frozen=True)
 class VerifiedApiKey:
@@ -55,6 +73,12 @@ class VerifiedApiKey:
     id: uuid.UUID
     name: str
     scopes: Tuple[str, ...]
+    rate_limit_per_minute: int = DEFAULT_API_KEY_RATE_LIMIT
+    expires_at: Optional[datetime] = None
+
+    def expired(self, now: datetime) -> bool:
+        """True once the key's expiry has passed."""
+        return self.expires_at is not None and now >= self.expires_at
 
 
 @dataclass(frozen=True)
@@ -101,17 +125,44 @@ class AuthService:
     #: Hash compared against when the e-mail is unknown, so timing does not reveal accounts.
     _DUMMY_HASH = hash_password(secrets.token_hex(16))
 
-    def __init__(self, database: Database, jwt_secret: str, token_ttl_minutes: int):
+    def __init__(
+        self,
+        database: Database,
+        jwt_secret: str,
+        token_ttl_minutes: int,
+        service_tokens: Optional[Dict[str, str]] = None,
+    ):
         """
         Args:
             database: Connected database.
             jwt_secret: HMAC secret for admin tokens.
             token_ttl_minutes: Admin token lifetime.
+            service_tokens: Internal service name -> its generated token (e.g.
+                ``{"bff": ...}``); services with an empty token are never admitted.
         """
         self._database = database
         self._jwt_secret = jwt_secret
         self._token_ttl = timedelta(minutes=token_ttl_minutes)
         self._key_cache: Dict[str, Tuple[Optional[VerifiedApiKey], float]] = {}
+        self._service_tokens = {name: token for name, token in (service_tokens or {}).items() if token}
+
+    # ------------------------------------------------------------------
+    # Internal services
+    # ------------------------------------------------------------------
+
+    def verify_service_token(self, presented: str) -> Optional[str]:
+        """
+        Identify one of our own services by its generated token.
+
+        Returns:
+            The service name (e.g. ``bff``), or ``None`` for a missing or unknown token.
+        """
+        if not presented:
+            return None
+        for name, token in self._service_tokens.items():
+            if hmac.compare_digest(presented.encode("utf-8"), token.encode("utf-8")):
+                return name
+        return None
 
     # ------------------------------------------------------------------
     # API keys
@@ -127,47 +178,114 @@ class AuthService:
         Resolve a presented key.
 
         Returns:
-            The key's identity and scopes, or ``None`` for unknown/revoked keys.
+            The key's identity, scopes and limits, or ``None`` for unknown,
+            revoked or expired keys.
         """
-        if not raw_key or not raw_key.startswith(API_KEY_PREFIX):
+        if not raw_key or not raw_key.startswith((API_KEY_PREFIX, LEGACY_API_KEY_PREFIX)):
             return None
         key_hash = self._hash_key(raw_key)
+        now = datetime.now(timezone.utc)
         cached = self._key_cache.get(key_hash)
         if cached is not None and cached[1] > time.monotonic():
-            return cached[0]
+            return cached[0] if cached[0] is None or not cached[0].expired(now) else None
 
         async with self._database.session() as session:
             record = await AccessRepository(session).api_key_by_hash(key_hash)
             verified = None
             if record is not None and record.revoked_at is None:
-                verified = VerifiedApiKey(record.id, record.name, tuple(record.scopes or ()))
-                now = datetime.now(timezone.utc)
-                if record.last_used_at is None or now - record.last_used_at > LAST_USED_WRITE_INTERVAL:
+                verified = VerifiedApiKey(
+                    record.id, record.name, tuple(record.scopes or ()), record.rate_limit_per_minute, record.expires_at
+                )
+                if not verified.expired(now) and (
+                    record.last_used_at is None or now - record.last_used_at > LAST_USED_WRITE_INTERVAL
+                ):
                     record.last_used_at = utc_now()
         if len(self._key_cache) >= MAX_CACHED_KEYS:
             self._key_cache.clear()
         self._key_cache[key_hash] = (verified, time.monotonic() + API_KEY_CACHE_SECONDS)
-        return verified
+        return verified if verified is None or not verified.expired(now) else None
 
-    async def create_api_key(self, name: str, scopes: Optional[List[str]] = None) -> Tuple[ApiKey, str]:
+    @staticmethod
+    def _validate_key_settings(scopes: List[str], rate_limit_per_minute: int, expires_in_days: Optional[int]) -> None:
         """
-        Issue a new key.
+        Raises:
+            InvalidRequestError: Unknown or no scopes, or limits out of range.
+        """
+        unknown = sorted(set(scopes) - set(API_KEY_SCOPES))
+        if not scopes or unknown:
+            raise InvalidRequestError(f"scopes must be one or more of {', '.join(API_KEY_SCOPES)}")
+        if not 1 <= rate_limit_per_minute <= MAX_API_KEY_RATE_LIMIT:
+            raise InvalidRequestError(f"rate_limit_per_minute must be between 1 and {MAX_API_KEY_RATE_LIMIT}")
+        if expires_in_days is not None and not 1 <= expires_in_days <= MAX_API_KEY_LIFETIME_DAYS:
+            raise InvalidRequestError(f"expires_in_days must be between 1 and {MAX_API_KEY_LIFETIME_DAYS}")
+
+    async def create_api_key(
+        self,
+        name: str,
+        scopes: Optional[List[str]] = None,
+        rate_limit_per_minute: int = DEFAULT_API_KEY_RATE_LIMIT,
+        expires_in_days: Optional[int] = None,
+        rotated_from_id: Optional[uuid.UUID] = None,
+    ) -> Tuple[ApiKey, str]:
+        """
+        Issue a new ``cb_live_`` key.
 
         Returns:
-            ``(record, raw_key)`` — the raw key is not stored and cannot be shown again.
+            ``(record, raw_key)`` — only the SHA-256 is stored; the raw key cannot be shown again.
+
+        Raises:
+            InvalidRequestError: Unknown scopes or limits out of range.
         """
+        scopes = list(dict.fromkeys(scopes or [SCOPE_CHAT]))
+        self._validate_key_settings(scopes, rate_limit_per_minute, expires_in_days)
         raw_key = API_KEY_PREFIX + secrets.token_urlsafe(32)
         record = ApiKey(
             name=name,
             key_prefix=raw_key[:DISPLAY_PREFIX_LENGTH],
             key_hash=self._hash_key(raw_key),
-            scopes=scopes or [SCOPE_CHAT],
+            scopes=scopes,
+            rate_limit_per_minute=rate_limit_per_minute,
+            expires_at=datetime.now(timezone.utc) + timedelta(days=expires_in_days) if expires_in_days else None,
+            rotated_from_id=rotated_from_id,
         )
         async with self._database.session() as session:
             repository = AccessRepository(session)
             repository.add(record)
             await repository.flush()
-        logger.info("API key created: %s (%s***)", name, record.key_prefix)
+        logger.info("API key created: %s (%s***) scopes=%s", name, record.key_prefix, ",".join(scopes))
+        return record, raw_key
+
+    async def rotate_api_key(self, key_id: uuid.UUID, grace_days: int = DEFAULT_ROTATION_GRACE_DAYS) -> Tuple[ApiKey, str]:
+        """
+        Issue a replacement with the same name, scopes and limit; the old key
+        keeps working for ``grace_days`` (0 = revoke it now), so both are valid
+        while the client switches.
+
+        Returns:
+            ``(new_record, raw_key)``.
+
+        Raises:
+            NotFoundError: Unknown key.
+            InvalidRequestError: The key is revoked or expired, or ``grace_days`` is out of range.
+        """
+        if not 0 <= grace_days <= 90:
+            raise InvalidRequestError("grace_days must be between 0 and 90")
+        now = datetime.now(timezone.utc)
+        async with self._database.session() as session:
+            old = await AccessRepository(session).get_api_key(key_id)
+            if old is None:
+                raise NotFoundError("API key not found")
+            if old.revoked_at is not None or (old.expires_at is not None and old.expires_at <= now):
+                raise InvalidRequestError("Only an active key can be rotated")
+            ends = now + timedelta(days=grace_days)
+            if grace_days == 0:
+                old.revoked_at = now
+            elif old.expires_at is None or old.expires_at > ends:
+                old.expires_at = ends
+            name, scopes, limit, old_hash = old.name, list(old.scopes or []), old.rate_limit_per_minute, old.key_hash
+        self._key_cache.pop(old_hash, None)
+        record, raw_key = await self.create_api_key(name, scopes, limit, rotated_from_id=key_id)
+        logger.info("API key %s rotated; the old key works for %d more day(s)", key_id, grace_days)
         return record, raw_key
 
     async def list_api_keys(self) -> List[ApiKey]:

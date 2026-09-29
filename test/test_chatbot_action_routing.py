@@ -93,3 +93,66 @@ async def test_rag_intent_uses_retrieval_and_streaming():
     events = await _run(_pipeline(provider), "chính sách nghỉ phép")
     assert events[-1].citations[0]["title"] == "Nội quy"
     assert provider.tool_decisions == 0 and provider.stream_calls == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.hard_gate
+async def test_anonymous_private_request_gets_a_login_reply_and_no_tool_schema():
+    from core.agent.tools.base import BaseTool
+    from models.tool_context import ToolContext
+
+    class PrivateTool(BaseTool):
+        name = "list_my_orders"
+        description = "List the signed-in user's own orders."
+        parameters = {"type": "object", "properties": {}}
+        required_tier_level = 1
+
+        async def execute(self, arguments, context):
+            raise AssertionError("must never run for an anonymous caller")
+
+    provider = _StubProvider("login")
+    registry = ToolRegistry(tools=[CurrentTimeTool(), PrivateTool()])
+    pipeline = ChatbotService(
+        llm_provider=provider, retriever=ContextRetriever(_Embeddings(), reranker=None), index=_Index(),
+        guard=InputGuard(), cache=ResponseCache(10, 60),
+        intent_router=IntentRouter(provider, registry, login_available=True),
+        tool_agent=ToolCallingAgent(provider, registry, QueryRewriter(provider)),
+    )
+    events = [e async for e in pipeline.run(TurnRequest(query="đơn hàng của tôi", history=[], policy=POLICY,
+                                                        context=ToolContext()))]
+    assert events[-1].outcome == TurnOutcome.LOGIN_REQUIRED
+    assert provider.tool_decisions == 0 and provider.stream_calls == 0
+
+
+@pytest.mark.asyncio
+async def test_a_failing_private_tool_keeps_the_answer_and_opens_a_ticket():
+    from core.agent.tools.base import BaseTool
+    from models.chat_turn import HandoffReason
+    from models.tool_context import ToolContext
+
+    class BrokenOrders(BaseTool):
+        name = "list_my_orders"
+        description = "List the signed-in user's own orders."
+        parameters = {"type": "object", "properties": {}}
+        required_tier_level = 1
+
+        async def execute(self, arguments, context):
+            raise RuntimeError("business database down")
+
+    class Provider(_StubProvider):
+        async def complete_with_tools_async(self, messages, tools=None, model=None):
+            call = types.SimpleNamespace(id="c1", function=types.SimpleNamespace(name="list_my_orders", arguments="{}"))
+            return types.SimpleNamespace(content="", tool_calls=[call]), LLMUsage("stub", "main", 20, 5)
+
+    provider = Provider("action")
+    registry = ToolRegistry(tools=[BrokenOrders()])
+    pipeline = ChatbotService(
+        llm_provider=provider, retriever=ContextRetriever(_Embeddings(), reranker=None), index=_Index(),
+        guard=InputGuard(), cache=ResponseCache(10, 60),
+        intent_router=IntentRouter(provider, registry), tool_agent=ToolCallingAgent(provider, registry, QueryRewriter(provider)),
+    )
+    handoff_policy = ChatPolicy("handoff", "DENY", "HANDOFF", "BLOCKED", "HELLO", "WELCOME")
+    request = TurnRequest(query="đơn hàng của tôi", history=[], policy=handoff_policy,
+                          context=ToolContext(user_id="user-42", tier_level=1))
+    result = [event async for event in pipeline.run(request)][-1]
+    assert result.outcome == TurnOutcome.ANSWERED and result.handoff_reason == HandoffReason.TOOL_ERROR

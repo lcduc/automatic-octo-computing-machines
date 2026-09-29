@@ -15,16 +15,19 @@ from fastapi.responses import StreamingResponse
 # Local imports
 from api.container import AppContainer
 from api.dependencies import READ_ROLES, WRITE_ROLES, get_container, require_admin
+from core.storage.tables.access_tables import SCOPE_ADMIN_READ
 from api.schemas.admin import IngestionQueueStatus, LogEntry, SystemStatus
 from api.schemas.common import MessageResponse
 from api.sse import STREAM_HEADERS, sse_stream
 from config.settings import Config
 
 router = APIRouter(tags=["Admin: monitoring"])
-read_access = Depends(require_admin(READ_ROLES))
+read_access = Depends(require_admin(READ_ROLES, key_scope=SCOPE_ADMIN_READ))
 
 APP_VERSION = "3.0.0"
 MAX_SUMMARY_DAYS = 90
+#: Rollups are kept forever; two years is plenty for a dashboard.
+MAX_HISTORY_DAYS = 730
 
 
 @router.get("/usage/summary", dependencies=[read_access])
@@ -35,18 +38,26 @@ async def usage_summary(
     return await container.usage.summary(days)
 
 
+@router.get("/usage/history", dependencies=[read_access])
+async def usage_history(
+    days: int = Query(365, ge=1, le=MAX_HISTORY_DAYS), container: AppContainer = Depends(get_container)
+) -> List[Dict[str, Any]]:
+    """Daily rollups (turns, errors, handoffs, latency, tokens, cost and breakdowns), oldest first."""
+    return await container.metrics.history(days)
+
+
 @router.get("/usage/live", dependencies=[read_access], summary="Live feed of chat turns and handoffs (SSE)")
 async def usage_live(container: AppContainer = Depends(get_container)) -> StreamingResponse:
     """Streams a ``turn`` event after every answered message and a ``handoff`` event per new request."""
 
     async def events() -> AsyncIterator[Dict[str, Any]]:
-        queue = container.usage.subscribe()
+        queue = container.live_feed.subscribe()
         try:
             yield {"type": "hello", "ts": time.time()}
             while True:
                 yield await queue.get()
         finally:
-            container.usage.unsubscribe(queue)
+            container.live_feed.unsubscribe(queue)
 
     return StreamingResponse(sse_stream(events()), media_type="text/event-stream", headers=STREAM_HEADERS)
 

@@ -1,14 +1,16 @@
 """
 Hybrid retrieval over the in-memory knowledge snapshot.
 
-Semantic similarity (embeddings) and keyword relevance (BM25) are fused, scaled
-by each source's priority, reranked by a cross-encoder, gated by an absolute
+Semantic similarity (embeddings) and keyword relevance (BM25) are fused by
+weighted reciprocal rank fusion (RET-04), scaled by each source's priority,
+reranked by a cross-encoder, gated by an absolute
 relevance threshold and finally expanded with neighbouring chunks of the same
 document so the LLM reads contiguous passages.
 """
 
 # Standard library imports
 import logging
+from datetime import date
 from typing import Dict, List, Optional, Sequence, Tuple
 
 # Third-party imports
@@ -23,8 +25,10 @@ logger = logging.getLogger(__name__)
 
 #: Candidates handed to the reranker per requested result.
 RERANK_POOL_MULTIPLIER = 4
-#: Smallest candidate pool worth reranking.
-MIN_RERANK_POOL = 12
+#: Smallest candidate pool reranked (RET-04: 20-50); 30 beat 16 on the golden set.
+MIN_RERANK_POOL = 30
+#: RRF damping constant: the usual 60, so the top few ranks do not dominate.
+RRF_K = 60
 
 
 class ContextRetriever:
@@ -41,22 +45,32 @@ class ContextRetriever:
         self._reranker = reranker
 
     @staticmethod
-    def _candidate_indices(snapshot: KnowledgeSnapshot, sources: Optional[Sequence[str]]) -> np.ndarray:
-        """Indices of the chunks a search may return, honouring a source filter."""
+    def _candidate_indices(
+        snapshot: KnowledgeSnapshot, sources: Optional[Sequence[str]], access_level: int, today: date
+    ) -> np.ndarray:
+        """Indices of the chunks a search may return: source filter, then tier and effective dates."""
         if not sources:
-            return np.arange(len(snapshot.chunks))
-        selected = [snapshot.source_indices[name] for name in sources if name in snapshot.source_indices]
-        if not selected:
-            return np.zeros(0, dtype=np.int64)
-        return np.concatenate(selected)
+            candidates = np.arange(len(snapshot.chunks))
+        else:
+            selected = [snapshot.source_indices[name] for name in sources if name in snapshot.source_indices]
+            candidates = np.concatenate(selected) if selected else np.zeros(0, dtype=np.int64)
+        return snapshot.visible(candidates, access_level, today)
 
     @staticmethod
-    def _min_max(values: np.ndarray) -> np.ndarray:
-        """Scale to [0, 1]; a constant vector maps to zeros."""
-        span = float(values.max() - values.min()) if values.size else 0.0
-        if span <= 0:
-            return np.zeros_like(values, dtype=np.float64)
-        return (values - values.min()) / span
+    def _reciprocal_ranks(values: np.ndarray, matched: np.ndarray) -> np.ndarray:
+        """
+        ``1 / (RRF_K + rank)`` of each value, best first; unmatched entries score 0.
+
+        Args:
+            values: Scores of one ranking (higher is better).
+            matched: Which entries the ranking actually found (e.g. BM25 > 0).
+        """
+        scores = np.zeros(len(values), dtype=np.float64)
+        found = np.flatnonzero(matched)
+        if found.size:
+            order = found[np.argsort(-values[found], kind="stable")]
+            scores[order] = 1.0 / (RRF_K + np.arange(1, order.size + 1))
+        return scores
 
     def _hybrid_scores(
         self, query: str, snapshot: KnowledgeSnapshot, candidates: np.ndarray, semantic_weight: float
@@ -77,7 +91,9 @@ class ContextRetriever:
         keyword_all = snapshot.bm25.get_scores(tokens) if tokens and snapshot.bm25 is not None else None
         keyword = keyword_all[candidates] if keyword_all is not None else np.zeros(len(candidates))
 
-        fused = semantic_weight * self._min_max(semantic) + (1 - semantic_weight) * self._min_max(keyword)
+        semantic_ranks = self._reciprocal_ranks(semantic, np.ones(len(semantic), dtype=bool))
+        keyword_ranks = self._reciprocal_ranks(keyword, keyword > 0)
+        fused = semantic_weight * semantic_ranks + (1 - semantic_weight) * keyword_ranks
         priorities = np.fromiter((snapshot.chunks[i].source_priority for i in candidates), dtype=np.float64)
         return semantic, keyword, fused * priorities
 
@@ -91,6 +107,8 @@ class ContextRetriever:
         max_context_chunks: int,
         expansion_radius: int,
         sources: Optional[Sequence[str]] = None,
+        access_level: int = 0,
+        today: Optional[date] = None,
     ) -> List[RetrievedChunk]:
         """
         Return matched chunks (plus neighbours for context), best first.
@@ -99,12 +117,14 @@ class ContextRetriever:
             query: Standalone search text.
             snapshot: Corpus to search.
             top_k: Maximum matched chunks.
-            semantic_weight: Weight of embeddings vs BM25 in the fused score (0-1).
+            semantic_weight: Weight of the embedding ranking vs the BM25 ranking in the fusion (0-1).
             threshold: Minimum relevance (reranker score, or cosine similarity
                 when no reranker ran) for a chunk to count as a match.
             max_context_chunks: Cap on returned chunks including neighbours.
             expansion_radius: Neighbours added on each side of a match (same document).
             sources: Restrict to these source names; ``None`` searches all.
+            access_level: The caller's tier level; higher-tier documents are skipped.
+            today: The local date for effective-date filtering (default: today).
 
         Returns:
             Matched chunks first-ranked-first, each followed by its neighbours in
@@ -112,7 +132,7 @@ class ContextRetriever:
         """
         if snapshot.is_empty or not query.strip():
             return []
-        candidates = self._candidate_indices(snapshot, sources)
+        candidates = self._candidate_indices(snapshot, sources, access_level, today or date.today())
         if candidates.size == 0:
             return []
 

@@ -46,17 +46,22 @@ _INJECTION_PATTERNS: Tuple[Pattern[str], ...] = tuple(
     for pattern in (
         r"ignore (all |any |the )?(previous|prior|above|earlier) (instructions|prompts|rules|messages)",
         r"disregard (all |the )?(previous|prior|above|system) (instructions|prompt|rules)",
-        r"(reveal|show|print|repeat|output) (me )?(your|the) (system |initial |hidden )?(prompt|instructions)",
+        # "show me the instructions for the exam" is a normal question: only the bot's own instructions count.
+        r"(reveal|show|print|repeat|output) (me )?((your|the) (system|initial|hidden|original) (prompt|instructions)|your (prompt|instructions))",
+        r"(what are|tell me) your (system |initial |hidden )?(prompt|instructions|rules)",
+        r"forget (all |any |the |your )?(previous |prior |above |earlier )?(instructions|prompts|rules)",
+        r"(act as|pretend (you are|to be)|you are now) .{0,40}(unrestricted|unfiltered|no (rules|limits|restrictions|filters)|without (any )?(rules|limits|restrictions|filters))",
+        r"\byou are (now )?dan\b",
         r"\b(developer|dan|god) mode\b",
         r"\bjailbreak",
         r"<\|?(system|im_start|im_end)\|?>",
         r"^\s*(system|assistant)\s*:",
         r"bo qua (tat ca |moi |cac |nhung )?(huong dan|chi dan|chi thi|cau lenh|lenh|quy tac|yeu cau) "
         r"(truoc|tren|ban dau|he thong|cu)",
-        r"quen (het |di |tat ca )?(cac |nhung )?(huong dan|quy tac|chi dan) (truoc|tren|ban dau)",
+        r"quen (het |di |tat ca |moi )?(cac |nhung )?(huong dan|quy tac|chi dan) (truoc|tren|ban dau)",
         r"(tiet lo|hien thi|in ra|cho (toi|minh|tao) xem|nhac lai|lap lai) (lai )?"
         r"(system prompt|prompt (he thong|goc)|huong dan (he thong|goc|ban dau)|cau lenh he thong)",
-        r"(dong vai|gia vo la|hay tro thanh) .{0,40}(khong (bi )?(gioi han|kiem duyet|rang buoc))",
+        r"(dong vai|gia vo la|hay tro thanh|(tu )?(bay )?gio ban la) .{0,40}(khong (bi |co )?(gioi han|kiem duyet|rang buoc))",
     )
 )
 

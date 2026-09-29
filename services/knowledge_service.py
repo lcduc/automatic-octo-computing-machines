@@ -7,13 +7,15 @@ import asyncio
 import hashlib
 import logging
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 # Local imports
 from config.settings import Config
 from core.retrieval.knowledge_index import KnowledgeIndex
+from core.storage.conversation_repository import ConversationRepository
 from core.storage.database import Database
 from core.storage.knowledge_repository import IngestionQueueStats, KnowledgeRepository
 from core.storage.tables.knowledge_tables import (
@@ -26,6 +28,7 @@ from core.storage.tables.knowledge_tables import (
 )
 from core.storage.upload_store import UploadStore
 from core.document_processing.chunking import InvalidChunkingError
+from models.caller import TIER_ANONYMOUS
 from models.knowledge import EXTRACTION_TEXT, ChunkingResult, ChunkingSpec
 from .errors import ConflictError, InvalidRequestError, NotFoundError
 from .ingestion_service import IngestionService
@@ -217,6 +220,7 @@ class KnowledgeService:
         content_hash = hashlib.sha256(content).hexdigest()
 
         stored = False
+        replaced: Optional[Tuple[uuid.UUID, str]] = None
         try:
             async with self._database.session() as session:
                 repository = KnowledgeRepository(session)
@@ -225,6 +229,7 @@ class KnowledgeService:
                 if duplicate is not None and duplicate.status == DOCUMENT_STATUS_FAILED:
                     # Retrying a failed upload replaces it rather than being refused as a duplicate.
                     logger.info("Replacing failed document %s with a new upload of %s", duplicate.id, filename)
+                    replaced = (duplicate.id, duplicate.file_type)
                     await repository.delete(duplicate)
                 elif duplicate is not None:
                     raise ConflictError(f"This file already exists in '{source_name}' as '{duplicate.title}'")
@@ -252,6 +257,8 @@ class KnowledgeService:
                 await asyncio.to_thread(self._uploads.delete, document.id, document.file_type)
             raise
 
+        if replaced is not None:
+            await asyncio.to_thread(self._uploads.delete, *replaced)
         logger.info("Queued ingestion of %s into %s as %s", filename, source_name, document.id)
         if self._on_upload is not None:
             self._on_upload()
@@ -302,15 +309,20 @@ class KnowledgeService:
 
     async def update_document(self, document_id: uuid.UUID, changes: Dict[str, Any]) -> KnowledgeDocument:
         """
-        Update title, metadata, enabled flag or source of a document.
+        Update a document's details; none of them re-embeds its chunks (ADM-16).
 
         Args:
-            changes: Any of ``title``, ``metadata``, ``enabled``, ``source``.
+            changes: Any of ``title``, ``metadata``, ``enabled``, ``source``,
+                ``access_tier``, ``language``, ``version``, ``effective_from``,
+                ``effective_to``, ``supersedes_id``. Naming a superseded document
+                ends its validity the day before this one starts (ADM-17).
 
         Raises:
-            NotFoundError: Unknown document.
-            InvalidRequestError: Unknown target source.
+            NotFoundError: Unknown document or superseded document.
+            InvalidRequestError: Unknown source or tier, or an empty validity range.
         """
+        if "access_tier" in changes and changes["access_tier"] not in self._access_tiers():
+            raise InvalidRequestError(f"access_tier must be one of {', '.join(self._access_tiers())}")
         async with self._database.session() as session:
             repository = KnowledgeRepository(session)
             document = await repository.get_document(document_id)
@@ -322,11 +334,48 @@ class KnowledgeService:
                 document.title = changes["title"][:512]
             if "metadata" in changes:
                 document.extra_metadata = changes["metadata"]
-            if "enabled" in changes:
-                document.enabled = changes["enabled"]
+            for key in ("enabled", "access_tier", "language", "version", "effective_from", "effective_to"):
+                if key in changes:
+                    setattr(document, key, changes[key])
+            if document.effective_from and document.effective_to and document.effective_to < document.effective_from:
+                raise InvalidRequestError("effective_to must not be before effective_from")
+            if changes.get("supersedes_id") is not None:
+                await self._supersede(repository, document, changes["supersedes_id"])
         logger.info("Updated document %s: %s", document_id, sorted(changes))
         await self._index.refresh()
         return await self.get_document(document_id)
+
+    @staticmethod
+    def _access_tiers() -> List[str]:
+        """Tiers a document may require: everyone, or one of the host's tiers."""
+        return [TIER_ANONYMOUS, *Config.HostAuth.HOST_TIERS()]
+
+    @staticmethod
+    async def _supersede(repository: KnowledgeRepository, document: KnowledgeDocument, previous_id: uuid.UUID) -> None:
+        """
+        Mark ``document`` as the new version of ``previous_id`` and end the old one's validity.
+
+        Raises:
+            NotFoundError: Unknown previous document.
+            InvalidRequestError: A document cannot supersede itself.
+        """
+        if previous_id == document.id:
+            raise InvalidRequestError("A document cannot supersede itself")
+        previous = await repository.get_document(previous_id)
+        if previous is None:
+            raise NotFoundError("Superseded document not found")
+        document.supersedes_id = previous_id
+        starts = document.effective_from or datetime.now(ZoneInfo(Config.Server.APP_TIMEZONE())).date()
+        document.effective_from = starts
+        ends = starts - timedelta(days=1)
+        if previous.effective_to is None or previous.effective_to > ends:
+            previous.effective_to = ends
+        logger.info("Document %s supersedes %s from %s", document.id, previous_id, starts)
+
+    async def answers_citing(self, document_id: uuid.UUID, limit: int) -> List[Dict[str, Any]]:
+        """Recent assistant answers that cited ``document_id`` (ADM-18)."""
+        async with self._database.session() as session:
+            return await ConversationRepository(session).answers_citing(document_id, limit)
 
     async def delete_document(self, document_id: uuid.UUID) -> None:
         """

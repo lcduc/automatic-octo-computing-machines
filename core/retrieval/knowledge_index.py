@@ -11,7 +11,8 @@ searches always see one consistent version.
 import asyncio
 import logging
 from dataclasses import dataclass
-from typing import Dict, List, Optional
+from datetime import date
+from typing import Callable, Dict, List, Optional
 
 # Third-party imports
 import numpy as np
@@ -24,6 +25,18 @@ from models.knowledge import IndexedChunk
 from utils.text_utils import TextUtils
 
 logger = logging.getLogger(__name__)
+
+#: Access level of documents whose tier is unknown: no caller reaches them (fail closed).
+UNREACHABLE_LEVEL = 32_000
+#: Day ordinals standing in for open-ended validity.
+OPEN_START = date.min.toordinal()
+OPEN_END = date.max.toordinal()
+TierLevel = Callable[[str], int]
+
+
+def anonymous_only(tier: str) -> int:
+    """Default tier mapping: public documents only; any other tier is unreachable."""
+    return 0 if tier == "anonymous" else UNREACHABLE_LEVEL
 
 
 @dataclass(frozen=True)
@@ -43,25 +56,48 @@ class KnowledgeSnapshot:
     bm25: Optional[BM25Okapi]
     #: Source name -> indices of its chunks, for fast source filtering.
     source_indices: Dict[str, np.ndarray]
+    #: Per chunk: lowest caller access level, and first/last valid day (ordinals, inclusive).
+    access_levels: np.ndarray = None
+    valid_from: np.ndarray = None
+    valid_to: np.ndarray = None
 
     @property
     def is_empty(self) -> bool:
         """True when nothing is searchable."""
         return not self.chunks
 
+    def visible(self, candidates: np.ndarray, access_level: int, today: date) -> np.ndarray:
+        """
+        The candidates a caller may be answered from today (checklist Invariant 4):
+        their document's tier is at or below ``access_level`` and ``today`` is
+        within its effective dates. Applied in code before any ranking, never
+        left to the prompt.
+        """
+        if candidates.size == 0:
+            return candidates
+        day = today.toordinal()
+        mask = (
+            (self.access_levels[candidates] <= access_level)
+            & (self.valid_from[candidates] <= day)
+            & (self.valid_to[candidates] >= day)
+        )
+        return candidates[mask]
+
     @classmethod
     def empty(cls, version: int = 0) -> "KnowledgeSnapshot":
         """A snapshot with no chunks."""
-        return cls(version, [], np.zeros((0, 0), dtype=np.float32), None, {})
+        none = np.zeros(0, dtype=np.int32)
+        return cls(version, [], np.zeros((0, 0), dtype=np.float32), None, {}, none, none, none)
 
     @classmethod
-    def build(cls, rows: List[IndexRow], version: int) -> "KnowledgeSnapshot":
+    def build(cls, rows: List[IndexRow], version: int, tier_level: TierLevel = anonymous_only) -> "KnowledgeSnapshot":
         """
         Build a snapshot from repository rows (CPU-bound; run off the event loop).
 
         Args:
             rows: Searchable chunks ordered by document then position.
             version: Monotonic version number of the new snapshot.
+            tier_level: Tier name -> access level; unknown tiers must map above every caller.
         """
         if not rows:
             return cls.empty(version)
@@ -80,6 +116,9 @@ class KnowledgeSnapshot:
                     **(row.document_metadata or {}),
                     **(row.chunk_metadata or {}),
                 },
+                access_level=_level(tier_level, row.access_tier),
+                effective_from=row.effective_from,
+                effective_to=row.effective_to,
             )
             for row in rows
         ]
@@ -95,7 +134,22 @@ class KnowledgeSnapshot:
         for index, chunk in enumerate(chunks):
             by_source.setdefault(chunk.source, []).append(index)
         source_indices = {name: np.asarray(indices, dtype=np.int64) for name, indices in by_source.items()}
-        return cls(version, chunks, embeddings, bm25, source_indices)
+        access_levels = np.fromiter((chunk.access_level for chunk in chunks), dtype=np.int32, count=len(chunks))
+        valid_from = np.fromiter(
+            (chunk.effective_from.toordinal() if chunk.effective_from else OPEN_START for chunk in chunks),
+            dtype=np.int64, count=len(chunks),
+        )
+        valid_to = np.fromiter(
+            (chunk.effective_to.toordinal() if chunk.effective_to else OPEN_END for chunk in chunks),
+            dtype=np.int64, count=len(chunks),
+        )
+        return cls(version, chunks, embeddings, bm25, source_indices, access_levels, valid_from, valid_to)
+
+
+def _level(tier_level: TierLevel, tier: str) -> int:
+    """Access level of a document tier; a tier the mapping does not know is unreachable."""
+    level = tier_level(tier)
+    return UNREACHABLE_LEVEL if tier != "anonymous" and level == 0 else level
 
 
 class KnowledgeIndex:
@@ -107,12 +161,14 @@ class KnowledgeIndex:
     # a pgvector HNSW index when the corpus passes ~500k chunks.
     """
 
-    def __init__(self, database: Database):
+    def __init__(self, database: Database, tier_level: TierLevel = anonymous_only):
         """
         Args:
             database: Connected database the snapshot is loaded from.
+            tier_level: Document tier name -> access level.
         """
         self._database = database
+        self._tier_level = tier_level
         self._snapshot = KnowledgeSnapshot.empty()
         self._refresh_lock = asyncio.Lock()
         self._refresh_requested = False
@@ -133,7 +189,7 @@ class KnowledgeIndex:
             logger.debug("Refreshing knowledge index")
             async with self._database.session() as session:
                 rows = await KnowledgeRepository(session).load_index_rows()
-            snapshot = await asyncio.to_thread(KnowledgeSnapshot.build, rows, self._snapshot.version + 1)
+            snapshot = await asyncio.to_thread(KnowledgeSnapshot.build, rows, self._snapshot.version + 1, self._tier_level)
             self._snapshot = snapshot
             logger.info(
                 "Knowledge index v%d ready: %d chunks from %d sources",

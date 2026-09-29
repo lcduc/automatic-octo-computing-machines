@@ -10,6 +10,10 @@ just fixes the shape every one of them must have.
 from abc import ABC, abstractmethod
 from typing import Any, Dict
 
+# Local imports
+from models.caller import ANONYMOUS_LEVEL
+from models.tool_context import ToolContext
+
 
 class BaseTool(ABC):
     """A single tool the model can call by name with JSON-schema-typed arguments."""
@@ -29,17 +33,27 @@ class BaseTool(ABC):
     def parameters(self) -> Dict[str, Any]:
         """JSON schema (OpenAI function-parameters format) for this tool's arguments."""
 
+    @property
+    def required_tier_level(self) -> int:
+        """Lowest caller tier allowed to use this tool (0 = anonymous visitors too)."""
+        return ANONYMOUS_LEVEL
+
     @abstractmethod
-    def execute(self, **kwargs: Any) -> str:
+    async def execute(self, arguments: Dict[str, Any], context: ToolContext) -> str:
         """
         Run the tool and return its result as text for the model to read.
 
         Args:
-            **kwargs: Arguments matching :attr:`parameters`.
+            arguments: Parsed arguments the model supplied (untrusted).
+            context: The verified caller (never derived from ``arguments``).
 
         Returns:
             The tool's result, as the content of a ``role: tool`` message.
         """
+
+    def permits(self, context: ToolContext) -> bool:
+        """Whether ``context``'s tier may use this tool."""
+        return context.tier_level >= self.required_tier_level
 
     def to_openai_schema(self) -> Dict[str, Any]:
         """Build the ``{"type": "function", "function": {...}}`` block for the ``tools=`` param."""

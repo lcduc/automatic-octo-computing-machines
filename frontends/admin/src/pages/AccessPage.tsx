@@ -1,4 +1,4 @@
-import { Copy, KeyRound, UserPlus } from "lucide-react";
+import { Copy, KeyRound, RefreshCw, UserPlus } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { Modal } from "../components/ui/Modal";
 import { Badge, Callout, Card, ErrorState, Field, LoadingState, PageHeader } from "../components/ui/primitives";
@@ -6,11 +6,16 @@ import { useToast } from "../components/ui/Toast";
 import { useI18n } from "../i18n/I18nProvider";
 import { adminApi } from "../lib/api";
 import { useSession } from "../lib/session";
-import { ROLES, type AdminUser, type ApiKey, type ApiKeyCreated, type Role } from "../lib/types";
+import { API_KEY_SCOPES, ROLES, type AdminUser, type ApiKey, type ApiKeyCreated, type ApiKeyScope, type Role } from "../lib/types";
 import { useApi } from "../lib/use-api";
 
 /** Same rule as the backend (AdminCreate.password). */
 const MIN_PASSWORD_LENGTH = 10;
+/** Same defaults and bounds as the backend (ApiKeyCreate / ApiKeyRotate). */
+const DEFAULT_KEY_RATE_LIMIT = 60;
+const MAX_KEY_RATE_LIMIT = 10_000;
+const MAX_KEY_LIFETIME_DAYS = 3650;
+const ROTATION_GRACE_DAYS = 7;
 
 function Users() {
   const { t, formatDateTime } = useI18n();
@@ -117,18 +122,44 @@ function ApiKeys() {
   const toast = useToast();
   const keys = useApi<ApiKey[]>("api-keys");
   const [name, setName] = useState("");
+  const [scopes, setScopes] = useState<ApiKeyScope[]>([]);
+  const [rateLimit, setRateLimit] = useState(DEFAULT_KEY_RATE_LIMIT);
+  const [expiresInDays, setExpiresInDays] = useState("");
   const [created, setCreated] = useState<ApiKeyCreated | null>(null);
+
+  const toggleScope = (scope: ApiKeyScope, on: boolean) =>
+    setScopes((current) => (on ? [...current, scope] : current.filter((item) => item !== scope)));
 
   const create = async (event: FormEvent) => {
     event.preventDefault();
+    if (scopes.length === 0) {
+      toast.error(t("access.pickScope"));
+      return;
+    }
     try {
-      setCreated(await adminApi<ApiKeyCreated>("api-keys", { method: "POST", body: { name } }));
+      const body = { name, scopes, rate_limit_per_minute: rateLimit, expires_in_days: expiresInDays ? Number(expiresInDays) : null };
+      setCreated(await adminApi<ApiKeyCreated>("api-keys", { method: "POST", body }));
       setName("");
+      setScopes([]);
+      setExpiresInDays("");
       keys.reload();
     } catch (reason) {
       toast.error((reason as Error).message);
     }
   };
+
+  const rotate = async (key: ApiKey) => {
+    try {
+      const body = { grace_days: ROTATION_GRACE_DAYS };
+      setCreated(await adminApi<ApiKeyCreated>(`api-keys/${key.id}/rotate`, { method: "POST", body }));
+      toast.success(t("access.keyRotated", { name: key.name }));
+      keys.reload();
+    } catch (reason) {
+      toast.error((reason as Error).message);
+    }
+  };
+
+  const inactive = (key: ApiKey) => key.revoked_at !== null || (key.expires_at !== null && new Date(key.expires_at) <= new Date());
 
   const revoke = async (key: ApiKey) => {
     try {
@@ -161,6 +192,9 @@ function ApiKeys() {
               <tr>
                 <th scope="col">{t("access.keyName")}</th>
                 <th scope="col">{t("access.keyPrefix")}</th>
+                <th scope="col">{t("access.keyScopes")}</th>
+                <th scope="col">{t("access.rateLimit")}</th>
+                <th scope="col">{t("access.expires")}</th>
                 <th scope="col">{t("access.lastUsed")}</th>
                 <th scope="col">{t("access.state")}</th>
               </tr>
@@ -170,14 +204,25 @@ function ApiKeys() {
                 <tr key={key.id}>
                   <td>{key.name}</td>
                   <td className="mono">{key.key_prefix}…</td>
+                  <td className="small">{key.scopes.map((scope) => t(`access.scope.${scope}`)).join(", ")}</td>
+                  <td className="small">{key.rate_limit_per_minute}</td>
+                  <td className="small muted">{key.expires_at ? formatDateTime(key.expires_at) : t("access.never")}</td>
                   <td className="small muted">{formatDateTime(key.last_used_at)}</td>
                   <td>
                     {key.revoked_at ? (
                       <Badge tone="danger">{t("access.revoked")}</Badge>
+                    ) : inactive(key) ? (
+                      <Badge tone="danger">{t("access.expired")}</Badge>
                     ) : (
-                      <button type="button" className="btn btn--sm btn--danger" onClick={() => void revoke(key)}>
-                        {t("access.revoke")}
-                      </button>
+                      <div className="toolbar">
+                        <button type="button" className="btn btn--sm" title={t("access.rotateHint", { days: ROTATION_GRACE_DAYS })} onClick={() => void rotate(key)}>
+                          <RefreshCw size={14} aria-hidden />
+                          {t("access.rotate")}
+                        </button>
+                        <button type="button" className="btn btn--sm btn--danger" onClick={() => void revoke(key)}>
+                          {t("access.revoke")}
+                        </button>
+                      </div>
                     )}
                   </td>
                 </tr>
@@ -189,6 +234,21 @@ function ApiKeys() {
       <form className="card__body toolbar" onSubmit={create}>
         <Field label={t("access.keyName")} hint={t("access.keyNameHint")}>
           <input className="input" required maxLength={128} value={name} onChange={(e) => setName(e.target.value)} />
+        </Field>
+        <fieldset className="field">
+          <legend className="field__label">{t("access.keyScopes")}</legend>
+          {API_KEY_SCOPES.map((scope) => (
+            <label key={scope} className="checkbox">
+              <input type="checkbox" checked={scopes.includes(scope)} onChange={(e) => toggleScope(scope, e.target.checked)} />
+              {t(`access.scope.${scope}`)}
+            </label>
+          ))}
+        </fieldset>
+        <Field label={t("access.rateLimit")} hint={t("access.rateLimitHint")}>
+          <input className="input" type="number" min={1} max={MAX_KEY_RATE_LIMIT} required value={rateLimit} onChange={(e) => setRateLimit(Number(e.target.value))} />
+        </Field>
+        <Field label={t("access.expiresInDays")} hint={t("access.expiresHint")}>
+          <input className="input" type="number" min={1} max={MAX_KEY_LIFETIME_DAYS} value={expiresInDays} onChange={(e) => setExpiresInDays(e.target.value)} />
         </Field>
         <button type="submit" className="btn btn--primary">
           <KeyRound size={16} aria-hidden />

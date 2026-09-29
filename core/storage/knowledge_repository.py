@@ -8,7 +8,7 @@ boundaries belong to the calling service.
 # Standard library imports
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 # Third-party imports
@@ -62,6 +62,9 @@ class IndexRow:
     original_filename: Optional[str]
     source_name: str
     source_priority: float
+    access_tier: str = "anonymous"
+    effective_from: Optional[date] = None
+    effective_to: Optional[date] = None
 
 
 class KnowledgeRepository:
@@ -379,8 +382,10 @@ class KnowledgeRepository:
         Every chunk that should be searchable, ordered by document then position.
 
         Only ready, enabled documents in enabled sources with an embedding are
-        returned; the ordering lets the index find a chunk's neighbours by
-        adjacency.
+        returned, and none whose validity already ended; the ordering lets the
+        index find a chunk's neighbours by adjacency. Tier and effective dates
+        are filtered again per query (documents activate on their date without
+        a refresh).
         """
         result = await self._session.execute(
             select(
@@ -395,6 +400,9 @@ class KnowledgeRepository:
                 KnowledgeDocument.original_filename,
                 KnowledgeSource.name,
                 KnowledgeSource.priority,
+                KnowledgeDocument.access_tier,
+                KnowledgeDocument.effective_from,
+                KnowledgeDocument.effective_to,
             )
             .join(KnowledgeDocument, KnowledgeChunk.document_id == KnowledgeDocument.id)
             .join(KnowledgeSource, KnowledgeDocument.source_id == KnowledgeSource.id)
@@ -403,6 +411,7 @@ class KnowledgeRepository:
                 KnowledgeDocument.enabled.is_(True),
                 KnowledgeSource.enabled.is_(True),
                 KnowledgeChunk.embedding.is_not(None),
+                or_(KnowledgeDocument.effective_to.is_(None), KnowledgeDocument.effective_to >= func.current_date()),
             )
             .order_by(KnowledgeChunk.document_id, KnowledgeChunk.position)
         )

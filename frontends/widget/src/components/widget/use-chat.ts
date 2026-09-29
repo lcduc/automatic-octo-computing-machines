@@ -2,11 +2,15 @@
 
 /**
  * Chat state for the widget: loads config, restores the last conversation,
- * streams answers, and records feedback.
+ * streams answers, and records feedback. A signed-in host user's token is sent
+ * with every call (`Authorization: Bearer`, relayed by this app's server); an
+ * expired one is refreshed from the host page once, and a host logout clears
+ * the private history from the screen.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { readSse } from "@/lib/sse";
 import type { Citation, Outcome, WidgetConfig } from "@/lib/types";
+import { useHostSession } from "./use-host-session";
 
 export interface ChatMessage {
   /** Server id for assistant messages once known; a local id otherwise. */
@@ -17,6 +21,9 @@ export interface ChatMessage {
   citations: Citation[];
   streaming: boolean;
   rating?: 1 | -1;
+  /** A support ticket opened by this turn, waiting for the visitor's contact details. */
+  handoffId?: string;
+  replyBy?: string;
 }
 
 const CONVERSATION_KEY = "chatbot.conversation";
@@ -49,7 +56,11 @@ async function errorDetail(response: Response): Promise<string> {
   return GENERIC_ERROR;
 }
 
-export function useChat() {
+function rejectedToken(response: Response): boolean {
+  return response.status === 401 && (response.headers.get("www-authenticate") ?? "").includes("invalid_token");
+}
+
+export function useChat(allowedOrigins: string[]) {
   const [config, setConfig] = useState<WidgetConfig | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [busy, setBusy] = useState(false);
@@ -57,11 +68,40 @@ export function useChat() {
   const conversationId = useRef<string | null>(null);
   const abortController = useRef<AbortController | null>(null);
 
+  const clearConversation = useCallback(() => {
+    abortController.current?.abort();
+    conversationId.current = null;
+    storeConversation(null);
+    setMessages([]);
+    setNotice(null);
+  }, []);
+  const session = useHostSession(allowedOrigins, clearConversation);
+  const token = useRef<string | null>(null);
+  useEffect(() => {
+    token.current = session.token;
+  }, [session.token]);
+
+  /** fetch() with the host token; one retry with a fresh token when the server refused it. */
+  const authorizedFetch = useCallback(
+    async (url: string, init: RequestInit = {}): Promise<Response> => {
+      const attempt = (value: string | null) =>
+        fetch(url, { ...init, headers: { ...(init.headers ?? {}), ...(value ? { Authorization: `Bearer ${value}` } : {}) } });
+      const response = await attempt(token.current);
+      if (!token.current || !rejectedToken(response)) return response;
+      const fresh = await session.refresh();
+      token.current = fresh;
+      return attempt(fresh);
+    },
+    [session],
+  );
+
   const updateMessage = useCallback((id: string, patch: Partial<ChatMessage>) => {
     setMessages((current) => current.map((message) => (message.id === id ? { ...message, ...patch } : message)));
   }, []);
 
   useEffect(() => {
+    // Wait for the host page's first word, so a signed-in user's history loads with their token.
+    if (!session.ready) return;
     let cancelled = false;
     (async () => {
       try {
@@ -72,7 +112,7 @@ export function useChat() {
       }
       const storedId = readStoredConversation();
       if (!storedId) return;
-      const history = await fetch(`/api/chat/conversations/${storedId}`).catch(() => null);
+      const history = await authorizedFetch(`/api/chat/conversations/${storedId}`).catch(() => null);
       if (!history?.ok) {
         storeConversation(null);
         return;
@@ -98,7 +138,7 @@ export function useChat() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [session.ready, authorizedFetch]);
 
   const send = useCallback(
     async (text: string) => {
@@ -117,7 +157,7 @@ export function useChat() {
       const controller = new AbortController();
       abortController.current = controller;
       try {
-        const response = await fetch("/api/chat/stream", {
+        const response = await authorizedFetch("/api/chat/stream", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ message, conversation_id: conversationId.current ?? undefined }),
@@ -148,6 +188,8 @@ export function useChat() {
               outcome: payload.outcome,
               citations: payload.citations ?? [],
               streaming: false,
+              handoffId: payload.handoff_id ?? undefined,
+              replyBy: payload.reply_expected_by ?? undefined,
             });
           } else if (event.event === "error") {
             updateMessage(assistantId, { text: payload.message ?? GENERIC_ERROR, outcome: "error", streaming: false });
@@ -168,7 +210,7 @@ export function useChat() {
         setBusy(false);
       }
     },
-    [busy, updateMessage],
+    [busy, updateMessage, authorizedFetch],
   );
 
   const stop = useCallback(() => abortController.current?.abort(), []);
@@ -176,23 +218,39 @@ export function useChat() {
   const rate = useCallback(
     async (messageId: string, rating: 1 | -1, comment?: string) => {
       updateMessage(messageId, { rating });
-      const response = await fetch("/api/chat/feedback", {
+      const response = await authorizedFetch("/api/chat/feedback", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message_id: messageId, rating, comment: comment || undefined }),
       }).catch(() => null);
-      if (!response?.ok) setNotice("Không gửi được đánh giá, vui lòng thử lại.");
+      if (!response?.ok) {
+        setNotice("Không gửi được đánh giá, vui lòng thử lại.");
+        return;
+      }
+      // Two thumbs-down in a row may hand the conversation to a person (a ticket to fill in).
+      const result = await response.json().catch(() => null);
+      if (result?.handoff_id) updateMessage(messageId, { handoffId: result.handoff_id });
     },
-    [updateMessage],
+    [updateMessage, authorizedFetch],
   );
 
-  const reset = useCallback(() => {
-    abortController.current?.abort();
-    conversationId.current = null;
-    storeConversation(null);
-    setMessages([]);
-    setNotice(null);
-  }, []);
+  /** Send the ticket's contact details; returns a message to show, or null when accepted. */
+  const submitContact = useCallback(
+    async (handoffId: string, contact: object): Promise<string | null> => {
+      const response = await authorizedFetch(`/api/chat/handoffs/${handoffId}/contact`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(contact),
+      }).catch(() => null);
+      if (!response) return GENERIC_ERROR;
+      return response.ok ? null : errorDetail(response);
+    },
+    [authorizedFetch],
+  );
 
-  return { config, messages, busy, notice, send, stop, rate, reset };
+  return {
+    submitContact,
+    config, messages, busy, notice, send, stop, rate, reset: clearConversation,
+    signedIn: session.token !== null, requestLogin: session.requestLogin, close: session.close,
+  };
 }

@@ -8,6 +8,9 @@ from core.agent.tool_calling_agent import ToolCallingAgent
 from core.agent.tools.base import BaseTool
 from core.agent.tools.registry import ToolRegistry
 from models.llm import StreamDelta
+from models.tool_context import ToolContext
+
+ANONYMOUS = ToolContext()
 
 
 class _StubQueryRewriter:
@@ -36,8 +39,8 @@ class _EchoTool(BaseTool):
             "required": ["text"],
         }
 
-    def execute(self, **kwargs) -> str:
-        return f"echoed: {kwargs['text']}"
+    async def execute(self, arguments, context) -> str:
+        return f"echoed: {arguments['text']}"
 
 
 class _FailingTool(BaseTool):
@@ -55,7 +58,7 @@ class _FailingTool(BaseTool):
     def parameters(self):
         return {"type": "object", "properties": {}}
 
-    def execute(self, **kwargs) -> str:
+    async def execute(self, arguments, context) -> str:
         raise RuntimeError("boom")
 
 
@@ -97,32 +100,36 @@ async def _collect(agen):
 
 def test_registry_schemas_empty_when_no_tools():
     registry = ToolRegistry(tools=[])
-    assert registry.schemas() == []
+    assert registry.schemas(ANONYMOUS) == []
 
 
-def test_registry_executes_registered_tool():
+@pytest.mark.asyncio
+async def test_registry_executes_registered_tool():
     registry = ToolRegistry(tools=[_EchoTool()])
-    result = registry.execute("echo_tool", {"text": "hi"})
+    result = await registry.execute("echo_tool", {"text": "hi"}, ANONYMOUS)
     assert result == "echoed: hi"
 
 
-def test_registry_unknown_tool_returns_error_string_not_raise():
+@pytest.mark.asyncio
+async def test_registry_unknown_tool_returns_error_string_not_raise():
     registry = ToolRegistry(tools=[_EchoTool()])
-    result = registry.execute("does_not_exist", {})
+    result = await registry.execute("does_not_exist", {}, ANONYMOUS)
     assert "does_not_exist" in result
     assert "Error" in result
 
 
-def test_registry_tool_exception_returns_error_string_not_raise():
+@pytest.mark.asyncio
+async def test_registry_tool_exception_returns_error_string_not_raise():
     registry = ToolRegistry(tools=[_FailingTool()])
-    result = registry.execute("failing_tool", {})
+    result = await registry.execute("failing_tool", {}, ANONYMOUS)
     assert "failing_tool" in result
     assert "Error" in result
 
 
-def test_registry_missing_required_argument_returns_error_string_not_raise():
+@pytest.mark.asyncio
+async def test_registry_missing_required_argument_returns_error_string_not_raise():
     registry = ToolRegistry(tools=[_EchoTool()])
-    result = registry.execute("echo_tool", {})
+    result = await registry.execute("echo_tool", {}, ANONYMOUS)
     assert "Error" in result
     assert "text" in result
 

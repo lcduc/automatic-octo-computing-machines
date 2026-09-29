@@ -6,6 +6,9 @@ Provider-neutral results of LLM calls, carrying token usage for accounting.
 from dataclasses import dataclass
 from typing import Optional
 
+# Local imports
+from .turn_trace import ToolCallRecord
+
 
 @dataclass(frozen=True)
 class LLMUsage:
@@ -28,6 +31,8 @@ class LLMResult:
 
     text: str
     usage: Optional[LLMUsage] = None
+    #: Set by the tool agent when a private-data tool failed during the turn (HND-05).
+    tool_failed: bool = False
 
 
 @dataclass(frozen=True)
@@ -41,3 +46,7 @@ class StreamDelta:
 
     text: str = ""
     usage: Optional[LLMUsage] = None
+    #: Set by the tool agent when a private-data tool failed during the turn (HND-05).
+    tool_failed: bool = False
+    #: Set by the tool agent after each tool it ran (the turn trace).
+    tool_call: Optional[ToolCallRecord] = None

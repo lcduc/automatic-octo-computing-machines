@@ -15,6 +15,7 @@ from sqlalchemy.orm import selectinload
 
 # Local imports
 from .tables.conversation_tables import Conversation, Feedback, HandoffRequest, Message, TokenUsage
+from .tables.observability_tables import MessageTrace
 
 
 class ConversationRepository:
@@ -122,19 +123,28 @@ class ConversationRepository:
         )
 
     async def list_feedback(
-        self, rating: Optional[int], limit: int, offset: int
+        self, rating: Optional[int], limit: int, offset: int, reviewed: Optional[bool] = None
     ) -> Tuple[List[Tuple[Feedback, Message]], int]:
         """Feedback newest first, joined with the rated assistant message."""
         statement = select(Feedback, Message).join(Message, Feedback.message_id == Message.id)
         count_statement = select(func.count(Feedback.id))
+        filters = []
         if rating is not None:
-            statement = statement.where(Feedback.rating == rating)
-            count_statement = count_statement.where(Feedback.rating == rating)
+            filters.append(Feedback.rating == rating)
+        if reviewed is not None:
+            filters.append(Feedback.reviewed_at.is_not(None) if reviewed else Feedback.reviewed_at.is_(None))
+        if filters:
+            statement = statement.where(*filters)
+            count_statement = count_statement.where(*filters)
         total = (await self._session.execute(count_statement)).scalar_one()
         result = await self._session.execute(
             statement.order_by(Feedback.created_at.desc()).limit(limit).offset(offset)
         )
         return [(feedback, message) for feedback, message in result.all()], int(total)
+
+    async def get_feedback(self, feedback_id: uuid.UUID) -> Optional[Feedback]:
+        """One rating by id."""
+        return await self._session.get(Feedback, feedback_id)
 
     async def questions_for(self, assistant_messages: Sequence[Message]) -> Dict[uuid.UUID, str]:
         """
@@ -162,6 +172,16 @@ class ConversationRepository:
                 answers[message.id] = earlier[-1]
         return answers
 
+    async def answers_citing(self, document_id: uuid.UUID, limit: int) -> List[Dict[str, Any]]:
+        """Newest assistant messages whose citations include ``document_id``."""
+        result = await self._session.execute(
+            select(Message.id, Message.conversation_id, Message.content, Message.created_at)
+            .where(Message.role == "assistant", Message.citations.contains([{"document_id": str(document_id)}]))
+            .order_by(Message.created_at.desc())
+            .limit(limit)
+        )
+        return [dict(row._mapping) for row in result.all()]
+
     # ------------------------------------------------------------------
     # Handoffs
     # ------------------------------------------------------------------
@@ -178,26 +198,45 @@ class ConversationRepository:
             statement = statement.where(HandoffRequest.status == status)
             count_statement = count_statement.where(HandoffRequest.status == status)
         total = (await self._session.execute(count_statement)).scalar_one()
+        # Most urgent first: the earliest due ticket, then the newest.
         result = await self._session.execute(
-            statement.order_by(HandoffRequest.created_at.desc()).limit(limit).offset(offset)
+            statement.order_by(HandoffRequest.due_at.asc().nulls_last(), HandoffRequest.created_at.desc())
+            .limit(limit).offset(offset)
         )
         return list(result.scalars().all()), int(total)
+
+    async def active_handoff(self, conversation_id: uuid.UUID, statuses: Sequence[str]) -> Optional[HandoffRequest]:
+        """A ticket of the conversation still being worked, if any."""
+        result = await self._session.execute(
+            select(HandoffRequest).where(HandoffRequest.conversation_id == conversation_id, HandoffRequest.status.in_(statuses)).limit(1)
+        )
+        return result.scalar_one_or_none()
+
+    async def last_ratings(self, conversation_id: uuid.UUID, limit: int) -> List[int]:
+        """Ratings of the conversation's most recently rated answers, newest first."""
+        result = await self._session.execute(
+            select(Feedback.rating).join(Message, Feedback.message_id == Message.id)
+            .where(Message.conversation_id == conversation_id).order_by(Message.created_at.desc()).limit(limit)
+        )
+        return [int(rating) for rating in result.scalars().all()]
+
+    async def message_trace(self, message_id: uuid.UUID) -> Optional[MessageTrace]:
+        """The pipeline trace of one assistant message."""
+        return await self._session.get(MessageTrace, message_id)
+
+    async def message_usage(self, message_id: uuid.UUID) -> List[TokenUsage]:
+        """The LLM calls one answer made, in order."""
+        result = await self._session.execute(
+            select(TokenUsage).where(TokenUsage.message_id == message_id).order_by(TokenUsage.id)
+        )
+        return list(result.scalars().all())
 
     # ------------------------------------------------------------------
     # Token usage and statistics
     # ------------------------------------------------------------------
 
-    async def tokens_used_since(self, end_user_id: str, since: datetime) -> int:
-        """Prompt + completion tokens an end user consumed since ``since``."""
-        result = await self._session.execute(
-            select(func.coalesce(func.sum(TokenUsage.prompt_tokens + TokenUsage.completion_tokens), 0)).where(
-                TokenUsage.end_user_id == end_user_id, TokenUsage.created_at >= since
-            )
-        )
-        return int(result.scalar_one())
-
     async def usage_by_day(self, since: datetime) -> List[Dict[str, Any]]:
-        """Daily token totals per model since ``since``."""
+        """Daily token and cost totals per model since ``since``."""
         day = cast(TokenUsage.created_at, Date)
         result = await self._session.execute(
             select(
@@ -205,6 +244,7 @@ class ConversationRepository:
                 TokenUsage.model,
                 func.sum(TokenUsage.prompt_tokens).label("prompt_tokens"),
                 func.sum(TokenUsage.completion_tokens).label("completion_tokens"),
+                func.sum(TokenUsage.cost_micro_usd).label("cost_micro_usd"),
                 func.count(TokenUsage.id).label("calls"),
             )
             .where(TokenUsage.created_at >= since)
@@ -223,6 +263,20 @@ class ConversationRepository:
             )
             .where(TokenUsage.created_at >= since)
             .group_by(TokenUsage.purpose)
+        )
+        return [dict(row._mapping) for row in result.all()]
+
+    async def cost_by_tier(self, since: datetime) -> List[Dict[str, Any]]:
+        """Tokens and cost per caller tier since ``since`` (ADM-07)."""
+        tier = func.coalesce(TokenUsage.tier, "anonymous")
+        result = await self._session.execute(
+            select(
+                tier.label("tier"),
+                func.sum(TokenUsage.prompt_tokens + TokenUsage.completion_tokens).label("tokens"),
+                func.sum(TokenUsage.cost_micro_usd).label("cost_micro_usd"),
+            )
+            .where(TokenUsage.created_at >= since)
+            .group_by(tier)
         )
         return [dict(row._mapping) for row in result.all()]
 

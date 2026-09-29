@@ -23,6 +23,7 @@ ORIGIN = "http://localhost:3000"
 ADMIN_EMAIL = "owner@example.test"
 ADMIN_PASSWORD = "correct-horse-battery"
 VISITOR = {"X-End-User-Id": "visitor-0001"}
+BFF_TOKEN = "bff-token-" + "y" * 40
 
 
 class FakeLLM:
@@ -94,8 +95,9 @@ def client(monkeypatch):
     monkeypatch.setenv("ADMIN_JWT_SECRET", "test-secret-" + "x" * 40)
     monkeypatch.setenv("CORS_ORIGINS", ORIGIN)
     monkeypatch.setenv("SIMILARITY_THRESHOLD", "0.5")
-    monkeypatch.setenv("RATE_LIMIT_USER_PER_MINUTE", "8")
+    monkeypatch.setenv("RATE_LIMIT_ANONYMOUS_PER_MINUTE", "8")
     monkeypatch.setenv("TOOL_CALLING_ENABLED", "false")
+    monkeypatch.setenv("BFF_SERVICE_TOKEN", BFF_TOKEN)
     from main import create_app
 
     with TestClient(create_app(FakeContainer)) as test_client:
@@ -147,6 +149,20 @@ def test_auth_cors_and_security_headers(client):
     assert client.get("/health/ready").json()["status"] == "ok"
 
 
+def test_widget_server_authenticates_with_its_generated_service_token(client):
+    config = client.get("/api/v1/widget/config", headers={"X-Service-Token": BFF_TOKEN})
+    assert config.status_code == 200 and config.json()["title"]
+    wrong = client.get("/api/v1/widget/config", headers={"X-Service-Token": "not-the-token"})
+    assert wrong.status_code == 401
+
+    streamed = client.post(
+        "/api/v1/chat/stream", json={"message": "xin chào"}, headers={"X-Service-Token": BFF_TOKEN, **VISITOR}
+    )
+    assert streamed.status_code == 200
+    no_visitor = client.post("/api/v1/chat/stream", json={"message": "hi"}, headers={"X-Service-Token": BFF_TOKEN})
+    assert no_visitor.status_code == 400
+
+
 def test_knowledge_chat_feedback_and_admin_views(client):
     admin = _admin_headers(client)
     created = client.post(
@@ -188,7 +204,15 @@ def test_knowledge_chat_feedback_and_admin_views(client):
 
     detail = client.get(f"/api/v1/admin/conversations/{conversation_id}", headers=admin).json()
     assert detail["messages"][1]["prompt_tokens"] == 120
+    trace = client.get(f"/api/v1/admin/messages/{message_id}/trace", headers=admin).json()
+    assert trace["route"] == "rag"
+    assert trace["chunks"] and trace["filters"]["access_level"] == 0
+    assert {"guard", "retrieval", "generation", "total"} <= set(trace["steps_ms"])
+    assert trace["prompt_version"] and trace["calls"][0]["prompt_tokens"] > 0
+    user_message_id = detail["messages"][0]["id"]
+    assert client.get(f"/api/v1/admin/messages/{user_message_id}/trace", headers=admin).status_code == 404
     summary = client.get("/api/v1/admin/usage/summary?days=1", headers=admin).json()
+    assert client.get("/api/v1/admin/usage/history?days=7", headers=admin).json() == []  # rolled up by the worker
     assert summary["totals"]["completion_tokens"] >= 60
     assert summary["outcomes"]["answered"] == 2
     assert client.get("/api/v1/admin/logs?contains=chat/stream", headers=admin).status_code == 200
@@ -210,13 +234,13 @@ def test_fallback_modes_skip_the_llm_and_record_handoffs(client):
     assert requested["outcome"] == "handoff"
     assert llm.stream_calls == 0
 
-    handoffs = client.get("/api/v1/admin/handoffs?status=pending", headers=admin).json()
+    handoffs = client.get("/api/v1/admin/handoffs?status=open", headers=admin).json()
     assert handoffs["total"] == 2
     resolved = client.patch(
-        f"/api/v1/admin/handoffs/{handoffs['items'][0]['id']}", json={"status": "resolved", "note": "đã gọi lại"},
+        f"/api/v1/admin/handoffs/{handoffs['items'][0]['id']}", json={"status": "closed", "note": "đã gọi lại"},
         headers=admin,
     )
-    assert resolved.json()["status"] == "resolved"
+    assert resolved.json()["status"] == "closed"
 
 
 def test_rate_limit_and_roles(client):
@@ -367,7 +391,7 @@ def test_support_agent_works_handoffs_but_cannot_change_knowledge_or_read_audit(
     ).json()["access_token"]
     agent = {"Authorization": f"Bearer {token}"}
     handoff_id = client.get("/api/v1/admin/handoffs", headers=agent).json()["items"][0]["id"]
-    assert client.patch(f"/api/v1/admin/handoffs/{handoff_id}", json={"status": "in_progress"}, headers=agent).status_code == 200
+    assert client.patch(f"/api/v1/admin/handoffs/{handoff_id}", json={"status": "assigned"}, headers=agent).status_code == 200
     denied = client.post(
         "/api/v1/admin/knowledge/documents/text", json={"source": "FAQ", "title": "x", "content": "y"}, headers=agent
     )

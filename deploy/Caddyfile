@@ -1,12 +1,15 @@
 # Public entry point: free automatic HTTPS (Let's Encrypt) for both domains.
 # The FastAPI backend and PostgreSQL are never exposed to the internet as a whole.
+# Domains come from the installer-generated .env (PUBLIC_DOMAIN_CHAT / PUBLIC_DOMAIN_ADMIN).
 
 # Chat domain: the client frontend (widget, embed.js), proxied to its Next.js server.
-{$CHAT_DOMAIN} {
+# Its security headers (frame-ancestors for HOST_ORIGIN, HSTS) are set by the app itself.
+{$PUBLIC_DOMAIN_CHAT} {
 	encode zstd gzip
 	request_body {
 		max_size 60MB
 	}
+	header -Server
 	reverse_proxy web:3000 {
 		# Stream Server-Sent Events (chat answers) without buffering.
 		flush_interval -1
@@ -16,7 +19,7 @@
 # Admin domain: the admin web on its own origin, sharing nothing with the chat
 # (checklist Invariant 7). Only the admin API is reachable here, same-origin, so
 # the HttpOnly session cookie never needs CORS.
-{$ADMIN_DOMAIN} {
+{$PUBLIC_DOMAIN_ADMIN} {
 	encode zstd gzip
 	request_body {
 		max_size 60MB
@@ -35,6 +38,10 @@
 			# The live usage feed is Server-Sent Events.
 			flush_interval -1
 		}
+	}
+	# Nothing else of the API is served on this domain (checked by `chatbot preflight`).
+	handle /api/* {
+		respond 404
 	}
 	handle {
 		reverse_proxy admin:80

@@ -1,0 +1,9 @@
+# Build context allow-list for the ops image (BuildKit reads this instead of /.dockerignore).
+*
+!deploy/__init__.py
+!deploy/ops/*.py
+!deploy/Caddyfile
+!deploy/postgres/
+!docker-compose.yml
+!host-sdk/
+!deploy/business_db/reader_grants.sql

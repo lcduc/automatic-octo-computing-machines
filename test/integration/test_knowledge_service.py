@@ -101,7 +101,8 @@ async def test_upload_is_queued_then_ingested_by_the_worker(kb):
     loaded = await service.get_document(document.id)
     assert loaded.status == "ready" and loaded.chunk_count == 2 and loaded.claimed_at is None
     assert {c.source for c in index.snapshot.chunks} == {"contracts"}
-    assert not kb.uploads.path_for(document.id, "txt").exists()
+    # The original is kept for backups until the document is deleted.
+    assert kb.uploads.path_for(document.id, "txt").exists()
 
     with pytest.raises(ConflictError):
         await service.upload_file(content, "policy-copy.txt", "contracts", None, {}, None)
@@ -117,7 +118,7 @@ async def test_failed_ingestion_is_recorded_and_unknown_source_rejected(kb):
     await kb.worker.process_next()
     loaded = await service.get_document(document.id)
     assert loaded.status == "failed" and "No content" in loaded.error
-    assert not kb.uploads.path_for(document.id, "bad").exists()
+    assert kb.uploads.path_for(document.id, "bad").exists()
 
 
 @pytest.mark.asyncio
@@ -130,6 +131,8 @@ async def test_reuploading_a_failed_file_replaces_the_failed_document(kb):
     assert retried.id != failed.id and retried.status == "processing"
     with pytest.raises(NotFoundError):
         await kb.service.get_document(failed.id)
+    assert not kb.uploads.path_for(failed.id, "bad").exists()
+    assert kb.uploads.path_for(retried.id, "bad").exists()
 
 
 @pytest.mark.asyncio
@@ -194,7 +197,7 @@ async def test_upload_that_keeps_killing_the_worker_is_failed(kb):
 
     loaded = await kb.service.get_document(document.id)
     assert loaded.status == "failed" and loaded.error == CRASH_LOOP_ERROR
-    assert not kb.uploads.path_for(document.id, "txt").exists()
+    assert kb.uploads.path_for(document.id, "txt").exists()
 
 
 @pytest.mark.asyncio

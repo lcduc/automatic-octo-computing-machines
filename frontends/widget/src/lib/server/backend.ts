@@ -2,18 +2,29 @@
  * Server-side calls to the FastAPI backend.
  *
  * The browser never talks to the backend directly: these helpers attach this
- * frontend's API key and the visitor id, forward the visitor IP (as set by the
- * TLS proxy) and a request id for log correlation.
+ * server's generated service token and the visitor id, forward the visitor IP
+ * (as set by the TLS proxy) and a request id for log correlation.
  */
-import { backendUrl, chatbotApiKey } from "./config";
+import { backendUrl, bffServiceToken } from "./config";
 
-/** Headers forwarded from the incoming request to the backend. */
+/** Longest host token relayed to the backend. */
+const MAX_AUTHORIZATION_LENGTH = 4096;
+
+/**
+ * Headers forwarded from the incoming request to the backend: the visitor IP,
+ * a request id, and a signed-in host user's `Authorization: Bearer` token,
+ * relayed unchanged (the backend verifies it).
+ */
 function forwardedHeaders(incoming: Request): Record<string, string> {
   const headers: Record<string, string> = {
     "X-Request-ID": crypto.randomUUID().replace(/-/g, ""),
   };
   const forwardedFor = incoming.headers.get("x-forwarded-for");
   if (forwardedFor) headers["X-Forwarded-For"] = forwardedFor;
+  const authorization = incoming.headers.get("authorization");
+  if (authorization?.startsWith("Bearer ") && authorization.length <= MAX_AUTHORIZATION_LENGTH) {
+    headers["Authorization"] = authorization;
+  }
   return headers;
 }
 
@@ -31,7 +42,7 @@ export async function backendFetch(
   visitorId: string | undefined,
   init: { method?: string; body?: BodyInit | null; headers?: Record<string, string> } = {},
 ): Promise<Response> {
-  const credentials: Record<string, string> = { "X-API-Key": chatbotApiKey() };
+  const credentials: Record<string, string> = { "X-Service-Token": bffServiceToken() };
   if (visitorId) credentials["X-End-User-Id"] = visitorId;
   return fetch(`${backendUrl()}${path}`, {
     method: init.method ?? "GET",

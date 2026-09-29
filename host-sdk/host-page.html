@@ -1,0 +1,27 @@
+<!--
+  Add to every page of your site that should show the chat, before </body>.
+
+  getToken() must return a fresh token for the signed-in user from YOUR backend
+  (see node/, php/ or python/), or null when nobody is signed in. The chat calls
+  it when it opens and again shortly before each token expires.
+-->
+<script>
+  window.ChatbotConfig = {
+    getToken: function () {
+      return fetch("/chatbot-token", { credentials: "same-origin", cache: "no-store" })
+        .then(function (response) { return response.status === 200 ? response.text() : null; })
+        .catch(function () { return null; });
+    },
+    // Called when the chat needs a signed-in user (e.g. to show the user's own orders).
+    onLoginRequest: function () {
+      window.location.href = "/login?next=" + encodeURIComponent(window.location.pathname);
+    }
+  };
+</script>
+<script src="https://{{CHAT_DOMAIN}}/embed.js" defer data-label="Hỏi đáp"></script>
+
+<!--
+  If your site signs users in or out without a page reload, tell the chat:
+    Chatbot.login();    // right after sign-in
+    Chatbot.logout();   // right after sign-out: the user's private chat history disappears at once
+-->

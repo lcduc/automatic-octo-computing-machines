@@ -13,6 +13,7 @@ from typing import Any, Dict
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 # Local imports
+from models.tool_context import ToolContext
 from .base import BaseTool
 
 logger = logging.getLogger(__name__)
@@ -52,16 +53,17 @@ class CurrentTimeTool(BaseTool):
             "required": [],
         }
 
-    def execute(self, **kwargs: Any) -> str:
+    async def execute(self, arguments: Dict[str, Any], context: ToolContext) -> str:
         """
         Args:
-            timezone: Optional IANA timezone name; defaults to ``UTC``.
+            arguments: ``timezone``: optional IANA timezone name; defaults to ``UTC``.
+            context: Unused (public tool).
 
         Returns:
             ``"<date> <time> (<timezone>)"``, or an ``Error: ...`` string
             naming the invalid timezone if lookup fails.
         """
-        timezone_name = kwargs.get("timezone") or _DEFAULT_TIMEZONE
+        timezone_name = arguments.get("timezone") or _DEFAULT_TIMEZONE
         try:
             zone = ZoneInfo(timezone_name)
         except ZoneInfoNotFoundError:

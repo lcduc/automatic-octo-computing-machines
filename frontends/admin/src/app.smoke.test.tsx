@@ -52,7 +52,7 @@ const settings = {
 function fixtures(role: Role): Record<string, unknown> {
   return {
     "auth/me": { id: "admin-1", email: "owner@example.test", role, disabled: false, created_at: NOW, last_login_at: NOW },
-    handoffs: page([{ id: "h-1", conversation_id: "c-1", message_id: null, reason: "user_request", status: "pending", note: null, created_at: NOW, updated_at: NOW }]),
+    handoffs: page([{ id: "h-1", conversation_id: "c-1", message_id: null, reason: "user_request", status: "open", note: null, signed_in: false, contact_email: null, contact_phone: null, has_contact: false, consent_at: null, details: null, assigned_to: null, answer: null, answered_at: null, emailed_at: null, due_at: NOW, closed_at: null, created_at: NOW, updated_at: NOW }]),
     "knowledge/documents": page([document]),
     "knowledge/documents/doc-1": { ...document, chunks: [{ id: "chunk-1", position: 0, content: "Điều 1. Phạm vi", metadata: { article: "Điều 1" }, edited: true, updated_at: NOW }] },
     "knowledge/sources": [{ id: 1, name: "general", description: "", priority: 1, enabled: true, document_count: 1 }],
@@ -64,7 +64,9 @@ function fixtures(role: Role): Record<string, unknown> {
       outcomes: { answered: 3, denied: 1 },
       feedback: { positive: 2, negative: 1 },
       latency: { p50_ms: 900, p95_ms: 2100, conversations: 4 },
-      totals: { prompt_tokens: 100, completion_tokens: 20, calls: 1 },
+      totals: { prompt_tokens: 100, completion_tokens: 20, calls: 1, cost_micro_usd: 180 },
+      by_tier: [{ tier: "anonymous", tokens: 120, cost_micro_usd: 180 }],
+      month: { tokens: 120, cost_micro_usd: 180 },
     },
     system: {
       version: "1.0.0",

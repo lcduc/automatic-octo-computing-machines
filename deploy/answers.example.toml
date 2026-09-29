@@ -1,0 +1,49 @@
+# Answers for `chatbot install --answers client.toml` (repeatable installs).
+# Copy per client, fill in, keep it with the client's credentials (it holds secrets).
+# Everything not asked here, including every internal secret, is generated.
+
+chat_domain = "chat.example.com"          # serves the widget and embed.js
+admin_domain = "admin.example.com"        # the admin web; never the chat domain
+host_origin = "https://www.example.com"   # site(s) embedding the chat, space separated
+admin_email = "ops@example.com"           # first owner account (one-time password printed once)
+openai_api_key = "sk-..."
+sector = "general"                        # general | finance | healthcare | labor_legal | education | retail | public
+
+[backup]
+# s3://bucket/prefix | sftp://user@host[:port]/path | /mounted/path
+target = "s3://client-backups/chatbot"
+s3_endpoint = ""                          # empty for AWS; e.g. https://s3.ap-southeast-1.wasabisys.com
+s3_region = "ap-southeast-1"
+s3_access_key_id = "..."
+s3_secret_access_key = "..."
+# sftp_password = "..."                   # or sftp_key_file = "/opt/chatbot/secrets/backup_key"
+keep_days = 30
+
+[alert]
+channel = "telegram"                      # telegram | slack | smtp
+telegram_bot_token = "123456:ABC..."
+telegram_chat_id = "-1001234567890"
+# slack_webhook_url = "https://hooks.slack.com/services/..."
+# email_to = "ops@example.com"
+# smtp_host = "smtp.example.com"
+# smtp_port = 587
+# smtp_security = "starttls"
+# smtp_username = "..."
+# smtp_password = "..."
+# smtp_from = "chatbot@example.com"
+
+# [host_auth]
+# How the host site's signed-in users are recognised. Default: rs256 with a key
+# pair generated here; the private key is handed over in handover/host-integration.zip.
+# mode = "rs256"                          # rs256 | hs256 | none (anonymous-only)
+# jwks_url = "https://www.example.com/.well-known/jwks.json"   # use the host's own keys instead
+# tiers = "user,premium"                  # values the host may send in the tier claim
+
+# [business_db]
+# The client's business database for the SQL tools: a read-only role (the DBA
+# runs handover/business_db_grants.sql). Preflight proves it cannot write.
+# url = "postgresql+asyncpg://chatbot_reader:...@db.internal:5432/erp"
+
+# [env]
+# Extra backend settings written verbatim into .env, e.g. tuning for this client.
+# OPENAI_MODEL = "gpt-5-mini"
