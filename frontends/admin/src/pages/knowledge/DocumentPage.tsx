@@ -10,7 +10,7 @@ import { adminApi } from "../../lib/api";
 import { DOCUMENT_STATUS_TONES } from "../../lib/labels";
 import { fromRows, toRows, type MetadataRow } from "../../lib/metadata";
 import { useSession } from "../../lib/session";
-import type { ChunkingStrategyInfo, DocumentDetail, Source } from "../../lib/types";
+import type { ChunkingStrategyInfo, CitingAnswer, DocumentDetail, Source } from "../../lib/types";
 import { useApi } from "../../lib/use-api";
 import { ChunkCard } from "./ChunkCard";
 import { ChunkingPanel } from "./ChunkingPanel";
@@ -25,6 +25,15 @@ function Properties({ document, sources, onSaved }: { document: DocumentDetail; 
   const [title, setTitle] = useState(document.title);
   const [source, setSource] = useState(document.source);
   const [enabled, setEnabled] = useState(document.enabled);
+  const [lifecycle, setLifecycle] = useState({
+    access_tier: document.access_tier,
+    language: document.language ?? "",
+    version: document.version ?? "",
+    effective_from: document.effective_from ?? "",
+    effective_to: document.effective_to ?? "",
+    supersedes_id: "",
+  });
+  const setField = (key: keyof typeof lifecycle, value: string) => setLifecycle((current) => ({ ...current, [key]: value }));
   const [rows, setRows] = useState<MetadataRow[]>(() => toRows(document.metadata));
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -35,7 +44,16 @@ function Properties({ document, sources, onSaved }: { document: DocumentDetail; 
     setSaving(true);
     setError(null);
     try {
-      await adminApi(`knowledge/documents/${document.id}`, { method: "PATCH", body: { title, source, enabled, metadata } });
+      const body = {
+        title, source, enabled, metadata,
+        access_tier: lifecycle.access_tier,
+        language: lifecycle.language || null,
+        version: lifecycle.version || null,
+        effective_from: lifecycle.effective_from || null,
+        effective_to: lifecycle.effective_to || null,
+        ...(lifecycle.supersedes_id ? { supersedes_id: lifecycle.supersedes_id } : {}),
+      };
+      await adminApi(`knowledge/documents/${document.id}`, { method: "PATCH", body });
       toast.success(t("documents.saved"));
       onSaved();
     } catch (reason) {
@@ -66,6 +84,31 @@ function Properties({ document, sources, onSaved }: { document: DocumentDetail; 
           <Switch checked={enabled} disabled={!canWrite} label={t("documents.inRag")} onChange={setEnabled} />
           <span>{enabled ? t("documents.inRagOn") : t("documents.inRagOff")}</span>
         </div>
+        <div className="form-grid">
+          <Field label={t("documents.accessTier")} hint={t("documents.accessTierHint")}>
+            <input className="input mono" value={lifecycle.access_tier} maxLength={16} disabled={!canWrite} onChange={(e) => setField("access_tier", e.target.value.trim())} />
+          </Field>
+          <Field label={t("documents.language")}>
+            <select className="select" value={lifecycle.language} disabled={!canWrite} onChange={(e) => setField("language", e.target.value)}>
+              <option value="">—</option>
+              <option value="vi">Tiếng Việt</option>
+              <option value="en">English</option>
+              <option value="mixed">{t("documents.languageMixed")}</option>
+            </select>
+          </Field>
+          <Field label={t("documents.version")}>
+            <input className="input" value={lifecycle.version} maxLength={32} disabled={!canWrite} onChange={(e) => setField("version", e.target.value)} />
+          </Field>
+          <Field label={t("documents.effectiveFrom")} hint={t("documents.effectiveHint")}>
+            <input className="input" type="date" value={lifecycle.effective_from} disabled={!canWrite} onChange={(e) => setField("effective_from", e.target.value)} />
+          </Field>
+          <Field label={t("documents.effectiveTo")}>
+            <input className="input" type="date" value={lifecycle.effective_to} disabled={!canWrite} onChange={(e) => setField("effective_to", e.target.value)} />
+          </Field>
+          <Field label={t("documents.supersedes")} hint={t("documents.supersedesHint")}>
+            <input className="input mono" value={lifecycle.supersedes_id} placeholder={document.supersedes_id ?? ""} disabled={!canWrite} onChange={(e) => setField("supersedes_id", e.target.value.trim())} />
+          </Field>
+        </div>
         <fieldset className="stack">
           <legend className="field__label">{t("metadata.title")}</legend>
           <MetadataEditor rows={rows} onChange={setRows} idPrefix="document" disabled={!canWrite} />
@@ -79,6 +122,25 @@ function Properties({ document, sources, onSaved }: { document: DocumentDetail; 
           </div>
         )}
       </div>
+    </Card>
+  );
+}
+
+/** Recent answers that cited this document (ADM-18). */
+function CitingAnswers({ documentId }: { documentId: string }) {
+  const { t, formatDateTime } = useI18n();
+  const answers = useApi<CitingAnswer[]>(`knowledge/documents/${documentId}/citations`);
+  if (!answers.data || answers.data.length === 0) return null;
+  return (
+    <Card title={t("documents.citedIn", { count: answers.data.length })}>
+      <ul className="stack">
+        {answers.data.map((answer) => (
+          <li key={answer.id} className="small">
+            <Link to={`/conversations/${answer.conversation_id}`}>{formatDateTime(answer.created_at)}</Link>
+            <span className="muted"> · {answer.content.slice(0, 160)}</span>
+          </li>
+        ))}
+      </ul>
     </Card>
   );
 }
@@ -186,6 +248,8 @@ export function DocumentPage() {
           <ChunkingPanel key={`${data.updated_at}-${data.chunk_count}`} document={data} strategies={strategies.data ?? []} onRechunked={(updated) => document.setData(updated)} />
         )}
       </div>
+
+      <CitingAnswers documentId={data.id} />
 
       <Card title={t("chunks.title", { count: data.chunk_count })} actions={canWrite && <NewChunk documentId={data.id} onAdded={document.reload} />}>
         {data.chunks.length === 0 ? (

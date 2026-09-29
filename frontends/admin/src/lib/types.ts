@@ -72,6 +72,19 @@ export interface KnowledgeDocument {
   created_by: string | null;
   created_at: string;
   updated_at: string;
+  access_tier: string;
+  language: "vi" | "en" | "mixed" | null;
+  version: string | null;
+  effective_from: string | null;
+  effective_to: string | null;
+  supersedes_id: string | null;
+}
+
+export interface CitingAnswer {
+  id: string;
+  conversation_id: string;
+  content: string;
+  created_at: string;
 }
 
 export interface Chunk {
