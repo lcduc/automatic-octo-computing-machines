@@ -3,6 +3,7 @@ import { Badge } from "../ui/primitives";
 import { useI18n } from "../../i18n/I18nProvider";
 import { OUTCOME_TONES } from "../../lib/labels";
 import type { AdminMessage } from "../../lib/types";
+import { TraceDetails } from "./TraceDetails";
 
 /** Messages of one conversation with the answer's sources, cost and rating. */
 export function Transcript({ messages }: { messages: AdminMessage[] }) {
@@ -39,6 +40,7 @@ export function Transcript({ messages }: { messages: AdminMessage[] }) {
               })}
             </p>
           )}
+          {message.role === "assistant" && <TraceDetails messageId={message.id} />}
           {message.citations.length > 0 && (
             <div className="row mt-3">
               {message.citations.map((citation) => (

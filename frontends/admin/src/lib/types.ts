@@ -207,6 +207,21 @@ export interface Handoff {
   updated_at: string;
 }
 
+export interface MessageTrace {
+  message_id: string;
+  route: string | null;
+  intent: string | null;
+  confidence: number | null;
+  rewritten_query: string | null;
+  filters: Record<string, unknown>;
+  chunks: { chunk_id: string; document_id: string; relevance: number; semantic: number; keyword: number; rerank: number | null; matched: boolean }[];
+  tool_calls: { name: string; ok: boolean; duration_ms: number; argument_names: string[] }[];
+  prompt_version: string | null;
+  steps_ms: Record<string, number>;
+  calls: { purpose: string; model: string; prompt_tokens: number; completion_tokens: number; cost_micro_usd: number }[];
+  created_at: string;
+}
+
 export interface HandoffContact {
   name: string | null;
   email: string | null;
