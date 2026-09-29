@@ -5,15 +5,16 @@ import type { Settings, SystemStatus } from "../../lib/types";
 import { useApi } from "../../lib/use-api";
 import { ChatBehaviorTab } from "./ChatBehaviorTab";
 import { LimitsTab } from "./LimitsTab";
+import { ToolsTab } from "./ToolsTab";
 import { ModelsTab } from "./ModelsTab";
 import { WidgetTab } from "./WidgetTab";
 
-type Tab = "chat" | "models" | "limits" | "widget";
+type Tab = "chat" | "models" | "limits" | "tools" | "widget";
 
 export function SettingsPage() {
   const { t } = useI18n();
   const [params, setParams] = useSearchParams();
-  const tab = (["chat", "models", "limits", "widget"].includes(params.get("tab") ?? "") ? params.get("tab") : "chat") as Tab;
+  const tab = (["chat", "models", "limits", "tools", "widget"].includes(params.get("tab") ?? "") ? params.get("tab") : "chat") as Tab;
   const settings = useApi<Settings>("settings");
   const defaults = useApi<Settings>("settings/defaults");
   const system = useApi<SystemStatus>("system");
@@ -27,6 +28,7 @@ export function SettingsPage() {
           { key: "chat", label: t("settings.tab.chat") },
           { key: "models", label: t("settings.tab.models") },
           { key: "limits", label: t("settings.tab.limits") },
+          { key: "tools", label: t("settings.tab.tools") },
           { key: "widget", label: t("settings.tab.widget") },
         ]}
         selected={tab}
@@ -39,6 +41,7 @@ export function SettingsPage() {
         <ModelsTab key={JSON.stringify(settings.data)} settings={settings.data} defaults={defaults.data} system={system.data} onSaved={settings.setData} />
       )}
       {settings.data && tab === "limits" && <LimitsTab key={JSON.stringify(settings.data)} settings={settings.data} onSaved={settings.setData} />}
+      {tab === "tools" && <ToolsTab />}
       {settings.data && tab === "widget" && <WidgetTab key={JSON.stringify(settings.data)} settings={settings.data} onSaved={settings.setData} />}
     </>
   );

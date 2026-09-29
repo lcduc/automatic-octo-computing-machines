@@ -3,8 +3,8 @@
 export type Role = "owner" | "editor" | "viewer" | "support_agent";
 export const ROLES: Role[] = ["owner", "editor", "support_agent", "viewer"];
 
-export type Outcome = "answered" | "smalltalk" | "denied" | "handoff" | "blocked" | "error";
-export const OUTCOMES: Outcome[] = ["answered", "smalltalk", "denied", "handoff", "blocked", "error"];
+export type Outcome = "answered" | "smalltalk" | "denied" | "handoff" | "blocked" | "login_required" | "error";
+export const OUTCOMES: Outcome[] = ["answered", "smalltalk", "denied", "handoff", "blocked", "login_required", "error"];
 
 export type MetadataValue = string | number | boolean | null;
 export type Metadata = Record<string, MetadataValue | MetadataValue[]>;
@@ -261,6 +261,19 @@ export interface Settings {
   tokens_ip_per_day: number;
   spend_cap_monthly_usd: number;
   spend_anonymous_cutoff_ratio: number;
+}
+
+export interface SqlTool {
+  name: string;
+  description: string;
+  required_tier: string;
+  sql_template: string;
+  allowed_columns: string[];
+  masked_columns: string[];
+  row_limit: number;
+  enabled: boolean;
+  updated_by: string | null;
+  updated_at: string;
 }
 
 export interface ModelPrice {

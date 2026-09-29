@@ -8,6 +8,7 @@ export const OUTCOME_TONES: Record<Outcome, Tone> = {
   denied: "warning",
   handoff: "info",
   blocked: "danger",
+  login_required: "warning",
   error: "danger",
 };
 

@@ -64,7 +64,9 @@ function fixtures(role: Role): Record<string, unknown> {
       outcomes: { answered: 3, denied: 1 },
       feedback: { positive: 2, negative: 1 },
       latency: { p50_ms: 900, p95_ms: 2100, conversations: 4 },
-      totals: { prompt_tokens: 100, completion_tokens: 20, calls: 1 },
+      totals: { prompt_tokens: 100, completion_tokens: 20, calls: 1, cost_micro_usd: 180 },
+      by_tier: [{ tier: "anonymous", tokens: 120, cost_micro_usd: 180 }],
+      month: { tokens: 120, cost_micro_usd: 180 },
     },
     system: {
       version: "1.0.0",
