@@ -12,6 +12,7 @@ import threading
 from typing import Optional
 
 # Local imports
+from config.model_server_settings import ModelServerConfig
 from config.settings import Config
 from .ocr_base import OCREngine
 from .datalab_surya_engine import DatalabSuryaEngine
@@ -87,7 +88,8 @@ def get_ocr_engine() -> OCREngine:
     """
     Get the OCR engine to use for this process, honoring ``OCR_PROVIDER``.
 
-    ``auto`` (default) uses the local engine, GPU/CPU auto-detected.
+    ``auto`` (default) uses the model-server's resident engine when
+    ``MODEL_SERVER_URL`` is set, else the local engine, GPU/CPU auto-detected.
     ``datalab`` forces the online engine, falling back to the local engine
     with a warning if ``DATALAB_API_KEY`` is not set.
     """
@@ -98,4 +100,22 @@ def get_ocr_engine() -> OCREngine:
         logger.warning(
             "OCR_PROVIDER=datalab but DATALAB_API_KEY is not set; falling back to local OCR"
         )
+    if ModelServerConfig.MODEL_SERVER_URL():
+        return get_remote_engine()
     return get_local_engine()
+
+
+_remote_engine: Optional[OCREngine] = None
+
+
+def get_remote_engine() -> OCREngine:
+    """The process-wide client of the model-server's OCR engine."""
+    global _remote_engine
+    if _remote_engine is None:
+        with _lock:
+            if _remote_engine is None:
+                from core.infrastructure.model_server_client import ModelServerClient
+                from .remote_ocr_engine import RemoteOCREngine
+
+                _remote_engine = RemoteOCREngine(ModelServerClient.from_config())
+    return _remote_engine

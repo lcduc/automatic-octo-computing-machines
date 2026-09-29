@@ -24,7 +24,7 @@ from core.agent.tools.current_time_tool import CurrentTimeTool
 from core.agent.tools.registry import ToolRegistry
 from core.guardrails.input_guard import InputGuard
 from core.guardrails.pii_redactor import PiiRedactor
-from core.retrieval.embeddings import get_embedding_service
+from core.retrieval.remote_models import RemoteReranker, embedding_service, model_server_client
 from core.retrieval.knowledge_index import KnowledgeIndex
 from core.retrieval.retriever import ContextRetriever
 from core.storage.database import Database
@@ -42,6 +42,7 @@ from services.log_service import LogService
 from services.live_feed_service import LiveFeedService, asyncpg_dsn
 from services.pricing_service import PricingService
 from services.rate_limit_service import RateLimitService, TimeBuckets
+from services.readiness_service import ReadinessService
 from services.settings_service import SettingsService
 from services.transcription_service import TranscriptionService
 from services.usage_service import UsageService
@@ -86,6 +87,9 @@ class AppContainer:
         self.logs = LogService(json_log_path(), LOG_BACKUP_COUNT)
         self.audit = AuditService(self.database)
         self.redactor = PiiRedactor() if Config.Security.PII_REDACTION_ENABLED() else None
+        #: Set when the GPU models live in the model-server (MODEL_SERVER_URL).
+        self.model_server = model_server_client()
+        self.readiness = ReadinessService(self.database, self.model_server)
         self.reranker = None
         self.llm = None
         self.pipeline: Optional[ChatbotService] = None
@@ -144,16 +148,22 @@ class AppContainer:
             logger.info("INGESTION_WORKER=external: uploads are parsed by worker.py")
 
     async def _load_embedding_service(self):
-        """Load the sentence-transformers model (and optional query adapter) off the event loop."""
-        embedding = get_embedding_service()
+        """
+        The embedding service: the model-server's, or the in-process model (and
+        optional query adapter) loaded off the event loop.
+        """
+        embedding = embedding_service(self.model_server)
         await asyncio.to_thread(embedding.get_embedder)
         embedding.load_query_adapter(Config.RAG.QUERY_ADAPTER_PATH())
         return embedding
 
     async def _load_reranker(self):
-        """Load the cross-encoder when reranking is enabled; ``None`` if disabled or unavailable."""
+        """The cross-encoder when reranking is enabled; ``None`` if disabled or unavailable."""
         if not Config.RAG.RERANKING_ENABLED():
             return None
+        if self.model_server is not None:
+            status = await asyncio.to_thread(self.model_server.ready)
+            return RemoteReranker(self.model_server, bool(status["models"]["reranker"]))
         from core.retrieval.reranker import get_reranker
 
         reranker = await asyncio.to_thread(get_reranker)
@@ -223,5 +233,7 @@ class AppContainer:
             logger.exception("Error while draining background work")
         if self.llm is not None:
             self.llm.close()
+        if self.model_server is not None:
+            self.model_server.close()
         await self.database.close()
         logger.info("Services stopped")

@@ -26,7 +26,7 @@ setup_windows_asyncio()
 
 from config.settings import Config  # noqa: E402
 from core.document_processing.main_processor import MainDocumentProcessor  # noqa: E402
-from core.retrieval.embeddings import get_embedding_service  # noqa: E402
+from core.retrieval.remote_models import embedding_service, model_server_client  # noqa: E402
 from core.storage.database import Database  # noqa: E402
 from core.storage.upload_store import UploadStore  # noqa: E402
 from services.ingestion_service import IngestionService  # noqa: E402
@@ -48,7 +48,8 @@ async def run_worker() -> None:
     try:
         if not await database.ping():
             raise RuntimeError("Cannot reach PostgreSQL; check the POSTGRES_* settings")
-        embedding = get_embedding_service()
+        # With MODEL_SERVER_URL the models stay in the model-server; nothing is loaded here.
+        embedding = embedding_service(model_server_client())
         await asyncio.to_thread(embedding.get_embedder)
         ingestion = IngestionService(MainDocumentProcessor, embedding, Config.OCR.OCR_MAX_CONCURRENT_FILES())
         worker = IngestionWorker(
