@@ -39,7 +39,9 @@ from services.ingestion_service import IngestionService
 from services.ingestion_worker import IngestionWorker
 from services.knowledge_service import KnowledgeService
 from services.log_service import LogService
-from services.rate_limit_service import RateLimitService
+from services.live_feed_service import LiveFeedService, asyncpg_dsn
+from services.pricing_service import PricingService
+from services.rate_limit_service import RateLimitService, TimeBuckets
 from services.settings_service import SettingsService
 from services.transcription_service import TranscriptionService
 from services.usage_service import UsageService
@@ -66,11 +68,13 @@ class AppContainer:
     def __init__(self):
         self.started_at = time.time()
         self.database = Database(Config.Database.DATABASE_URL(), Config.Database.DB_POOL_SIZE())
-        self.rate_limiter = RateLimitService()
+        self.rate_limiter = RateLimitService(self.database, TimeBuckets(Config.Server.APP_TIMEZONE()))
         self.index = KnowledgeIndex(self.database)
         self.settings = SettingsService(self.database)
-        self.usage = UsageService(self.database)
-        self.handoffs = HandoffService(self.database, self.usage)
+        self.usage = UsageService(self.database, self.rate_limiter)
+        self.pricing = PricingService(self.database)
+        self.live_feed = LiveFeedService(self.database, asyncpg_dsn(Config.Database.DATABASE_URL()))
+        self.handoffs = HandoffService(self.database, self.live_feed)
         self.conversations = ConversationService(self.database)
         self.auth = AuthService(
             self.database,
@@ -98,6 +102,8 @@ class AppContainer:
         if not await self.database.ping():
             raise RuntimeError("Cannot reach PostgreSQL; check the POSTGRES_* settings")
         await self.settings.load()
+        await self.pricing.load()
+        await self.live_feed.start()
 
         embedding = await self._load_embedding_service()
         self.reranker = await self._load_reranker()
@@ -106,7 +112,8 @@ class AppContainer:
         self.pipeline = self._build_pipeline(embedding, openai)
         self.transcription = TranscriptionService(openai)
         self.chat = ChatService(
-            self.database, self.pipeline, self.settings, self.usage, self.handoffs, self.rate_limiter, self.redactor
+            self.database, self.pipeline, self.settings, self.usage, self.handoffs, self.pricing, self.live_feed,
+            self.redactor,
         )
         ingestion = IngestionService(self._processor_factory(), embedding, Config.OCR.OCR_MAX_CONCURRENT_FILES())
         uploads = UploadStore(Config.Paths.UPLOAD_DIR())
@@ -211,6 +218,7 @@ class AppContainer:
             self._background_loops = []
             if self.chat is not None:
                 await self.chat.wait_for_pending_writes()
+            await self.live_feed.stop()
         except Exception:
             logger.exception("Error while draining background work")
         if self.llm is not None:

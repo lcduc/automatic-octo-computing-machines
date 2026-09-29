@@ -95,7 +95,7 @@ def client(monkeypatch):
     monkeypatch.setenv("ADMIN_JWT_SECRET", "test-secret-" + "x" * 40)
     monkeypatch.setenv("CORS_ORIGINS", ORIGIN)
     monkeypatch.setenv("SIMILARITY_THRESHOLD", "0.5")
-    monkeypatch.setenv("RATE_LIMIT_USER_PER_MINUTE", "8")
+    monkeypatch.setenv("RATE_LIMIT_ANONYMOUS_PER_MINUTE", "8")
     monkeypatch.setenv("TOOL_CALLING_ENABLED", "false")
     monkeypatch.setenv("BFF_SERVICE_TOKEN", BFF_TOKEN)
     from main import create_app

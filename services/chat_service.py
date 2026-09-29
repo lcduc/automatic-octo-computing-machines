@@ -24,15 +24,13 @@ from models.caller import ChatCaller
 from models.chat_turn import TurnDelta, TurnOutcome, TurnRequest, TurnResult, TurnUsage
 from .errors import NotFoundError, RateLimitedError, ServiceUnavailableError
 from .handoff_service import HandoffService
-from .rate_limit_service import RateLimitService
+from .live_feed_service import LiveFeedService
+from .pricing_service import PricingService
 from .settings_service import SettingsService
-from .usage_service import UsageService
+from .usage_service import BudgetVerdict, UsageService
 
 logger = logging.getLogger(__name__)
 
-#: Shown when a visitor exhausted today's token budget.
-#: ``Retry-After`` for an exhausted daily budget (the client just needs to stop retrying).
-BUDGET_RETRY_AFTER_SECONDS = 3600
 #: Outcome stored when the visitor disconnected before the answer finished.
 ABORTED_GUARD_REASON = "client_disconnected"
 
@@ -59,17 +57,19 @@ class ChatService:
         settings: SettingsService,
         usage: UsageService,
         handoffs: HandoffService,
-        rate_limiter: RateLimitService,
+        pricing: PricingService,
+        live_feed: LiveFeedService,
         redactor: Optional[PiiRedactor],
     ):
         """
         Args:
             database: Connected database.
             pipeline: The RAG chat pipeline.
-            settings: Runtime chat policy.
-            usage: Token budgets and the live feed.
+            settings: Runtime chat and usage policy.
+            usage: Request limits, token budgets and the spend cap.
             handoffs: Creates handoff requests.
-            rate_limiter: Per-user / per-IP request limiter.
+            pricing: Model prices (cost of each recorded call).
+            live_feed: Admin dashboards' live feed.
             redactor: PII redactor, or ``None`` when redaction is disabled.
         """
         self._database = database
@@ -77,7 +77,8 @@ class ChatService:
         self._settings = settings
         self._usage = usage
         self._handoffs = handoffs
-        self._rate_limiter = rate_limiter
+        self._pricing = pricing
+        self._live_feed = live_feed
         self._redactor = redactor
         self._slots = asyncio.Semaphore(Config.Security.MAX_CONCURRENT_CHATS())
         self._pending_writes: Set[asyncio.Task] = set()
@@ -101,15 +102,21 @@ class ChatService:
         Check quotas, resolve the conversation and store the user's message.
 
         Raises:
-            RateLimitedError: Too many requests or today's token budget used up.
+            RateLimitedError: Too many messages, a used-up daily token budget
+                (the caller's or their IP's), or the monthly spend cap.
             ServiceUnavailableError: Every generation slot is busy.
             NotFoundError: ``conversation_id`` does not belong to this visitor.
         """
-        retry_after = self._rate_limiter.hit(f"user:{caller.end_user_id}", Config.Security.RATE_LIMIT_USER_PER_MINUTE())
+        policy = self._settings.usage_policy()
+        retry_after = await self._usage.hit_request_limits(caller, policy)
         if retry_after is not None:
             raise RateLimitedError(AutoReplies.RATE_LIMITED, retry_after)
-        if not await self._usage.within_budget(caller.end_user_id):
-            raise RateLimitedError(AutoReplies.BUDGET_EXCEEDED, BUDGET_RETRY_AFTER_SECONDS)
+        verdict = await self._usage.budget_verdict(caller, policy)
+        if verdict == BudgetVerdict.TOKENS_EXHAUSTED:
+            raise RateLimitedError(AutoReplies.BUDGET_EXCEEDED, self._usage.seconds_until(verdict))
+        if verdict == BudgetVerdict.SPEND_PAUSED:
+            message = AutoReplies.SPEND_PAUSED if caller.logged_in else AutoReplies.SPEND_PAUSED_ANONYMOUS
+            raise RateLimitedError(message, self._usage.seconds_until(verdict))
         if self._slots.locked():
             raise ServiceUnavailableError("Hệ thống đang bận, vui lòng thử lại sau giây lát.")
 
@@ -235,6 +242,10 @@ class ChatService:
         """
         prompt_tokens = sum(item.usage.prompt_tokens for item in turn.usages)
         completion_tokens = sum(item.usage.completion_tokens for item in turn.usages)
+        costs = [
+            self._pricing.cost_micro_usd(item.usage.model, item.usage.prompt_tokens, item.usage.completion_tokens)
+            for item in turn.usages
+        ]
         latency_ms = int((time.perf_counter() - turn.started_at) * 1000)
         handoff = None
         try:
@@ -271,8 +282,10 @@ class ChatService:
                             model=item.usage.model,
                             prompt_tokens=item.usage.prompt_tokens,
                             completion_tokens=item.usage.completion_tokens,
+                            cost_micro_usd=cost,
+                            tier=turn.caller.tier,
                         )
-                        for item in turn.usages
+                        for item, cost in zip(turn.usages, costs)
                     ]
                 )
                 if conversation is not None:
@@ -287,8 +300,12 @@ class ChatService:
             logger.exception("Failed to persist chat turn %s", turn.assistant_message_id)
             return None
 
-        self._usage.add(turn.caller.end_user_id, prompt_tokens + completion_tokens)
-        self._usage.publish(
+        try:
+            await self._usage.record_turn(turn.caller, prompt_tokens + completion_tokens, sum(costs))
+        except Exception:
+            # The turn is stored; only its budget/spend charge is lost.
+            logger.exception("Failed to charge usage of turn %s", turn.assistant_message_id)
+        await self._live_feed.publish(
             {
                 "type": "turn",
                 "conversation_id": str(turn.conversation_id),
@@ -298,10 +315,11 @@ class ChatService:
                 "completion_tokens": completion_tokens,
                 "latency_ms": latency_ms,
                 "model": result.model,
+                "cost_micro_usd": sum(costs),
             }
         )
         if handoff is not None:
-            self._handoffs.notify(handoff)
+            await self._handoffs.notify(handoff)
             return str(handoff.id)
         return None
 
