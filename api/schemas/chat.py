@@ -62,6 +62,24 @@ class ChatAnswer(BaseModel):
     handoff_id: Optional[uuid.UUID] = None
 
 
+class HandoffContact(BaseModel):
+    """How the visitor wants to be answered (HND-13); anonymous visitors need an e-mail or phone."""
+
+    name: Optional[str] = Field(None, max_length=128)
+    email: Optional[str] = Field(None, max_length=255)
+    phone: Optional[str] = Field(None, max_length=32)
+    details: Optional[str] = Field(None, max_length=2000)
+    #: The visitor accepted the notice on how contact details are used (PRV-02).
+    consent: bool = False
+
+
+class FeedbackResult(BaseModel):
+    """Feedback stored; ``handoff_id`` when repeated thumbs-down opened a ticket."""
+
+    message: str
+    handoff_id: Optional[uuid.UUID] = None
+
+
 class FeedbackRequest(BaseModel):
     """A visitor's rating of one assistant message."""
 

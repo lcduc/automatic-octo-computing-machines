@@ -129,16 +129,21 @@ class ToolCallingAgent:
 
         tool_calls = list(message.tool_calls)[:MAX_TOOL_CALLS_PER_TURN]
         messages.append(self._assistant_tool_call_message(message, tool_calls))
+        private_failure = False
         for tool_call in tool_calls:
             logger.info("Executing tool %s", tool_call.function.name)
+            content = await self._execute_tool_call(tool_call, context)
+            private_failure |= content.startswith("Error:") and self._tool_registry.is_private(tool_call.function.name)
             messages.append(
                 {
                     "role": "tool",
                     "tool_call_id": tool_call.id,
                     "name": tool_call.function.name,
-                    "content": await self._execute_tool_call(tool_call, context),
+                    "content": content,
                 }
             )
+        if private_failure:
+            yield StreamDelta(tool_failed=True)
 
         async for delta in self._client_provider.stream(messages, model=model):
             yield delta

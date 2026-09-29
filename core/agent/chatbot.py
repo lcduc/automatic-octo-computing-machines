@@ -24,6 +24,7 @@ from typing import Any, AsyncIterator, Callable, Dict, List, Optional, Union
 # Local imports
 from config.settings import Config
 from core.guardrails.input_guard import GuardAction, InputGuard
+from core.guardrails.topic_matcher import matching_topic
 from core.retrieval.context_builder import ContextAssembler
 from core.retrieval.knowledge_index import KnowledgeIndex
 from core.retrieval.retriever import ContextRetriever
@@ -168,6 +169,11 @@ class ChatbotService:
         if verdict.action == GuardAction.THANKS:
             yield TurnResult(TurnOutcome.SMALLTALK, policy.thanks_message)
             return
+        topic = matching_topic(request.query, policy.handoff_topics) if policy.fallback_mode == FALLBACK_MODE_HANDOFF else None
+        if topic is not None:
+            logger.info("Sensitive topic matched; handing off")
+            yield TurnResult(TurnOutcome.HANDOFF, policy.handoff_message, handoff_reason=HandoffReason.SENSITIVE_TOPIC)
+            return
         if verdict.action == GuardAction.HUMAN_REQUESTED and policy.fallback_mode == FALLBACK_MODE_HANDOFF:
             yield TurnResult(
                 TurnOutcome.HANDOFF, policy.handoff_message, handoff_reason=HandoffReason.USER_REQUEST
@@ -253,16 +259,19 @@ class ChatbotService:
     ) -> AsyncIterator[TurnEvent]:
         """Answer an action request through the tool-calling agent (never cached: results may be private)."""
         pieces: List[str] = []
+        tool_failed = False
         # The tool agent always answers through OpenAI, so an admin-chosen chat model (which may be
         # another provider's) is not passed; its query rewrite runs on the chat provider's light model.
         stream = self._tool_agent.stream(request.query, history, light_model=light_model, context=request.context)
         async for delta in self._with_deadline(stream, deadline):
+            tool_failed |= delta.tool_failed
             if delta.usage is not None:
                 yield TurnUsage(PURPOSE_TOOL, delta.usage)
             if delta.text:
                 pieces.append(delta.text)
                 yield TurnDelta(delta.text)
-        yield TurnResult(TurnOutcome.ANSWERED, "".join(pieces).strip(), model=chat_model)
+        handoff = HandoffReason.TOOL_ERROR if tool_failed and request.policy.fallback_mode == FALLBACK_MODE_HANDOFF else None
+        yield TurnResult(TurnOutcome.ANSWERED, "".join(pieces).strip(), model=chat_model, handoff_reason=handoff)
 
     async def _retrieve(
         self, query: str, sources, policy: ChatPolicy, deadline: float, context: ToolContext

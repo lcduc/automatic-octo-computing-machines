@@ -44,6 +44,11 @@ class ToolRegistry:
         """OpenAI ``tools=`` schemas of the tools ``context`` may use."""
         return [tool.to_openai_schema() for tool in self._all().values() if tool.permits(context)]
 
+    def is_private(self, name: str) -> bool:
+        """True for a tool that needs a signed-in user."""
+        tool = self._all().get(name)
+        return tool is not None and tool.required_tier_level > 0
+
     def locked(self, context: ToolContext) -> List[BaseTool]:
         """Tools that exist but need a higher tier than ``context`` (described only, never offered)."""
         return [tool for tool in self._all().values() if not tool.permits(context)]

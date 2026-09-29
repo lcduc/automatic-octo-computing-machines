@@ -28,6 +28,8 @@ class LLMResult:
 
     text: str
     usage: Optional[LLMUsage] = None
+    #: Set by the tool agent when a private-data tool failed during the turn (HND-05).
+    tool_failed: bool = False
 
 
 @dataclass(frozen=True)
@@ -41,3 +43,5 @@ class StreamDelta:
 
     text: str = ""
     usage: Optional[LLMUsage] = None
+    #: Set by the tool agent when a private-data tool failed during the turn (HND-05).
+    tool_failed: bool = False

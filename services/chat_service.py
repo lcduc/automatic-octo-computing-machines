@@ -9,7 +9,7 @@ import logging
 import time
 import uuid
 from dataclasses import dataclass, field
-from typing import Any, AsyncIterator, Dict, List, Optional, Sequence, Set
+from typing import Any, AsyncIterator, Dict, List, Optional, Sequence, Set, Tuple
 
 # Local imports
 from config.settings import Config
@@ -19,9 +19,9 @@ from core.guardrails.pii_redactor import PiiRedactor
 from core.storage.conversation_repository import ConversationRepository
 from core.storage.database import Database
 from core.storage.tables.base import utc_now
-from core.storage.tables.conversation_tables import Conversation, Message, TokenUsage
+from core.storage.tables.conversation_tables import Conversation, HandoffRequest, Message, TokenUsage
 from models.caller import ChatCaller
-from models.chat_turn import TurnDelta, TurnOutcome, TurnRequest, TurnResult, TurnUsage
+from models.chat_turn import FALLBACK_MODE_HANDOFF, HandoffReason, TurnDelta, TurnOutcome, TurnRequest, TurnResult, TurnUsage
 from models.tool_context import ToolContext
 from .errors import NotFoundError, RateLimitedError, ServiceUnavailableError
 from .handoff_service import HandoffService
@@ -46,6 +46,19 @@ class PreparedTurn:
     request: TurnRequest
     started_at: float
     usages: List[TurnUsage] = field(default_factory=list)
+    #: The conversation's previous answer (outcome, confidence), for the repeated-no-answer trigger.
+    previous_answer: Optional[Tuple[Optional[str], Optional[float]]] = None
+
+
+#: Answers below this confidence count as unhelpful for the repeated-no-answer trigger.
+LOW_CONFIDENCE = 0.35
+
+
+def _unhelpful(outcome: Optional[str], confidence: Optional[float]) -> bool:
+    """Out of scope, or an answer the confidence scorer doubts."""
+    if outcome == TurnOutcome.BLOCKED.value:
+        return True
+    return outcome == TurnOutcome.ANSWERED.value and confidence is not None and confidence < LOW_CONFIDENCE
 
 
 class ChatService:
@@ -134,6 +147,8 @@ class ChatService:
             conversation.last_activity_at = utc_now()
 
         history = [{"role": row.role, "content": row.content} for row in history_rows]
+        answers = [row for row in history_rows if row.role == "assistant"]
+        previous_answer = (answers[-1].outcome, answers[-1].confidence) if answers else None
         request = TurnRequest(
             query=redacted,
             history=history,
@@ -141,7 +156,8 @@ class ChatService:
             sources=sources,
             context=ToolContext(user_id=caller.user_id, tier_level=caller.tier_level),
         )
-        return PreparedTurn(caller, conversation.id, uuid.uuid4(), request, time.perf_counter())
+        return PreparedTurn(caller, conversation.id, uuid.uuid4(), request, time.perf_counter(),
+                            previous_answer=previous_answer)
 
     @staticmethod
     async def _resolve_conversation(
@@ -207,7 +223,9 @@ class ChatService:
             if result is None:
                 logger.error("Chat pipeline ended without a result")
                 result = TurnResult(TurnOutcome.ERROR, "".join(streamed), guard_reason="no_result")
-            handoff_id = await self._persist(turn, result)
+            self._escalate_repeated_failure(turn, result)
+            handoff = await self._persist(turn, result)
+            handoff_id = str(handoff.id) if handoff is not None else None
             yield {
                 "type": "done",
                 "outcome": result.outcome.value,
@@ -217,6 +235,7 @@ class ChatService:
                 "confidence": result.confidence,
                 "cached": result.cached,
                 "handoff_id": handoff_id,
+                "reply_expected_by": handoff.due_at.isoformat() if handoff is not None and handoff.due_at else None,
             }
 
     async def answer(self, turn: PreparedTurn) -> Dict[str, Any]:
@@ -234,18 +253,32 @@ class ChatService:
     # Persistence
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _escalate_repeated_failure(turn: PreparedTurn, result: TurnResult) -> None:
+        """
+        Offer a human after two unhelpful answers in a row (HND-02): out of scope
+        twice, or two answers of low confidence. The answer itself is kept.
+
+        # ceiling: "unhelpful" is outcome + confidence heuristics; replace with a
+        # router "unclear/declined" signal once ORC-03 clarifications exist.
+        """
+        if result.handoff_reason is not None or turn.request.policy.fallback_mode != FALLBACK_MODE_HANDOFF:
+            return
+        if _unhelpful(result.outcome.value, result.confidence) and turn.previous_answer and _unhelpful(*turn.previous_answer):
+            result.handoff_reason = HandoffReason.REPEATED_NO_ANSWER
+
     def _persist_in_background(self, turn: PreparedTurn, result: TurnResult) -> None:
         """Save an interrupted turn without awaiting (the request task is being cancelled)."""
         task = asyncio.create_task(self._persist(turn, result))
         self._pending_writes.add(task)
         task.add_done_callback(self._pending_writes.discard)
 
-    async def _persist(self, turn: PreparedTurn, result: TurnResult) -> Optional[str]:
+    async def _persist(self, turn: PreparedTurn, result: TurnResult) -> Optional[HandoffRequest]:
         """
         Store the assistant message, token usage and handoff in one transaction.
 
         Returns:
-            The new handoff request id, if one was opened.
+            The new ticket, if one was opened.
         """
         prompt_tokens = sum(item.usage.prompt_tokens for item in turn.usages)
         completion_tokens = sum(item.usage.completion_tokens for item in turn.usages)
@@ -300,7 +333,8 @@ class ChatService:
                     conversation.last_activity_at = utc_now()
                     if result.handoff_reason is not None:
                         handoff = self._handoffs.open_request(
-                            repository, conversation, turn.assistant_message_id, result.handoff_reason.value
+                            repository, conversation, turn.assistant_message_id, result.handoff_reason.value,
+                            turn.caller.user_id,
                         )
                         await repository.flush()
         except Exception:
@@ -327,8 +361,7 @@ class ChatService:
         )
         if handoff is not None:
             await self._handoffs.notify(handoff)
-            return str(handoff.id)
-        return None
+        return handoff
 
     async def wait_for_pending_writes(self) -> None:
         """Await background persistence of interrupted turns (shutdown and tests)."""
