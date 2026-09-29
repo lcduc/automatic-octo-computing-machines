@@ -21,10 +21,7 @@ async def live() -> dict:
 
 @router.get("/ready", summary="Ready to answer chats")
 async def ready(container: AppContainer = Depends(get_container)) -> JSONResponse:
-    """200 when the database answers and services are built; 503 otherwise."""
-    checks = {
-        "database": await container.database.ping(),
-        "chat_pipeline": container.pipeline is not None,
-    }
+    """200 when the database, the pipeline, the model-server (if used) and the LLM provider answer; 503 otherwise."""
+    checks = await container.readiness.checks(container.pipeline is not None, container.llm)
     healthy = all(checks.values())
     return JSONResponse({"status": "ok" if healthy else "unavailable", "checks": checks}, status_code=200 if healthy else 503)
