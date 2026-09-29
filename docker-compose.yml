@@ -149,6 +149,8 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_APP_PASSWORD:?run the installer to generate secrets}
       MODEL_SERVER_URL: http://model-server:8600
       MODEL_SERVER_TOKEN: ${MODEL_SERVER_TOKEN}
+      # The worker's alert checks probe the API (service-down alert, OBS-04).
+      MONITOR_API_READY_URL: http://api:8500/health/ready
     depends_on:
       migrate:
         condition: service_completed_successfully

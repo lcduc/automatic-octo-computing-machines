@@ -212,6 +212,7 @@ def test_knowledge_chat_feedback_and_admin_views(client):
     user_message_id = detail["messages"][0]["id"]
     assert client.get(f"/api/v1/admin/messages/{user_message_id}/trace", headers=admin).status_code == 404
     summary = client.get("/api/v1/admin/usage/summary?days=1", headers=admin).json()
+    assert client.get("/api/v1/admin/usage/history?days=7", headers=admin).json() == []  # rolled up by the worker
     assert summary["totals"]["completion_tokens"] >= 60
     assert summary["outcomes"]["answered"] == 2
     assert client.get("/api/v1/admin/logs?contains=chat/stream", headers=admin).status_code == 200
