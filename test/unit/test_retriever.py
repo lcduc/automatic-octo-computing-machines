@@ -5,7 +5,7 @@ import uuid
 import numpy as np
 
 from core.retrieval.knowledge_index import KnowledgeSnapshot
-from core.retrieval.retriever import ContextRetriever
+from core.retrieval.retriever import RRF_K, ContextRetriever
 from core.storage.knowledge_repository import IndexRow
 
 DOC_A = uuid.uuid4()
@@ -114,3 +114,13 @@ def test_without_reranker_gates_on_cosine_similarity():
     retriever = ContextRetriever(FakeEmbeddings([1, 0, 0]), reranker=None)
     results = _search(retriever, _snapshot(), threshold=0.999, expansion_radius=0)
     assert [item.chunk.content for item in results] == ["salary policy details"]
+
+
+def test_reciprocal_rank_fusion_uses_ranks_and_ignores_keyword_misses():
+    values = np.array([0.2, 9.0, 0.0, 3.0])
+    ranks = ContextRetriever._reciprocal_ranks(values, values > 0)
+    assert ranks[1] == 1 / (RRF_K + 1) and ranks[3] == 1 / (RRF_K + 2) and ranks[0] == 1 / (RRF_K + 3)
+    assert ranks[2] == 0.0  # no keyword match, no contribution
+    # A huge outlier score earns no more than first place (min-max scaling would squash the rest).
+    outlier = ContextRetriever._reciprocal_ranks(np.array([1000.0, 3.0, 2.0]), np.ones(3, dtype=bool))
+    assert outlier[0] == 1 / (RRF_K + 1) and outlier[1] == 1 / (RRF_K + 2)
