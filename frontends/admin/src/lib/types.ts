@@ -142,6 +142,8 @@ export interface ConversationSummary {
   channel: string;
   status: string;
   message_count: number;
+  /** Kept past its retention period (owners set it). */
+  legal_hold: boolean;
   created_at: string;
   last_activity_at: string;
 }
@@ -178,6 +180,28 @@ export interface FeedbackItem {
   question: string | null;
   answer: string;
   outcome: Outcome | null;
+  reviewed_at: string | null;
+  reviewed_by: string | null;
+}
+
+/** A golden question copied from a real answer, personal data masked (ADM-12). */
+export interface EvalCase {
+  id: string;
+  question: string;
+  expected_answer: string;
+  expected_sources: string[];
+  document_ids: string[];
+  note: string | null;
+  created_by: string | null;
+  created_at: string;
+}
+
+/** What a data-subject deletion removed, and what legal hold kept (PRV-03). */
+export interface DataSubjectDeleted {
+  conversations: number;
+  tickets: number;
+  token_usage: number;
+  kept_on_hold: number;
 }
 
 export type HandoffStatus = "open" | "assigned" | "answered" | "closed";
@@ -203,6 +227,7 @@ export interface Handoff {
   emailed_at: string | null;
   due_at: string | null;
   closed_at: string | null;
+  legal_hold: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -328,6 +353,11 @@ export interface Settings {
   support_holidays: string[];
   ticket_reply_hours: number;
   handoff_topics: string[];
+  retention_chat_days: number;
+  retention_anonymous_chat_days: number;
+  retention_trace_days: number;
+  retention_ticket_days: number;
+  retention_audit_days: number;
 }
 
 export interface SqlTool {

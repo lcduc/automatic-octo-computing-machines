@@ -2,6 +2,7 @@ import { CircleCheck, Clock, Hourglass, MailCheck } from "lucide-react";
 import { useState } from "react";
 import { useSearchParams } from "react-router";
 import { Transcript } from "../components/conversations/Transcript";
+import { LegalHoldButton } from "../components/privacy/LegalHoldButton";
 import { Drawer } from "../components/ui/Modal";
 import { Badge, Callout, EmptyState, ErrorState, Field, KpiCard, LoadingState, PageHeader, Pagination } from "../components/ui/primitives";
 import { useToast } from "../components/ui/Toast";
@@ -80,6 +81,11 @@ function HandoffDrawer({ handoff, onClose, onUpdated }: { handoff: Handoff; onCl
         {handoff.details && (<><dt>{t("handoffs.details")}</dt><dd>{handoff.details}</dd></>)}
         <dt>{t("handoffs.assignedTo")}</dt>
         <dd>{handoff.assigned_to ?? "—"}</dd>
+        <dt>{t("legalHold.label")}</dt>
+        <dd>
+          <LegalHoldButton path={`handoffs/${handoff.id}`} held={handoff.legal_hold} onChange={(held) => onUpdated({ ...handoff, legal_hold: held })} />
+          {!handoff.legal_hold && !isOwner && "—"}
+        </dd>
         {handoff.answered_at && (<><dt>{t("handoffs.answeredAt")}</dt><dd>{formatDateTime(handoff.answered_at)} {handoff.emailed_at && <MailCheck size={14} aria-label={t("handoffs.emailed")} />}</dd></>)}
       </dl>
       {canHandoff ? (
