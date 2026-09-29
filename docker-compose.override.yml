@@ -23,3 +23,19 @@ services:
     build: ./frontends/widget
   admin:
     build: ./frontends/admin
+
+  # Demo business database for the SQL tools (see deploy/business_db/). In .env:
+  #   BUSINESS_DB_URL=postgresql+asyncpg://chatbot_reader:<BUSINESS_DB_READER_PASSWORD>@business-db:5432/business
+  #   then: docker compose exec api python -m scripts.manage sync-sql-tools --file deploy/business_db/demo_tools.json
+  business-db:
+    image: pgvector/pgvector:pg17
+    profiles: [demo]
+    environment:
+      POSTGRES_DB: business
+      POSTGRES_USER: business_owner
+      POSTGRES_PASSWORD: ${BUSINESS_DB_OWNER_PASSWORD:-demo-owner}
+      BUSINESS_DB_READER_PASSWORD: ${BUSINESS_DB_READER_PASSWORD:-demo-reader}
+    volumes:
+      - ./deploy/business_db/demo_role.sh:/docker-entrypoint-initdb.d/10-demo_role.sh:ro
+      - ./deploy/business_db/demo_schema.sql:/docker-entrypoint-initdb.d/20-demo_schema.sql:ro
+    networks: [internal]

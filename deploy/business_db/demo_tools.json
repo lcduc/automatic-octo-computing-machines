@@ -1,0 +1,37 @@
+[
+  {
+    "name": "get_product_price",
+    "description": "Tra giá bán hiện tại của sản phẩm theo tên hoặc mã (SKU), ví dụ \"giá áo thun\". Look up a product's current price by name or SKU.",
+    "required_tier": "anonymous",
+    "args_schema": {
+      "type": "object",
+      "properties": {
+        "query": {"type": "string", "minLength": 2, "maxLength": 80, "description": "Tên hoặc mã sản phẩm / product name or SKU"}
+      },
+      "required": ["query"],
+      "additionalProperties": false
+    },
+    "sql_template": "SELECT sku, name, price_vnd FROM shop.v_products WHERE name ILIKE '%' || :query || '%' OR sku = upper(:query) ORDER BY name",
+    "allowed_columns": ["sku", "name", "price_vnd"],
+    "masked_columns": [],
+    "row_limit": 10
+  },
+  {
+    "name": "list_my_orders",
+    "description": "Liệt kê đơn hàng của chính người dùng đang đăng nhập trong một khoảng thời gian (ví dụ \"tháng trước\", \"quý 3\", \"30 ngày qua\"), có thể lọc theo trạng thái. Lists the signed-in user's own orders for a period, optionally by status.",
+    "required_tier": "user",
+    "args_schema": {
+      "type": "object",
+      "properties": {
+        "period": {"type": "string", "format": "vn-period", "description": "Khoảng thời gian: tháng này, tháng trước, quý 3, 30 ngày qua, năm 2026 / a period"},
+        "status": {"type": "string", "enum": ["pending", "paid", "shipped", "cancelled"], "description": "Trạng thái đơn / order status"}
+      },
+      "required": ["period"],
+      "additionalProperties": false
+    },
+    "sql_template": "SELECT order_no, total_vnd, status, created_at, customer_phone FROM shop.v_orders WHERE customer_user_id = :user_id AND created_at >= :period_start AND created_at < :period_end AND (CAST(:status AS text) IS NULL OR status = :status) ORDER BY created_at DESC",
+    "allowed_columns": ["order_no", "total_vnd", "status", "created_at", "customer_phone"],
+    "masked_columns": ["customer_phone"],
+    "row_limit": 20
+  }
+]
