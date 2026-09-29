@@ -52,6 +52,8 @@ class Conversation(Base):
     channel: Mapped[str] = mapped_column(String(32), nullable=False, default="widget")
     status: Mapped[str] = mapped_column(String(24), nullable=False, default=CONVERSATION_STATUS_ACTIVE)
     message_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    #: Kept past its retention while set (litigation, investigation); changes are audit-logged.
+    legal_hold: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
     created_at: Mapped[datetime] = created_at_column()
     last_activity_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now, server_default=func.now(), nullable=False
@@ -108,6 +110,9 @@ class Feedback(Base):
     #: +1 helpful, -1 not helpful.
     rating: Mapped[int] = mapped_column(SmallInteger, nullable=False)
     comment: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    #: Set when an admin has looked at it (ADM-12).
+    reviewed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    reviewed_by: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = created_at_column()
 
     message: Mapped[Message] = relationship(back_populates="feedback")

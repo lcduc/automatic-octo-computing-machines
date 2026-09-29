@@ -6,6 +6,7 @@ from .access_tables import AdminUser, ApiKey, AppSetting, HostTokenUse
 from .audit_tables import AdminAuditEntry
 from .base import Base
 from .conversation_tables import Conversation, Feedback, HandoffRequest, Message, TokenUsage
+from .eval_tables import EvalCase
 from .knowledge_tables import KnowledgeChunk, KnowledgeDocument, KnowledgeSource
 from .observability_tables import AlertState, DailyMetrics, MessageTrace
 from .tool_tables import SqlToolDefinition
@@ -21,6 +22,7 @@ __all__ = [
     "HostTokenUse",
     "Conversation",
     "DailyMetrics",
+    "EvalCase",
     "Feedback",
     "HandoffRequest",
     "Message",

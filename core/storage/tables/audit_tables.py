@@ -13,12 +13,18 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 # Local imports
+from models.retention_policy import MIN_AUDIT_RETENTION_DAYS
 from .base import Base, created_at_column, uuid_pk
 
-#: Rejects UPDATE and DELETE so no one, the application included, can rewrite history.
-IMMUTABLE_FUNCTION_DDL = """
+#: Rejects every UPDATE, and every DELETE except the retention purge of entries
+#: older than ``MIN_AUDIT_RETENTION_DAYS``, so no one, the application included,
+#: can rewrite recent history.
+IMMUTABLE_FUNCTION_DDL = f"""
 CREATE OR REPLACE FUNCTION admin_audit_log_immutable() RETURNS trigger AS $$
 BEGIN
+    IF TG_OP = 'DELETE' AND OLD.created_at < now() - interval '{MIN_AUDIT_RETENTION_DAYS} days' THEN
+        RETURN OLD;
+    END IF;
     RAISE EXCEPTION 'admin_audit_log is append-only';
 END;
 $$ LANGUAGE plpgsql
