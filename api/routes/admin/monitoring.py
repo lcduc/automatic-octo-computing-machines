@@ -26,6 +26,8 @@ read_access = Depends(require_admin(READ_ROLES, key_scope=SCOPE_ADMIN_READ))
 
 APP_VERSION = "3.0.0"
 MAX_SUMMARY_DAYS = 90
+#: Rollups are kept forever; two years is plenty for a dashboard.
+MAX_HISTORY_DAYS = 730
 
 
 @router.get("/usage/summary", dependencies=[read_access])
@@ -34,6 +36,14 @@ async def usage_summary(
 ) -> Dict[str, Any]:
     """Tokens per day and model, per purpose, answer outcomes, feedback and latency."""
     return await container.usage.summary(days)
+
+
+@router.get("/usage/history", dependencies=[read_access])
+async def usage_history(
+    days: int = Query(365, ge=1, le=MAX_HISTORY_DAYS), container: AppContainer = Depends(get_container)
+) -> List[Dict[str, Any]]:
+    """Daily rollups (turns, errors, handoffs, latency, tokens, cost and breakdowns), oldest first."""
+    return await container.metrics.history(days)
 
 
 @router.get("/usage/live", dependencies=[read_access], summary="Live feed of chat turns and handoffs (SSE)")

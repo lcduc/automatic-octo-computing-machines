@@ -42,6 +42,7 @@ from services.ingestion_service import IngestionService
 from services.ingestion_worker import IngestionWorker
 from services.knowledge_service import KnowledgeService
 from services.log_service import LogService
+from services.metrics_rollup_service import MetricsRollupService
 from services.live_feed_service import LiveFeedService, asyncpg_dsn
 from services.pricing_service import PricingService
 from services.rate_limit_service import RateLimitService, TimeBuckets
@@ -77,6 +78,7 @@ class AppContainer:
         self.index = KnowledgeIndex(self.database, self._document_tier_level)
         self.settings = SettingsService(self.database)
         self.usage = UsageService(self.database, self.rate_limiter)
+        self.metrics = MetricsRollupService(self.database, Config.Server.APP_TIMEZONE())
         self.pricing = PricingService(self.database)
         self.live_feed = LiveFeedService(self.database, asyncpg_dsn(Config.Database.DATABASE_URL()))
         self.handoffs = HandoffService(self.database, self.live_feed, self.settings, SmtpMailer.from_config())
