@@ -58,12 +58,27 @@ Nguyên tắc bắt buộc:
     )
 
     #: Rewrites a follow-up question into a standalone one using the history.
+    #: The worked examples keep small light models (gpt-4.1-nano) from replying instead of rewriting.
     CONDENSE_QUESTION = (
-        "Bạn sẽ nhận được lịch sử hội thoại và câu hỏi tiếp theo của người dùng. "
-        "Viết lại câu hỏi tiếp theo thành một câu hỏi độc lập, đầy đủ ý nghĩa mà "
-        "không cần lịch sử hội thoại để hiểu, giữ nguyên ngôn ngữ và ý định gốc. "
-        "Chỉ trả về câu hỏi đã viết lại, không kèm giải thích hay định dạng khác."
+        "Nhiệm vụ: viết lại TIN NHẮN CUỐI của người dùng thành một truy vấn tìm kiếm độc lập. "
+        "Bạn KHÔNG phải trợ lý: không trả lời, không hỏi lại, không xin thêm thông tin.\n"
+        "- Thay đại từ và từ chỉ trỏ (anh ấy, cô ấy, nó, cái đó, he, it...) bằng đối tượng cụ thể trong lịch sử.\n"
+        "- Nếu tin nhắn chỉ thúc giục hoặc nhắc lại (\"trả lời đi\", \"answer my question\"), "
+        "trả về câu hỏi gần nhất của người dùng.\n"
+        "- Nếu tin nhắn đã đủ ý hoặc không liên quan đến lịch sử, trả về nguyên văn.\n"
+        "- Giữ ngôn ngữ của tin nhắn cuối. Chỉ trả về truy vấn, không giải thích.\n"
+        "Ví dụ:\n"
+        "Lịch sử: Người dùng: Chính sách nghỉ phép là gì?\n"
+        "Tin nhắn tiếp theo: còn nghỉ ốm thì sao?\n"
+        "Truy vấn: Chính sách nghỉ ốm là gì?\n"
+        "Lịch sử: Người dùng: who is Nguyen Van A?\n"
+        "Tin nhắn tiếp theo: please answer\n"
+        "Truy vấn: who is Nguyen Van A?"
     )
+    #: The rewrite input: history as quoted data in one message, so the model never continues the chat.
+    CONDENSE_QUESTION_INPUT = "Lịch sử:\n{transcript}\n\nTin nhắn tiếp theo: {query}\nTruy vấn:"
+    #: Speaker labels used in the rewrite transcript.
+    CONDENSE_SPEAKERS = {"user": "Người dùng", "assistant": "Trợ lý"}
 
     #: Tool-calling behaviour, independent of which tools are registered.
     TOOL_CALLING = (
@@ -99,6 +114,11 @@ class AutoReplies:
     HANDOFF = (
         "Câu hỏi của bạn đã được chuyển đến nhân viên hỗ trợ. "
         "Chúng tôi sẽ phản hồi bạn sớm nhất có thể."
+    )
+    #: Visitor asked for a human agent while the fallback mode is ``deny`` (handoff off).
+    HUMAN_UNAVAILABLE = (
+        "Hiện chưa thể kết nối trực tiếp với nhân viên tư vấn qua khung chat. "
+        "Bạn vui lòng liên hệ bộ phận hỗ trợ; trong lúc chờ, tôi vẫn có thể trả lời câu hỏi của bạn."
     )
     #: Message rejected by the guardrails.
     GUARD_BLOCK = (

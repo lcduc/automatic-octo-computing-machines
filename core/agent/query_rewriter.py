@@ -35,11 +35,20 @@ class QueryRewriter:
 
     @staticmethod
     def _build_messages(query: str, history: List[Dict[str, str]]) -> List[Dict[str, str]]:
-        """Assemble the condense-question prompt from recent history and the query."""
+        """
+        Assemble the condense-question prompt from recent history and the query.
+
+        History goes in as a quoted transcript inside one user message, never as
+        replayed chat turns: replayed turns make the model continue the chat and
+        answer (or ask back) instead of rewriting.
+        """
+        transcript = "\n".join(
+            f"{SystemPrompts.CONDENSE_SPEAKERS[message['role']]}: {message['content']}"
+            for message in recent_history(history, _HISTORY_WINDOW)
+        )
         return [
             {"role": "system", "content": SystemPrompts.CONDENSE_QUESTION},
-            *recent_history(history, _HISTORY_WINDOW),
-            {"role": "user", "content": f"Câu hỏi tiếp theo: {query}"},
+            {"role": "user", "content": SystemPrompts.CONDENSE_QUESTION_INPUT.format(transcript=transcript, query=query)},
         ]
 
     async def rewrite(

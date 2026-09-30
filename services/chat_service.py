@@ -147,7 +147,8 @@ class ChatService:
             conversation.message_count += 1
             conversation.last_activity_at = utc_now()
 
-        history = [{"role": row.role, "content": row.content} for row in history_rows]
+        # The outcome lets ``recent_history`` drop failed turns' apologies.
+        history = [{"role": row.role, "content": row.content, "outcome": row.outcome} for row in history_rows]
         answers = [row for row in history_rows if row.role == "assistant"]
         previous_answer = (answers[-1].outcome, answers[-1].confidence) if answers else None
         request = TurnRequest(

@@ -190,11 +190,16 @@ class ChatbotService:
             logger.info("Sensitive topic matched; handing off")
             yield TurnResult(TurnOutcome.HANDOFF, policy.handoff_message, handoff_reason=HandoffReason.SENSITIVE_TOPIC)
             return
-        if verdict.action == GuardAction.HUMAN_REQUESTED and policy.fallback_mode == FALLBACK_MODE_HANDOFF:
+        if verdict.action == GuardAction.HUMAN_REQUESTED:
+            # An explicit ask for a person is never a knowledge question: with handoff
+            # off, say so instead of searching and replying "no information".
             trace.route = ROUTE_HUMAN
-            yield TurnResult(
-                TurnOutcome.HANDOFF, policy.handoff_message, handoff_reason=HandoffReason.USER_REQUEST
-            )
+            if policy.fallback_mode == FALLBACK_MODE_HANDOFF:
+                yield TurnResult(
+                    TurnOutcome.HANDOFF, policy.handoff_message, handoff_reason=HandoffReason.USER_REQUEST
+                )
+            else:
+                yield TurnResult(TurnOutcome.DENIED, AutoReplies.HUMAN_UNAVAILABLE)
             return
 
         if self._intent_router is not None and self._tool_agent is not None:
@@ -224,8 +229,16 @@ class ChatbotService:
 
         with trace.step("retrieval"):
             results = await self._retrieve(search_query, request.sources, policy, deadline, request.context, trace)
+            matched = [item for item in results if item.matched]
+            if not matched and rewritten is not None:
+                # A bad rewrite (e.g. the light model replied instead of rewriting) must not
+                # hide knowledge the user's own words would find.
+                logger.info("Rewritten query matched nothing; retrying retrieval with the original query")
+                results = await self._retrieve(request.query, request.sources, policy, deadline, request.context, trace)
+                matched = [item for item in results if item.matched]
+                if matched:
+                    rewritten = None
         trace.record_chunks(results)
-        matched = [item for item in results if item.matched]
         if not matched:
             trace.route = ROUTE_FALLBACK
             yield self._fallback(request, rewritten)
