@@ -287,13 +287,24 @@ class RAGConfig:
     @staticmethod
     def SIMILARITY_THRESHOLD() -> float:
         """
-        Minimum relevance a chunk needs to count as a match.
+        Minimum reranker score a chunk needs to count as a match.
 
-        Applied to the reranker score when reranking is on, otherwise to the
-        fused hybrid score. A turn with no chunk above it takes the fallback
-        path (deny / hand off) without calling the LLM.
+        A turn with no chunk above it takes the fallback path (deny / hand
+        off) without calling the LLM. Without reranker scores (reranking off
+        or failed) ``SEMANTIC_THRESHOLD`` gates instead.
         """
         return env_float("SIMILARITY_THRESHOLD", 0.3)
+
+    @staticmethod
+    def SEMANTIC_THRESHOLD() -> float:
+        """
+        Minimum cosine similarity a chunk needs when no reranker scored it.
+
+        Cosine scores sit on a model-specific scale (E5 puts nearly every pair
+        in 0.7-1.0), so this is calibrated per ``EMBEDDING_MODEL``, separately
+        from the reranker's ``SIMILARITY_THRESHOLD``.
+        """
+        return env_float("SEMANTIC_THRESHOLD", 0.85)
 
     @staticmethod
     def RERANKING_ENABLED() -> bool:

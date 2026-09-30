@@ -60,7 +60,8 @@ def _snapshot():
 
 def _search(retriever, snapshot, **overrides):
     params = dict(
-        top_k=2, semantic_weight=0.7, threshold=0.5, max_context_chunks=6, expansion_radius=1, sources=None
+        top_k=2, semantic_weight=0.7, threshold=0.5, semantic_threshold=0.5, max_context_chunks=6,
+        expansion_radius=1, sources=None,
     )
     params.update(overrides)
     return retriever.search("salary", snapshot, **params)
@@ -168,9 +169,23 @@ def test_reranker_sees_the_document_title_with_each_chunk():
     assert [item.chunk.content for item in results] == ["## EDUCATION\nSwinburne University"]
 
 
-def test_without_reranker_gates_on_cosine_similarity():
+def test_without_reranker_gates_on_the_semantic_threshold():
     retriever = ContextRetriever(FakeEmbeddings([1, 0, 0]), reranker=None)
-    results = _search(retriever, _snapshot(), threshold=0.999, expansion_radius=0)
+    results = _search(retriever, _snapshot(), threshold=0.0, semantic_threshold=0.999, expansion_radius=0)
+    assert [item.chunk.content for item in results] == ["salary policy details"]
+
+
+class FailingReranker:
+    """A reranker whose scoring failed: returns ``None`` like ``Reranker.score`` does."""
+
+    def score(self, query, texts):
+        return None
+
+
+def test_a_failed_reranker_gates_on_the_semantic_threshold_not_the_reranker_one():
+    # A reranker threshold of 0.3 on cosine scores would let the unrelated FAQ chunk (0.99) and more through.
+    retriever = ContextRetriever(FakeEmbeddings([1, 0, 0]), reranker=FailingReranker())
+    results = _search(retriever, _snapshot(), threshold=0.3, semantic_threshold=0.999, expansion_radius=0)
     assert [item.chunk.content for item in results] == ["salary policy details"]
 
 

@@ -330,11 +330,13 @@ class ChatbotService:
         snapshot = self._index.snapshot
         top_k = _or_default(policy.retrieval_top_k, Config.RAG.RETRIEVAL_TOP_K)
         threshold = _or_default(policy.similarity_threshold, Config.RAG.SIMILARITY_THRESHOLD)
+        semantic_threshold = Config.RAG.SEMANTIC_THRESHOLD()
         today = datetime.now(ZoneInfo(Config.Server.APP_TIMEZONE())).date()
         if trace is not None:
             trace.filters = {
                 "access_level": context.tier_level, "today": today.isoformat(), "sources": list(sources) if sources else None,
-                "threshold": threshold, "top_k": top_k, "knowledge_version": snapshot.version,
+                "threshold": threshold, "semantic_threshold": semantic_threshold, "top_k": top_k,
+                "knowledge_version": snapshot.version,
             }
         if snapshot.is_empty:
             return []
@@ -347,6 +349,7 @@ class ChatbotService:
                     top_k=top_k,
                     semantic_weight=_or_default(policy.semantic_weight, Config.RAG.SEMANTIC_WEIGHT),
                     threshold=threshold,
+                    semantic_threshold=semantic_threshold,
                     max_context_chunks=_or_default(policy.max_context_chunks, Config.RAG.MAX_CONTEXT_CHUNKS),
                     expansion_radius=Config.RAG.CONTEXT_EXPANSION_RADIUS(),
                     sources=sources,

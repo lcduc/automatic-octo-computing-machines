@@ -104,6 +104,7 @@ class ContextRetriever:
         top_k: int,
         semantic_weight: float,
         threshold: float,
+        semantic_threshold: float,
         max_context_chunks: int,
         expansion_radius: int,
         sources: Optional[Sequence[str]] = None,
@@ -118,8 +119,10 @@ class ContextRetriever:
             snapshot: Corpus to search.
             top_k: Maximum matched chunks.
             semantic_weight: Weight of the embedding ranking vs the BM25 ranking in the fusion (0-1).
-            threshold: Minimum relevance (reranker score, or cosine similarity
-                when no reranker ran) for a chunk to count as a match.
+            threshold: Minimum reranker score for a chunk to count as a match.
+            semantic_threshold: Minimum cosine similarity instead, when no
+                reranker scored the pool (disabled or failed): the two scores
+                live on different scales.
             max_context_chunks: Cap on returned chunks including neighbours.
             expansion_radius: Neighbours added on each side of the best match (same document).
             sources: Restrict to these source names; ``None`` searches all.
@@ -128,7 +131,7 @@ class ContextRetriever:
 
         Returns:
             The best match between its neighbours in document order, then the
-            other matches by rank. Empty when nothing clears ``threshold``.
+            other matches by rank. Empty when nothing clears the threshold in force.
         """
         if snapshot.is_empty or not query.strip():
             return []
@@ -144,6 +147,7 @@ class ContextRetriever:
         if self._reranker is not None:
             texts = [self._rerank_text(snapshot.chunks[candidates[p]]) for p in pool]
             rerank_scores = self._reranker.score(query, texts)
+        gate = threshold if rerank_scores is not None else semantic_threshold
 
         #: (snapshot index, match) pairs; the index locates the best match's neighbours.
         scored: List[Tuple[int, RetrievedChunk]] = []
@@ -151,7 +155,7 @@ class ContextRetriever:
             chunk = snapshot.chunks[candidates[position]]
             rerank = float(rerank_scores[rank]) if rerank_scores is not None else None
             relevance = rerank if rerank is not None else float(semantic[position])
-            if relevance < threshold:
+            if relevance < gate:
                 continue
             scored.append((
                 int(candidates[position]),
