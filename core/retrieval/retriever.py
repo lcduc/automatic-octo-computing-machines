@@ -17,7 +17,7 @@ from typing import Dict, List, Optional, Sequence, Tuple
 import numpy as np
 
 # Local imports
-from models.knowledge import RetrievedChunk
+from models.knowledge import IndexedChunk, RetrievedChunk
 from utils.text_utils import TextUtils
 from .knowledge_index import KnowledgeSnapshot
 
@@ -142,7 +142,7 @@ class ContextRetriever:
 
         rerank_scores = None
         if self._reranker is not None:
-            texts = [snapshot.chunks[candidates[p]].content for p in pool]
+            texts = [self._rerank_text(snapshot.chunks[candidates[p]]) for p in pool]
             rerank_scores = self._reranker.score(query, texts)
 
         scored: List[RetrievedChunk] = []
@@ -166,6 +166,17 @@ class ContextRetriever:
         matches = scored[:top_k]
         logger.debug("Search matched %d/%d pooled chunks", len(matches), len(pool))
         return self._expand(snapshot, matches, max_context_chunks, expansion_radius)
+
+    @staticmethod
+    def _rerank_text(chunk: IndexedChunk) -> str:
+        """
+        What the reranker scores: the document title, then the chunk.
+
+        A chunk rarely says which document it is from ("## EDUCATION" in a CV
+        never names the person), so without the title the cross-encoder scores
+        "which university did X attend" low on the one chunk that answers it.
+        """
+        return f"{chunk.document_title}\n{chunk.content}" if chunk.document_title else chunk.content
 
     @staticmethod
     def _expand(

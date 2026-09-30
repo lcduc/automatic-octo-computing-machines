@@ -110,6 +110,17 @@ def test_source_priority_reorders_equally_relevant_matches():
     assert [item.chunk.source for item in results] == ["FAQ", "general"]
 
 
+def test_reranker_sees_the_document_title_with_each_chunk():
+    # "Which university did Luong Chi Duc attend?" vs an EDUCATION chunk that never names him:
+    # only the document title says whose CV it is.
+    rows = [_row(DOC_A, 0, "## EDUCATION\nSwinburne University", [1.0, 0.0, 0.0], title="CV Luong Chi Duc")]
+    retriever = ContextRetriever(FakeEmbeddings([1, 0, 0]), reranker=FakeReranker("Luong Chi Duc"))
+
+    results = _search(retriever, KnowledgeSnapshot.build(rows, version=1), expansion_radius=0)
+
+    assert [item.chunk.content for item in results] == ["## EDUCATION\nSwinburne University"]
+
+
 def test_without_reranker_gates_on_cosine_similarity():
     retriever = ContextRetriever(FakeEmbeddings([1, 0, 0]), reranker=None)
     results = _search(retriever, _snapshot(), threshold=0.999, expansion_radius=0)
