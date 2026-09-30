@@ -140,7 +140,7 @@ class LLMConfig:
         """
         Sampling temperature for answer generation.
 
-        Ignored for ``gpt-5*`` models, which only support the default
+        Ignored for everything newer than ``gpt-4*``, which only supports the default
         temperature of 1 - see ``OpenAIClientProvider._completion_kwargs``.
         """
         return env_float("OPENAI_TEMPERATURE", 0.1)
@@ -148,7 +148,7 @@ class LLMConfig:
     @staticmethod
     def OPENAI_REASONING_EFFORT() -> str:
         """
-        Reasoning depth for ``gpt-5*`` models.
+        Reasoning depth for models newer than ``gpt-4*`` (gpt-5+, o-series).
 
         Which values are accepted is model-dependent and enforced server-side
         (``gpt-5-mini`` accepts ``minimal``/``low``/``medium``/``high``).
