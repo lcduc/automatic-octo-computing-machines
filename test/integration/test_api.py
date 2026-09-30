@@ -17,7 +17,7 @@ from api.container import AppContainer
 from core.storage.database import Database
 from core.storage.tables import Base
 from models.llm import LLMResult, LLMUsage, StreamDelta
-from .conftest import DEFAULT_SOURCES, TEST_DATABASE_URL, FakeEmbeddingService, FakeProcessor
+from .conftest import DEFAULT_SOURCES, TEST_DATABASE_URL, FakeEmbeddingService, FakeProcessor, FakeReranker
 
 ORIGIN = "http://localhost:3000"
 ADMIN_EMAIL = "owner@example.test"
@@ -59,7 +59,7 @@ class FakeContainer(AppContainer):
         return FakeEmbeddingService()
 
     async def _load_reranker(self):
-        return None
+        return FakeReranker()
 
     def _create_llm(self):
         return FakeLLM()
@@ -94,7 +94,7 @@ def client(monkeypatch):
     monkeypatch.setenv("DATABASE_URL", TEST_DATABASE_URL)
     monkeypatch.setenv("ADMIN_JWT_SECRET", "test-secret-" + "x" * 40)
     monkeypatch.setenv("CORS_ORIGINS", ORIGIN)
-    monkeypatch.setenv("SIMILARITY_THRESHOLD", "0.5")
+    monkeypatch.setenv("SIMILARITY_THRESHOLD", "0.4")
     monkeypatch.setenv("RATE_LIMIT_ANONYMOUS_PER_MINUTE", "8")
     monkeypatch.setenv("TOOL_CALLING_ENABLED", "false")
     monkeypatch.setenv("BFF_SERVICE_TOKEN", BFF_TOKEN)
