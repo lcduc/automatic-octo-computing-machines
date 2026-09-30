@@ -7,6 +7,7 @@ for every test, so never point this at a database holding real data.
 """
 
 import os
+import zlib
 
 import numpy as np
 import pytest
@@ -50,7 +51,7 @@ class FakeEmbeddingService:
     def _vector(text_value: str) -> np.ndarray:
         vector = np.zeros(FAKE_EMBEDDING_DIM, dtype=np.float32)
         for word in text_value.lower().split():
-            vector[hash(word) % FAKE_EMBEDDING_DIM] += 1.0
+            vector[zlib.crc32(word.encode()) % FAKE_EMBEDDING_DIM] += 1.0
         norm = np.linalg.norm(vector)
         return vector / norm if norm else vector
 
@@ -59,6 +60,14 @@ class FakeEmbeddingService:
 
     def embed_query(self, query):
         return self._vector(query)
+
+
+class FakeReranker:
+    """Scores by bag-of-words cosine, so ``SIMILARITY_THRESHOLD`` gates as it does with a real reranker."""
+
+    def score(self, query, texts):
+        query_vector = FakeEmbeddingService._vector(query)
+        return [float(FakeEmbeddingService._vector(t) @ query_vector) for t in texts]
 
 
 class FakeProcessor:
