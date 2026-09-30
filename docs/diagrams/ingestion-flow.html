@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Document ingestion</title>
+<style>
+:root{--paper:#faf9f6;--surface:#ffffff;--ink:#2d3142;--muted:#6b7080;--rule:#cfcbc2;--accent:#eb6c36;--accent-soft:#fdebe2}
+@media (prefers-color-scheme:dark){:root{--paper:#16181d;--surface:#1e2027;--ink:#e8e6e1;--muted:#9a9ea8;--rule:#454955;--accent:#f08a5d;--accent-soft:#3a2a22}}
+.n{fill:var(--surface);stroke:var(--rule);stroke-width:1}
+.n.ext{stroke-dasharray:4 3}
+.n.hot{fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5}
+.t{font:600 13px 'Geist',system-ui,-apple-system,'Segoe UI',sans-serif;fill:var(--ink)}
+.s{font:400 10px 'Geist Mono',ui-monospace,Consolas,monospace;fill:var(--muted)}
+.e{fill:none;stroke:var(--ink);stroke-width:1.25}
+.e.dash{stroke-dasharray:4 3}
+.e.hot{stroke:var(--accent)}
+.a{fill:var(--ink)}
+.a.hot{fill:var(--accent)}
+.l{font:400 10px 'Geist Mono',ui-monospace,Consolas,monospace;fill:var(--muted)}
+.m{fill:var(--paper)}
+
+body{margin:0;background:var(--paper);color:var(--ink);font:400 15px/1.5 'Geist',system-ui,sans-serif}
+main{max-width:1040px;margin:0 auto;padding:40px 16px 48px}
+.eyebrow{font:400 11px 'Geist Mono',ui-monospace,monospace;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+h1{font:400 40px/1.1 'Instrument Serif',Georgia,serif;margin:6px 0 8px}
+p{margin:0 0 24px;color:var(--muted);max-width:640px}
+footer{margin-top:16px;font:400 11px 'Geist Mono',ui-monospace,monospace;color:var(--muted)}
+</style></head><body><main>
+<div class="eyebrow">Flow</div><h1>Document ingestion</h1><p>Uploads return immediately; a separate worker does the slow parsing so a crash cannot take the API down.</p>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 380" width="100%" role="img" aria-labelledby="ingestion-flow-title ingestion-flow-desc"><title id="ingestion-flow-title">Document ingestion</title><desc id="ingestion-flow-desc">An admin upload is saved by the API and queued in PostgreSQL. The ingestion worker claims it, extracts text with Docling or OCR, chunks it by the chosen strategy, embeds it on the model server and stores chunks and vectors.</desc><style>
+:root{--paper:#faf9f6;--surface:#ffffff;--ink:#2d3142;--muted:#6b7080;--rule:#cfcbc2;--accent:#eb6c36;--accent-soft:#fdebe2}
+@media (prefers-color-scheme:dark){:root{--paper:#16181d;--surface:#1e2027;--ink:#e8e6e1;--muted:#9a9ea8;--rule:#454955;--accent:#f08a5d;--accent-soft:#3a2a22}}
+.n{fill:var(--surface);stroke:var(--rule);stroke-width:1}
+.n.ext{stroke-dasharray:4 3}
+.n.hot{fill:var(--accent-soft);stroke:var(--accent);stroke-width:1.5}
+.t{font:600 13px 'Geist',system-ui,-apple-system,'Segoe UI',sans-serif;fill:var(--ink)}
+.s{font:400 10px 'Geist Mono',ui-monospace,Consolas,monospace;fill:var(--muted)}
+.e{fill:none;stroke:var(--ink);stroke-width:1.25}
+.e.dash{stroke-dasharray:4 3}
+.e.hot{stroke:var(--accent)}
+.a{fill:var(--ink)}
+.a.hot{fill:var(--accent)}
+.l{font:400 10px 'Geist Mono',ui-monospace,Consolas,monospace;fill:var(--muted)}
+.m{fill:var(--paper)}
+</style><rect x="0" y="0" width="1000" height="380" fill="var(--paper)"/><rect class="n" x="50" y="72" width="180" height="72" rx="6"/><text class="t" x="140.0" y="106.0" text-anchor="middle">Upload</text><text class="s" x="140.0" y="123.0" text-anchor="middle">admin: file or text + strategy</text><rect class="n" x="290" y="72" width="180" height="72" rx="6"/><text class="t" x="380.0" y="106.0" text-anchor="middle">API</text><text class="s" x="380.0" y="123.0" text-anchor="middle">stores file, marks processing</text><rect class="n" x="530" y="72" width="180" height="72" rx="6"/><text class="t" x="620.0" y="106.0" text-anchor="middle">Upload queue</text><text class="s" x="620.0" y="123.0" text-anchor="middle">PostgreSQL row + UploadStore</text><rect class="n hot" x="770" y="72" width="180" height="72" rx="6"/><text class="t" x="860.0" y="106.0" text-anchor="middle">Ingestion worker</text><text class="s" x="860.0" y="123.0" text-anchor="middle">claims job with a lease</text><rect class="n" x="770" y="250" width="180" height="72" rx="6"/><text class="t" x="860.0" y="284.0" text-anchor="middle">Extract</text><text class="s" x="860.0" y="301.0" text-anchor="middle">Docling / OCR</text><rect class="n" x="530" y="250" width="180" height="72" rx="6"/><text class="t" x="620.0" y="284.0" text-anchor="middle">Chunk</text><text class="s" x="620.0" y="301.0" text-anchor="middle">by chosen strategy</text><rect class="n" x="290" y="250" width="180" height="72" rx="6"/><text class="t" x="380.0" y="284.0" text-anchor="middle">Embed</text><text class="s" x="380.0" y="301.0" text-anchor="middle">model server</text><rect class="n" x="50" y="250" width="180" height="72" rx="6"/><text class="t" x="140.0" y="284.0" text-anchor="middle">Store</text><text class="s" x="140.0" y="301.0" text-anchor="middle">chunks + vectors, status ready</text><path class="e" d="M230 108 L290 108"/><polygon class="a" points="284,104 284,112 290,108"/><path class="e" d="M470 108 L530 108"/><polygon class="a" points="524,104 524,112 530,108"/><path class="e" d="M710 108 L770 108"/><polygon class="a" points="764,104 764,112 770,108"/><path class="e" d="M860 144 L860 250"/><polygon class="a" points="856,244 864,244 860,250"/><rect class="m" x="864" y="192" width="104" height="14"/><text class="l" x="868" y="202">separate process</text><path class="e" d="M770 286 L710 286"/><polygon class="a" points="716,282 716,290 710,286"/><path class="e" d="M530 286 L470 286"/><polygon class="a" points="476,282 476,290 470,286"/><path class="e" d="M290 286 L230 286"/><polygon class="a" points="236,282 236,290 230,286"/></svg>
+<footer>Source: services/ingestion_worker.py, services/ingestion_service.py. Coral marks the isolated worker.</footer></main></body></html>
