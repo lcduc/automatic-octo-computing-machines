@@ -76,6 +76,8 @@ export function useChat(allowedOrigins: string[]) {
     setNotice(null);
   }, []);
   const session = useHostSession(allowedOrigins, clearConversation);
+  // `session` is a new object every render; depend on its stable callback, or the load effect below loops.
+  const refreshToken = session.refresh;
   const token = useRef<string | null>(null);
   useEffect(() => {
     token.current = session.token;
@@ -88,11 +90,11 @@ export function useChat(allowedOrigins: string[]) {
         fetch(url, { ...init, headers: { ...(init.headers ?? {}), ...(value ? { Authorization: `Bearer ${value}` } : {}) } });
       const response = await attempt(token.current);
       if (!token.current || !rejectedToken(response)) return response;
-      const fresh = await session.refresh();
+      const fresh = await refreshToken();
       token.current = fresh;
       return attempt(fresh);
     },
-    [session],
+    [refreshToken],
   );
 
   const updateMessage = useCallback((id: string, patch: Partial<ChatMessage>) => {
