@@ -12,7 +12,6 @@ markdown headings, since OCR output has no heading structure.
 # Standard library imports
 import asyncio
 import logging
-import re
 import tempfile
 import time
 import uuid
@@ -32,6 +31,7 @@ except Exception:  # defer hard failure to runtime path
 
 # Local imports
 from config.settings import Config
+from .chunking.heading_strategy import HeadingChunker
 from .engine_selector import get_ocr_engine
 from models.knowledge import EXTRACTION_DOCLING, EXTRACTION_OCR
 from models.metadata import MetadataBuilder, ProcessingMethod, SourceType, ProcessingStatus
@@ -336,52 +336,17 @@ class DoclingProcessor:
 
     def _chunk_markdown_by_headings(self, markdown_text: str) -> List[str]:
         """
-        Split markdown by headings only - no size limits, no fallback chunking.
-        - Recognizes headings starting with '#' (ATX-style) at any level.
-        - Each heading and its content becomes one chunk.
-        - No size limits - keeps content together under each heading.
-        - If no headings found, returns entire document as one chunk.
+        Split markdown into one chunk per heading section (any level, no size cap).
+
+        Uses the same ``HeadingChunker`` as a re-chunk with ``auto``, so an
+        upload and a later re-chunk give the same chunks (including merging
+        headings that have no text of their own into the next section).
+        Text with no headings becomes one chunk.
         """
         if not markdown_text:
             return []
-
-        lines = markdown_text.splitlines()
-
-        # First, try to chunk by markdown headings
-        sections: List[List[str]] = []
-        current: List[str] = []
-        heading_pattern = re.compile(r"^#{1,6}\s+")
-
-        def push_current():
-            if current:
-                sections.append(current.copy())
-                current.clear()
-
-        for line in lines:
-            if heading_pattern.match(line):
-                push_current()
-                current.append(line)
-            else:
-                current.append(line)
-        push_current()
-
-        # Convert sections to strings, trimming leading/trailing blank lines
-        chunks: List[str] = []
-        for block in sections:
-            # Trim
-            while block and not block[0].strip():
-                block.pop(0)
-            while block and not block[-1].strip():
-                block.pop()
-            chunk = "\n".join(block).strip()
-            if chunk:
-                chunks.append(chunk)
-
-        # If no headings found, return the entire document as one chunk
-        if not chunks:
-            chunks = [markdown_text.strip()]
-
-        logger.info(f"Created {len(chunks)} chunks based on headings only (no size limits)")
+        chunks = [draft.content for draft in HeadingChunker(max_level=6, max_chars=None).split(markdown_text)]
+        logger.info("Created %d chunks by heading (no size limits)", len(chunks))
         return chunks
 
     def get_supported_formats(self) -> List[str]:
