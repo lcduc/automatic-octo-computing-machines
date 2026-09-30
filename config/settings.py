@@ -123,7 +123,7 @@ class LLMConfig:
     @staticmethod
     def EMBEDDING_MODEL() -> str:
         """Sentence-transformers model used to embed chunks and queries."""
-        return env_str("EMBEDDING_MODEL", "paraphrase-multilingual-MiniLM-L12-v2")
+        return env_str("EMBEDDING_MODEL", "intfloat/multilingual-e5-small")
 
     @staticmethod
     def MAX_CONTEXT_LENGTH() -> int:
@@ -140,7 +140,7 @@ class LLMConfig:
         """
         Sampling temperature for answer generation.
 
-        Ignored for ``gpt-5*`` models, which only support the default
+        Ignored for everything newer than ``gpt-4*``, which only supports the default
         temperature of 1 - see ``OpenAIClientProvider._completion_kwargs``.
         """
         return env_float("OPENAI_TEMPERATURE", 0.1)
@@ -148,7 +148,7 @@ class LLMConfig:
     @staticmethod
     def OPENAI_REASONING_EFFORT() -> str:
         """
-        Reasoning depth for ``gpt-5*`` models.
+        Reasoning depth for models newer than ``gpt-4*`` (gpt-5+, o-series).
 
         Which values are accepted is model-dependent and enforced server-side
         (``gpt-5-mini`` accepts ``minimal``/``low``/``medium``/``high``).
@@ -287,13 +287,24 @@ class RAGConfig:
     @staticmethod
     def SIMILARITY_THRESHOLD() -> float:
         """
-        Minimum relevance a chunk needs to count as a match.
+        Minimum reranker score a chunk needs to count as a match.
 
-        Applied to the reranker score when reranking is on, otherwise to the
-        fused hybrid score. A turn with no chunk above it takes the fallback
-        path (deny / hand off) without calling the LLM.
+        A turn with no chunk above it takes the fallback path (deny / hand
+        off) without calling the LLM. Without reranker scores (reranking off
+        or failed) ``SEMANTIC_THRESHOLD`` gates instead.
         """
         return env_float("SIMILARITY_THRESHOLD", 0.3)
+
+    @staticmethod
+    def SEMANTIC_THRESHOLD() -> float:
+        """
+        Minimum cosine similarity a chunk needs when no reranker scored it.
+
+        Cosine scores sit on a model-specific scale (E5 puts nearly every pair
+        in 0.7-1.0), so this is calibrated per ``EMBEDDING_MODEL``, separately
+        from the reranker's ``SIMILARITY_THRESHOLD``.
+        """
+        return env_float("SEMANTIC_THRESHOLD", 0.85)
 
     @staticmethod
     def RERANKING_ENABLED() -> bool:
@@ -322,7 +333,7 @@ class RAGConfig:
 
     @staticmethod
     def CONTEXT_EXPANSION_RADIUS() -> int:
-        """Neighbour chunks of the same document pulled in on each side of a hit (0 disables)."""
+        """Neighbour chunks of the same document pulled in on each side of the best hit (0 disables)."""
         return env_int("CONTEXT_EXPANSION_RADIUS", 1)
 
     @staticmethod
@@ -331,9 +342,10 @@ class RAGConfig:
         Cross-encoder model used for reranking.
 
         Defaults to a multilingual model because the corpus and queries are a
-        mix of English and Vietnamese.
+        mix of English and Vietnamese; Apache-2.0 and no remote code (the
+        earlier Jina v2 default is CC-BY-NC, not usable commercially).
         """
-        return env_str("RERANKER_MODEL", "jinaai/jina-reranker-v2-base-multilingual")
+        return env_str("RERANKER_MODEL", "BAAI/bge-reranker-v2-m3")
 
     @staticmethod
     def RETRIEVAL_MAX_CONCURRENCY() -> int:

@@ -190,11 +190,16 @@ class ChatbotService:
             logger.info("Sensitive topic matched; handing off")
             yield TurnResult(TurnOutcome.HANDOFF, policy.handoff_message, handoff_reason=HandoffReason.SENSITIVE_TOPIC)
             return
-        if verdict.action == GuardAction.HUMAN_REQUESTED and policy.fallback_mode == FALLBACK_MODE_HANDOFF:
+        if verdict.action == GuardAction.HUMAN_REQUESTED:
+            # An explicit ask for a person is never a knowledge question: with handoff
+            # off, say so instead of searching and replying "no information".
             trace.route = ROUTE_HUMAN
-            yield TurnResult(
-                TurnOutcome.HANDOFF, policy.handoff_message, handoff_reason=HandoffReason.USER_REQUEST
-            )
+            if policy.fallback_mode == FALLBACK_MODE_HANDOFF:
+                yield TurnResult(
+                    TurnOutcome.HANDOFF, policy.handoff_message, handoff_reason=HandoffReason.USER_REQUEST
+                )
+            else:
+                yield TurnResult(TurnOutcome.DENIED, AutoReplies.HUMAN_UNAVAILABLE)
             return
 
         if self._intent_router is not None and self._tool_agent is not None:
@@ -224,8 +229,16 @@ class ChatbotService:
 
         with trace.step("retrieval"):
             results = await self._retrieve(search_query, request.sources, policy, deadline, request.context, trace)
+            matched = [item for item in results if item.matched]
+            if not matched and rewritten is not None:
+                # A bad rewrite (e.g. the light model replied instead of rewriting) must not
+                # hide knowledge the user's own words would find.
+                logger.info("Rewritten query matched nothing; retrying retrieval with the original query")
+                results = await self._retrieve(request.query, request.sources, policy, deadline, request.context, trace)
+                matched = [item for item in results if item.matched]
+                if matched:
+                    rewritten = None
         trace.record_chunks(results)
-        matched = [item for item in results if item.matched]
         if not matched:
             trace.route = ROUTE_FALLBACK
             yield self._fallback(request, rewritten)
@@ -317,11 +330,13 @@ class ChatbotService:
         snapshot = self._index.snapshot
         top_k = _or_default(policy.retrieval_top_k, Config.RAG.RETRIEVAL_TOP_K)
         threshold = _or_default(policy.similarity_threshold, Config.RAG.SIMILARITY_THRESHOLD)
+        semantic_threshold = Config.RAG.SEMANTIC_THRESHOLD()
         today = datetime.now(ZoneInfo(Config.Server.APP_TIMEZONE())).date()
         if trace is not None:
             trace.filters = {
                 "access_level": context.tier_level, "today": today.isoformat(), "sources": list(sources) if sources else None,
-                "threshold": threshold, "top_k": top_k, "knowledge_version": snapshot.version,
+                "threshold": threshold, "semantic_threshold": semantic_threshold, "top_k": top_k,
+                "knowledge_version": snapshot.version,
             }
         if snapshot.is_empty:
             return []
@@ -334,6 +349,7 @@ class ChatbotService:
                     top_k=top_k,
                     semantic_weight=_or_default(policy.semantic_weight, Config.RAG.SEMANTIC_WEIGHT),
                     threshold=threshold,
+                    semantic_threshold=semantic_threshold,
                     max_context_chunks=_or_default(policy.max_context_chunks, Config.RAG.MAX_CONTEXT_CHUNKS),
                     expansion_radius=Config.RAG.CONTEXT_EXPANSION_RADIUS(),
                     sources=sources,

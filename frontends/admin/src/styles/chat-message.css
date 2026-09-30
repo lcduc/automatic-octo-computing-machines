@@ -1,0 +1,311 @@
+/* Demo chat messages: bubbles, Markdown, citations, handoff ticket, sources drawer. */
+
+/* ---------------------------------------------------------------- messages */
+.chat-msg {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  margin-bottom: var(--space-6);
+  animation: fade-up var(--transition-fast);
+}
+.chat-msg--user {
+  flex-direction: row-reverse;
+}
+.chat-msg__avatar {
+  width: 38px;
+  height: 38px;
+  flex-shrink: 0;
+  border-radius: var(--radius-full);
+  display: grid;
+  place-items: center;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  color: var(--accent-gold);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.06);
+}
+.chat-msg--user .chat-msg__avatar {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: var(--text-on-primary);
+}
+.chat-msg__body {
+  max-width: 82%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.chat-msg--user .chat-msg__body {
+  align-items: flex-end;
+}
+.chat-msg__bubble {
+  padding: var(--space-4) var(--space-5);
+  border-radius: 4px 16px 16px 16px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.05);
+  line-height: 1.65;
+  word-break: break-word;
+}
+.chat-msg--user .chat-msg__bubble {
+  border-radius: 16px 4px 16px 16px;
+  background: var(--primary);
+  border-color: var(--primary);
+  color: var(--text-on-primary);
+}
+.chat-msg__bubble--error {
+  background: var(--status-danger-soft);
+  border-color: var(--status-danger-border);
+  color: var(--status-danger-text);
+}
+.chat-msg__note {
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--status-warning-soft);
+  border: 1px solid var(--status-warning-border);
+  color: var(--status-warning-text);
+  font-size: 12px;
+}
+.chat-msg__label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-bottom: var(--space-2);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+.chat-msg__label svg {
+  color: var(--accent-gold);
+}
+.chat-msg__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.chat-msg__actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 2px 6px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: inherit;
+  cursor: pointer;
+}
+.chat-msg__actions button:hover {
+  background: var(--bg-subtle);
+}
+.chat-msg__up[aria-pressed="true"] {
+  color: var(--status-success-accent) !important;
+}
+.chat-msg__down[aria-pressed="true"] {
+  color: var(--status-danger-accent) !important;
+}
+.chat-msg__time {
+  font-size: 10px;
+  color: var(--text-subtle);
+}
+.chat-msg__comment {
+  flex: 1;
+  min-width: 220px;
+}
+
+/* Assistant Markdown */
+.md {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.md ul,
+.md ol {
+  padding-left: var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.md__heading {
+  font-weight: 700;
+  color: var(--primary);
+}
+.md code {
+  padding: 0 4px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-subtle);
+}
+
+/* ---------------------------------------------------------------- citations */
+.chat-msg__citations {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.chat-msg__citations .chat-msg__label {
+  margin-bottom: 0;
+}
+.citation {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-main);
+}
+.citation__head {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 10px var(--space-3);
+  border: 0;
+  background: none;
+  text-align: left;
+  color: var(--primary);
+  cursor: pointer;
+}
+.citation__title {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  font-size: 13px;
+}
+.citation__score {
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--accent-teal-light);
+  color: var(--accent-teal);
+  font-size: 10px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.citation__body {
+  margin: 0 var(--space-3) var(--space-3);
+  padding: var(--space-2);
+  border-top: 1px dashed var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.citation__quote {
+  font-size: 12px;
+  font-style: italic;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+/* ---------------------------------------------------------------- handoff ticket */
+.handoff-card {
+  padding: var(--space-4) 18px;
+  border-radius: var(--radius-md);
+  background: linear-gradient(135deg, var(--status-info-soft) 0%, var(--status-info-bg) 100%);
+  border: 1px solid var(--status-info-border);
+  box-shadow: 0 2px 6px rgb(37 99 235 / 0.08);
+  color: var(--status-info-text);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.handoff-card__head {
+  display: flex;
+  gap: var(--space-3);
+}
+.handoff-card__head p {
+  color: var(--status-info-accent);
+}
+.handoff-card__icon {
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  border-radius: var(--radius-full);
+  display: grid;
+  place-items: center;
+  background: var(--status-info-accent);
+  color: #fff;
+}
+.handoff-card__ticket {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  border: 1px solid var(--status-info-border);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--status-info-text);
+}
+.handoff-card__ticket .row {
+  color: var(--status-success-accent);
+  font-weight: 600;
+}
+.handoff-card__toggle {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) 0;
+  border: 0;
+  background: none;
+  color: var(--status-info-accent);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.handoff-card__form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: 14px;
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  color: var(--text-main);
+}
+.handoff-card__sent {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 10px 14px;
+  border-radius: var(--radius-md);
+  background: var(--status-success-soft);
+  border: 1px solid var(--status-success-border);
+  color: var(--status-success-text);
+  font-size: 12px;
+  font-weight: 600;
+}
+.grid-2--tight {
+  gap: var(--space-2);
+}
+
+/* ---------------------------------------------------------------- sources drawer */
+.source-list {
+  list-style: none;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.source-list__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+}
+.source-list__pick {
+  align-items: flex-start;
+}
+.source-list__meta {
+  display: block;
+}
+

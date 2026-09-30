@@ -175,19 +175,24 @@ class TextUtils:
     def is_probably_gibberish(text: str, threshold: float = 0.3) -> bool:
         """
         Determine if extracted text is likely gibberish and needs OCR processing.
-        Analyzes Unicode character categories to detect low-quality text.
+        Analyzes Unicode character categories to detect low-quality text, e.g.
+        a PDF font with a broken encoding that extracts as private-use or
+        replacement characters. Whitespace is ignored — newlines are control
+        characters but are normal in extracted page text.
         """
-        if not text:
-            return True
-
         # Import unicodedata here to avoid dependency issues
         import unicodedata
 
+        # ceiling: character categories only, mis-mapped fonts that decode to real letters pass; add a dictionary/language score if they show up
+        visible = [c for c in text if not c.isspace()]
+        if not visible:
+            return True
+
         # Check for too many control/symbol characters
         bad_chars = sum(
-            1 for c in text if unicodedata.category(c).startswith(("C", "S"))
+            1 for c in visible if unicodedata.category(c).startswith(("C", "S"))
         )
-        return bad_chars / len(text) > threshold
+        return bad_chars / len(visible) > threshold
 
     @staticmethod
     def needs_ocr_fallback(text: str) -> bool:

@@ -9,6 +9,14 @@
 	header @assets Cache-Control "public, max-age=31536000, immutable"
 	header -Server
 
+	# Where the chat widget is served, for the widget preview. The image is shared
+	# by every deployment, so the value comes from WIDGET_ORIGIN at run time.
+	handle /runtime-config.json {
+		header Content-Type application/json
+		header Cache-Control no-store
+		respond `{"widgetOrigin":"{$WIDGET_ORIGIN}"}` 200
+	}
+
 	# Client-side routes (/knowledge/…, /settings, …) all load index.html.
 	try_files {path} /index.html
 	file_server

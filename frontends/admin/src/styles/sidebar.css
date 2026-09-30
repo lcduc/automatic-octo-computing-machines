@@ -1,0 +1,287 @@
+/* Console sidebar (giz-chatbot layout): brand block, two-line accented nav items, profile card. */
+
+/* ---------------------------------------------------------------- sidebar */
+.sidebar {
+  width: var(--sidebar-width);
+  flex-shrink: 0;
+  background: var(--sidebar-bg);
+  color: var(--sidebar-text);
+  display: flex;
+  flex-direction: column;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  z-index: 40;
+  border-right: 1px solid rgb(255 255 255 / 0.08);
+  user-select: none;
+}
+.sidebar__brand {
+  padding: var(--space-6) var(--space-5) var(--space-5);
+  border-bottom: 1px solid rgb(255 255 255 / 0.08);
+  background: linear-gradient(180deg, rgb(10 37 64 / 0.6) 0%, rgb(7 23 40 / 0.95) 100%);
+}
+.sidebar__identity {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-2);
+}
+.sidebar__logo {
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  border-radius: var(--radius-md);
+  display: grid;
+  place-items: center;
+  background: rgb(197 160 89 / 0.15);
+  border: 1px solid rgb(197 160 89 / 0.4);
+  color: var(--accent-gold);
+}
+.sidebar__title {
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  color: #fff;
+  text-transform: uppercase;
+}
+.sidebar__subtitle {
+  font-size: 11px;
+  font-weight: 500;
+  color: rgb(255 255 255 / 0.6);
+}
+.sidebar__pill {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) 10px;
+  border-radius: var(--radius-sm);
+  background: rgb(255 255 255 / 0.04);
+  border: 1px solid rgb(255 255 255 / 0.06);
+  font-size: 11px;
+  font-weight: 600;
+  color: rgb(197 160 89 / 0.95);
+  text-transform: uppercase;
+}
+.sidebar__nav {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-4) var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+.sidebar__group-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: rgb(255 255 255 / 0.4);
+  padding: 0 10px var(--space-2);
+}
+.sidebar__list {
+  list-style: none;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+/* Each item carries an accent (gold, blue, amber, red, purple, green) shown when active. */
+.nav-item {
+  --accent: var(--accent-gold);
+  --accent-bg: rgb(197 160 89 / 0.18);
+  --accent-border: rgb(197 160 89 / 0.45);
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 10px 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid transparent;
+  color: rgb(255 255 255 / 0.75);
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 500;
+  transition: background var(--transition-fast), border-color var(--transition-fast);
+}
+.nav-item--blue {
+  --accent: #60a5fa;
+  --accent-bg: rgb(59 130 246 / 0.2);
+  --accent-border: rgb(59 130 246 / 0.5);
+}
+.nav-item--amber {
+  --accent: #fbbf24;
+  --accent-bg: rgb(245 158 11 / 0.2);
+  --accent-border: rgb(245 158 11 / 0.5);
+}
+.nav-item--red {
+  --accent: #f87171;
+  --accent-bg: rgb(239 68 68 / 0.2);
+  --accent-border: rgb(239 68 68 / 0.5);
+}
+.nav-item--purple {
+  --accent: #c084fc;
+  --accent-bg: rgb(168 85 247 / 0.2);
+  --accent-border: rgb(168 85 247 / 0.5);
+}
+.nav-item--green {
+  --accent: #34d399;
+  --accent-bg: rgb(16 185 129 / 0.2);
+  --accent-border: rgb(16 185 129 / 0.5);
+}
+.nav-item > svg:first-child {
+  flex-shrink: 0;
+  color: rgb(255 255 255 / 0.6);
+}
+.nav-item:hover {
+  background: rgb(255 255 255 / 0.05);
+  color: #fff;
+}
+.nav-item[aria-current="page"] {
+  background: var(--accent-bg);
+  border-color: var(--accent-border);
+  color: #fff;
+  font-weight: 600;
+}
+.nav-item[aria-current="page"] svg {
+  color: var(--accent);
+}
+.nav-item__text {
+  flex: 1;
+  min-width: 0;
+}
+.nav-item__label,
+.nav-item__hint {
+  display: block;
+}
+.nav-item__hint {
+  font-size: 10px;
+  font-weight: 400;
+  color: rgb(255 255 255 / 0.4);
+}
+.nav-item__chevron {
+  display: none;
+}
+.nav-item[aria-current="page"] .nav-item__chevron {
+  display: block;
+}
+.nav-item__badge {
+  margin-left: auto;
+  min-width: 20px;
+  padding: 0 6px;
+  border-radius: var(--radius-full);
+  background: var(--accent-rose);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  text-align: center;
+}
+
+/* Profile card at the bottom of the sidebar. */
+.sidebar__profile {
+  padding: 14px var(--space-4);
+  border-top: 1px solid rgb(255 255 255 / 0.08);
+  background: rgb(0 0 0 / 0.25);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.sidebar__who {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+.sidebar__name {
+  font-size: 13px;
+  font-weight: 700;
+  color: #fff;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sidebar__actions {
+  display: flex;
+  gap: var(--space-2);
+}
+.sidebar__action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  padding: 7px var(--space-2);
+  border-radius: var(--radius-sm);
+  border: 1px solid rgb(255 255 255 / 0.15);
+  background: rgb(255 255 255 / 0.08);
+  color: rgb(255 255 255 / 0.9);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.sidebar__action--grow {
+  flex: 1;
+}
+.sidebar__action--danger {
+  border-color: rgb(239 68 68 / 0.3);
+  background: rgb(239 68 68 / 0.15);
+  color: #f87171;
+}
+.sidebar__footnote {
+  font-size: 10px;
+  color: rgb(255 255 255 / 0.4);
+}
+
+/* Avatars and role chips, coloured per role. */
+.avatar {
+  --role: var(--primary-light);
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border-radius: var(--radius-full);
+  display: grid;
+  place-items: center;
+  background: var(--role);
+  color: #fff;
+  font-weight: 700;
+  font-size: 12px;
+  text-transform: uppercase;
+}
+.avatar--lg {
+  width: 36px;
+  height: 36px;
+  font-size: 14px;
+}
+.role-chip {
+  --role: var(--primary-light);
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--role);
+  background: color-mix(in srgb, var(--role) 18%, transparent);
+}
+.role--owner {
+  --role: #c5a059;
+}
+.role--editor {
+  --role: #3b82f6;
+}
+.role--support_agent {
+  --role: #10b981;
+}
+.role--viewer {
+  --role: #64748b;
+}
+
+@media (max-width: 1024px) {
+  .sidebar {
+    position: fixed;
+    left: 0;
+    transform: translateX(-100%);
+    transition: transform var(--transition-normal);
+  }
+  .sidebar--open {
+    transform: none;
+    box-shadow: var(--shadow-xl);
+  }
+}

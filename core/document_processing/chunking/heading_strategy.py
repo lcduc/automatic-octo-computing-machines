@@ -32,21 +32,40 @@ class HeadingChunker:
         """
         Split markdown ``text`` into sections.
 
+        A heading with no text under it (a title, or a parent heading directly
+        followed by a child) is carried into the next section instead of
+        becoming a chunk of its own: a bare "## LUONG CHI DUC" chunk matches
+        nothing, and the section it introduces loses that context.
+
         Returns:
             Chunks in order; each carries its ``heading`` (when it has one). Text
             with no headings becomes one section.
         """
         drafts: List[ChunkDraft] = []
+        carried: List[str] = []
         for heading, body in self._sections(text):
+            if heading is not None and not self._has_body(body):
+                carried.append(body.strip())
+                continue
             metadata = {"heading": heading[:MAX_HEADING_METADATA_CHARS]} if heading else {}
-            content = TextUtils.clean_chunk_text(body)
+            content = TextUtils.clean_chunk_text("\n".join([*carried, body]))
+            carried = []
             if not content.strip():
                 continue
             if self._max_chars is not None and len(content) > self._max_chars:
                 drafts.extend(SizeChunker(self._max_chars).split(content, metadata))
             else:
                 drafts.append(ChunkDraft(content, metadata))
+        if carried:
+            # Headings at the very end have no section to join; keep their text.
+            last_heading = HEADING_PATTERN.match(carried[-1]).group(2)
+            drafts.append(ChunkDraft("\n".join(carried), {"heading": last_heading[:MAX_HEADING_METADATA_CHARS]}))
         return drafts
+
+    @staticmethod
+    def _has_body(section: str) -> bool:
+        """Whether a section has any text besides its heading line."""
+        return bool(section.partition("\n")[2].strip())
 
     def _sections(self, text: str) -> List[Tuple[Optional[str], str]]:
         """``(heading text or None, section text including its heading line)`` pairs."""

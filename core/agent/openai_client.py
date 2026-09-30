@@ -23,6 +23,9 @@ from .prompts import SystemPrompts
 
 logger = logging.getLogger(__name__)
 
+# Model families that still take ``max_tokens`` + ``temperature``; everything else is newer.
+LEGACY_PARAMETER_MODEL_PREFIXES = ("gpt-3.5", "gpt-4")
+
 
 class OpenAIClientProvider(BaseLLMProvider):
     """
@@ -122,10 +125,11 @@ class OpenAIClientProvider(BaseLLMProvider):
         """
         Build the model/token-limit/temperature kwargs for a completion call.
 
-        ``gpt-5*`` models reject the legacy ``max_tokens`` parameter (they need
-        ``max_completion_tokens`` instead) and only support the default
-        ``temperature`` of 1, so both are adapted per model family here rather
-        than at each call site.
+        Only the legacy ``gpt-3.5``/``gpt-4*`` families take ``max_tokens`` and a
+        custom ``temperature``. Every newer family (``gpt-5*``, ``gpt-6*``, the
+        ``o*`` reasoning models) rejects ``max_tokens`` (it needs
+        ``max_completion_tokens``) and only supports the default ``temperature``
+        of 1, so an unknown model name gets the newer parameter set.
 
         ``reasoning_effort`` is a real parameter for ``gpt-5*`` models, but the
         ``openai`` SDK version this project is pinned to (see
@@ -142,22 +146,22 @@ class OpenAIClientProvider(BaseLLMProvider):
         Args:
             model: Model name to resolve the parameter set for.
             max_tokens: Completion token cap.
-            temperature: Sampling temperature; dropped for ``gpt-5*`` models.
+            temperature: Sampling temperature; sent only to legacy models.
             reasoning_effort: One of ``none/minimal/low/medium/high/xhigh/max``
-                (model-dependent); ignored for non-``gpt-5*`` models, and
-                omitted entirely when falsy.
+                (model-dependent); ignored for legacy models, and omitted
+                entirely when falsy.
 
         Returns:
             Kwargs ready to splat into ``chat.completions.create``.
         """
         kwargs: Dict[str, Any] = {"model": model}
-        if model.startswith("gpt-5"):
+        if model.startswith(LEGACY_PARAMETER_MODEL_PREFIXES):
+            kwargs["max_tokens"] = max_tokens
+            kwargs["temperature"] = temperature
+        else:
             kwargs["max_completion_tokens"] = max_tokens
             if reasoning_effort:
                 kwargs["extra_body"] = {"reasoning_effort": reasoning_effort}
-        else:
-            kwargs["max_tokens"] = max_tokens
-            kwargs["temperature"] = temperature
         return kwargs
 
     def _usage(self, model: str, usage: Any) -> Optional[LLMUsage]:

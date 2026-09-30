@@ -3,6 +3,7 @@
 
 ## 0. Before Writing Code
 - Understand first: read the task and the code it touches, trace the real flow end to end. A small diff in the wrong place is a second bug.
+- Before adding a class/layer or touching several modules, apply the `codebase-design` skill: deletion test (does complexity vanish, or reappear in N callers?), and check hot spots via `git log` + CodeGraph. Friction found outside the task → one line in the reply, no fix.
 - Then stop at the first rung that holds:
   1. Does this need to exist at all? Speculative need → skip it, say so in one line (YAGNI).
   2. Already in this codebase? Reuse the existing class/helper/pattern.

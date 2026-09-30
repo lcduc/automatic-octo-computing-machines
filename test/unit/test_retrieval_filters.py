@@ -41,7 +41,7 @@ SNAPSHOT = KnowledgeSnapshot.build(
 
 def _titles(access_level):
     results = ContextRetriever(_SameVector()).search(
-        "chính sách nghỉ phép", SNAPSHOT, top_k=10, semantic_weight=1.0, threshold=0.0,
+        "chính sách nghỉ phép", SNAPSHOT, top_k=10, semantic_weight=1.0, threshold=0.0, semantic_threshold=0.0,
         max_context_chunks=10, expansion_radius=0, access_level=access_level, today=TODAY,
     )
     return {item.chunk.document_title for item in results}

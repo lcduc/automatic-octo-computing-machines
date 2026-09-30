@@ -2,11 +2,12 @@
  * Smoke test: every route renders against a mocked admin API without hitting
  * the error boundary, and navigation follows the admin's role.
  */
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { createMemoryRouter, RouterProvider } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ToastProvider } from "./components/ui/Toast";
 import { I18nProvider } from "./i18n/I18nProvider";
+import { ThemeProvider } from "./lib/theme";
 import { routes } from "./router";
 import type { Role } from "./lib/types";
 
@@ -107,11 +108,34 @@ function fixtures(role: Role): Record<string, unknown> {
   };
 }
 
+/** What the widget server (`/api/chat/*`) and the admin's runtime config answer. */
+const widgetConfig = { title: "Trợ lý", welcome_message: "Chào bạn", primary_color: "#0B5FFF", suggested_questions: ["Giờ làm việc?"] };
+const streamedTurn = [
+  ["meta", { conversation_id: "c-1", message_id: "m-2" }],
+  ["delta", { text: "8 giờ." }],
+  ["done", { outcome: "answered", text: "8 giờ.", citations: [{ document_id: "doc-1", chunk_id: "chunk-1", title: "Luật", source: "general", score: 0.9 }], confidence: 0.8, cached: false, handoff_id: null }],
+].map(([name, payload]) => `event: ${String(name)}\ndata: ${JSON.stringify(payload)}\n\n`);
+
+function sse(frames: string[]): Response {
+  const body = new ReadableStream({
+    start(controller) {
+      for (const frame of frames) controller.enqueue(new TextEncoder().encode(frame));
+      controller.close();
+    },
+  });
+  return new Response(body, { status: 200, headers: { "Content-Type": "text/event-stream" } });
+}
+
+const json = (value: unknown) => new Response(JSON.stringify(value), { status: 200, headers: { "Content-Type": "application/json" } });
+
 function installFetch(role: Role) {
   const data = fixtures(role);
   vi.stubGlobal(
     "fetch",
     vi.fn(async (input: string) => {
+      if (input === "/runtime-config.json") return json({ widgetOrigin: "http://localhost:3000" });
+      if (input === "/api/chat/config") return json(widgetConfig);
+      if (input === "/api/chat/stream") return sse(streamedTurn);
       const path = input.replace("/api/v1/admin/", "").split("?")[0] ?? "";
       if (path === "usage/live") return new Response(new ReadableStream({ start: (c) => c.close() }), { status: 200 });
       if (!(path in data)) return new Response(JSON.stringify({ detail: `no fixture for ${path}` }), { status: 404 });
@@ -123,15 +147,20 @@ function installFetch(role: Role) {
 function renderAt(path: string) {
   const router = createMemoryRouter(routes, { initialEntries: [path] });
   return render(
-    <I18nProvider>
-      <ToastProvider>
-        <RouterProvider router={router} />
-      </ToastProvider>
-    </I18nProvider>,
+    <ThemeProvider>
+      <I18nProvider>
+        <ToastProvider>
+          <RouterProvider router={router} />
+        </ToastProvider>
+      </I18nProvider>
+    </ThemeProvider>,
   );
 }
 
-beforeEach(() => installFetch("owner"));
+beforeEach(() => {
+  window.localStorage.setItem("admin.language", "vi"); // the assertions below read Vietnamese copy
+  installFetch("owner");
+});
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
@@ -153,6 +182,9 @@ describe("every page renders", () => {
     ["/settings?tab=widget", "Cấu hình"],
     ["/access", "Tài khoản & khoá API"],
     ["/audit", "Nhật ký thao tác"],
+    ["/chat", "Thử trò chuyện"],
+    ["/widget", "Xem trước khung chat"],
+    ["/review", "Hàng đợi phê duyệt"],
   ])("%s", async (path, heading) => {
     renderAt(path);
     expect(await screen.findByRole("heading", { level: 1, name: heading })).toBeTruthy();
@@ -164,6 +196,61 @@ describe("every page renders", () => {
     expect(await screen.findByText(/chưa dùng nó để trả lời/)).toBeTruthy();
     expect(screen.getByText("Đã sửa tay")).toBeTruthy();
     expect(screen.getByText("article: Điều 1")).toBeTruthy();
+  });
+});
+
+describe("access page", () => {
+  it("creates an account from a dialog instead of an inline form", async () => {
+    renderAt("/access");
+    fireEvent.click(await screen.findByRole("button", { name: "Thêm tài khoản" }));
+    const dialog = await screen.findByRole("dialog");
+
+    fireEvent.change(within(dialog).getByLabelText("E-mail"), { target: { value: "new@example.test" } });
+    fireEvent.change(within(dialog).getByLabelText("Mật khẩu ban đầu"), { target: { value: "long-enough-password" } });
+    fireEvent.submit(within(dialog).getByLabelText("E-mail").closest("form") as HTMLFormElement);
+
+    expect(await screen.findByText("Đã tạo tài khoản new@example.test.")).toBeTruthy();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    const init = vi.mocked(fetch).mock.calls.find(([, options]) => options?.method === "POST")?.[1];
+    expect(JSON.parse(String(init?.body))).toEqual({ email: "new@example.test", password: "long-enough-password", role: "viewer" });
+  });
+});
+
+describe("demo chat", () => {
+  it("streams an answer with its outcome, citation and trace link", async () => {
+    renderAt("/chat");
+    const input = await screen.findByRole("textbox", { name: "Câu hỏi" });
+    fireEvent.change(input, { target: { value: "Giờ làm việc?" } });
+    fireEvent.click(screen.getByRole("button", { name: "Gửi câu hỏi" }));
+
+    expect(await screen.findByText("8 giờ.")).toBeTruthy();
+    expect(await screen.findByText("Đã trả lời")).toBeTruthy();
+    expect(screen.getByText("Luật")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Xem truy vết" }).getAttribute("href")).toBe("/conversations/c-1");
+    const init = vi.mocked(fetch).mock.calls.find(([url]) => url === "/api/chat/stream")?.[1];
+    expect(JSON.parse(String(init?.body))).toEqual({ message: "Giờ làm việc?" });
+  });
+
+  it("frames the real widget from the runtime origin", async () => {
+    renderAt("/widget");
+    const frame = await screen.findByTitle("Trợ lý");
+    expect(frame.getAttribute("src")).toBe("http://localhost:3000/widget");
+  });
+});
+
+describe("features waiting for the backend", () => {
+  it.each([
+    ["/knowledge/doc-1", ["Gửi duyệt", "Phê duyệt", "Lịch sử phiên bản"]],
+    ["/review", ["Phê duyệt", "Từ chối"]],
+    ["/access", ["Xem với vai trò này", "Xoá"]],
+    ["/chat", ["Ngắt nguồn tri thức"]],
+  ])("%s shows them disabled", async (path, labels) => {
+    renderAt(path);
+    await screen.findByRole("heading", { level: 1 });
+    for (const label of labels) {
+      const buttons = await screen.findAllByRole("button", { name: new RegExp(`^${label}`) });
+      expect(buttons.every((button) => (button as HTMLButtonElement).disabled)).toBe(true);
+    }
   });
 });
 

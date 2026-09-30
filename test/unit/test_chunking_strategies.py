@@ -115,6 +115,21 @@ def test_table_rows_repeat_the_header_and_skip_empty_rows():
     assert drafts[-1].content == "Ghi chú cuối bảng."
 
 
+def test_a_heading_right_above_a_table_goes_with_every_table_chunk():
+    # A DOCX CV: the section heading must not stay behind at the end of the preceding prose chunk.
+    text = (
+        "- Có khả năng sử dụng tiếng Anh.\n##### 2 QUÁ TRÌNH ĐÀO TẠO\n\n"
+        "| Thời gian | Trường |\n|---|---|\n| 2022 – 2025 | Đại học Swinburne |\n| 2022 | IELTS |"
+    )
+    drafts = TableRowsChunker(rows_per_chunk=1).split(text)
+
+    assert drafts[0].content == "- Có khả năng sử dụng tiếng Anh."
+    tables = drafts[1:]
+    assert len(tables) == 2
+    assert all(d.content.startswith("##### 2 QUÁ TRÌNH ĐÀO TẠO\n| Thời gian | Trường |") for d in tables)
+    assert tables[0].metadata == {"rows": "1-1", "heading": "2 QUÁ TRÌNH ĐÀO TẠO"}
+
+
 def test_heading_sections_are_capped_by_size():
     text = "# Title\nIntro.\n## Part A\n" + "Một câu. " * 100 + "\n### Detail\nKept with Part A."
     drafts = HeadingChunker(max_level=2, max_chars=200).split(text)
@@ -122,6 +137,28 @@ def test_heading_sections_are_capped_by_size():
     assert drafts[0].metadata == {"heading": "Title"}
     part_a = [d for d in drafts if d.metadata.get("heading") == "Part A"]
     assert len(part_a) > 1 and "Kept with Part A." in part_a[-1].content
+
+
+def test_headings_without_text_carry_into_the_next_section():
+    # Docling flattens a PDF CV's headings to "##": name, section and job title arrive with nothing under them.
+    text = "## LUONG CHI DUC\n## WORK EXPERIENCE\n## AI Engineer\n## Tri Nghia Tech\n- Led teams of 5-6.\n## EDUCATION\n"
+    drafts = HeadingChunker(max_level=6, max_chars=None).split(text)
+
+    assert len(drafts) == 2
+    assert drafts[0].content.startswith("## LUONG CHI DUC") and "Led teams" in drafts[0].content
+    assert drafts[0].metadata == {"heading": "Tri Nghia Tech"}
+    assert drafts[1].content == "## EDUCATION"  # a trailing lone heading is kept, not dropped
+
+
+def test_upload_and_rechunk_auto_split_docling_markdown_the_same_way():
+    # Uploads chunk inside the Docling processor; re-chunk "auto" uses the Chunker. They must agree.
+    from core.document_processing.docling_processor import DoclingProcessor
+
+    text = "## LUONG CHI DUC\n## WORK EXPERIENCE\n## Tri Nghia Tech\n- Led teams.\n## EDUCATION\nSwinburne"
+    uploaded = DoclingProcessor()._chunk_markdown_by_headings(text)
+
+    assert uploaded == [d.content for d in Chunker().split(text, ChunkingSpec(), "docling").drafts]
+    assert uploaded[0].startswith("## LUONG CHI DUC") and "Led teams." in uploaded[0]
 
 
 def test_auto_follows_the_extraction_path():

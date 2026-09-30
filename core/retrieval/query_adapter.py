@@ -54,8 +54,9 @@ def build_from_evals(
     """
     Encode queries and their matched positive chunks and compute the adapter.
     """
-    q_emb = embedder.encode(queries, convert_to_numpy=True)
-    p_emb = embedder.encode(positives, convert_to_numpy=True)
+    # With the model's query/passage prompts, exactly as the live search embeds them.
+    q_emb = embedder.encode_query(queries, convert_to_numpy=True)
+    p_emb = embedder.encode_document(positives, convert_to_numpy=True)
     return compute_query_adapter(q_emb, p_emb, regularization_lambda=lambda_reg)
 
 

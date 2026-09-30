@@ -60,7 +60,8 @@ def _snapshot():
 
 def _search(retriever, snapshot, **overrides):
     params = dict(
-        top_k=2, semantic_weight=0.7, threshold=0.5, max_context_chunks=6, expansion_radius=1, sources=None
+        top_k=2, semantic_weight=0.7, threshold=0.5, semantic_threshold=0.5, max_context_chunks=6,
+        expansion_radius=1, sources=None,
     )
     params.update(overrides)
     return retriever.search("salary", snapshot, **params)
@@ -84,6 +85,53 @@ def test_match_is_expanded_with_same_document_neighbours_in_order():
     contents = [item.chunk.content for item in results]
     assert contents == ["intro chapter", "salary policy details", "closing remarks"]
     assert [item.matched for item in results] == [False, True, False]
+
+
+def _ranked_snapshot(documents=4):
+    """``documents`` docs of filler / answer / filler; answer ``d`` ranks d-th."""
+    rows = []
+    for rank in range(documents):
+        document_id = uuid.uuid4()
+        rows += [
+            _row(document_id, 0, f"before {rank}", [0.0, 1.0, 0.0]),
+            _row(document_id, 1, f"answer {rank}", [1.0, 0.05 * rank, 0.0]),
+            _row(document_id, 2, f"after {rank}", [0.0, 0.0, 1.0]),
+        ]
+    return KnowledgeSnapshot.build(rows, version=1)
+
+
+def test_only_the_best_match_is_expanded_and_the_other_matches_follow_by_rank():
+    retriever = ContextRetriever(FakeEmbeddings([1, 0, 0]), reranker=None)
+    results = _search(retriever, _ranked_snapshot(), top_k=4, max_context_chunks=6)
+    assert [item.chunk.content for item in results] == [
+        "before 0", "answer 0", "after 0", "answer 1", "answer 2", "answer 3",
+    ]
+    assert [item.matched for item in results] == [False, True, False, True, True, True]
+
+
+def test_a_tight_cap_drops_neighbours_before_matches():
+    retriever = ContextRetriever(FakeEmbeddings([1, 0, 0]), reranker=None)
+    results = _search(retriever, _ranked_snapshot(), top_k=4, max_context_chunks=5)
+    assert [item.chunk.content for item in results] == ["before 0", "answer 0", "answer 1", "answer 2", "answer 3"]
+
+
+def test_a_neighbour_that_is_also_a_match_keeps_its_place_and_match_data_once():
+    rows = [
+        _row(DOC_A, 0, "salary policy", [1.0, 0.0, 0.0]),
+        _row(DOC_A, 1, "salary table", [0.9, 0.1, 0.0]),
+        _row(DOC_A, 2, "closing remarks", [0.0, 0.0, 1.0]),
+    ]
+    retriever = ContextRetriever(FakeEmbeddings([1, 0, 0]), reranker=None)
+    results = _search(retriever, KnowledgeSnapshot.build(rows, version=1), top_k=2)
+    assert [(item.chunk.content, item.matched) for item in results] == [("salary policy", True), ("salary table", True)]
+
+
+def test_a_chunk_missing_from_the_index_leaves_no_false_neighbour():
+    # Position 1 is not indexed (e.g. no embedding), so position 2 is not adjacent to 0.
+    rows = [_row(DOC_A, 0, "salary policy", [1.0, 0.0, 0.0]), _row(DOC_A, 2, "closing remarks", [0.0, 0.0, 1.0])]
+    retriever = ContextRetriever(FakeEmbeddings([1, 0, 0]), reranker=None)
+    results = _search(retriever, KnowledgeSnapshot.build(rows, version=1), top_k=1)
+    assert [item.chunk.content for item in results] == ["salary policy"]
 
 
 def test_neighbours_never_cross_document_boundaries():
@@ -110,9 +158,34 @@ def test_source_priority_reorders_equally_relevant_matches():
     assert [item.chunk.source for item in results] == ["FAQ", "general"]
 
 
-def test_without_reranker_gates_on_cosine_similarity():
+def test_reranker_sees_the_document_title_with_each_chunk():
+    # "Which university did Luong Chi Duc attend?" vs an EDUCATION chunk that never names him:
+    # only the document title says whose CV it is.
+    rows = [_row(DOC_A, 0, "## EDUCATION\nSwinburne University", [1.0, 0.0, 0.0], title="CV Luong Chi Duc")]
+    retriever = ContextRetriever(FakeEmbeddings([1, 0, 0]), reranker=FakeReranker("Luong Chi Duc"))
+
+    results = _search(retriever, KnowledgeSnapshot.build(rows, version=1), expansion_radius=0)
+
+    assert [item.chunk.content for item in results] == ["## EDUCATION\nSwinburne University"]
+
+
+def test_without_reranker_gates_on_the_semantic_threshold():
     retriever = ContextRetriever(FakeEmbeddings([1, 0, 0]), reranker=None)
-    results = _search(retriever, _snapshot(), threshold=0.999, expansion_radius=0)
+    results = _search(retriever, _snapshot(), threshold=0.0, semantic_threshold=0.999, expansion_radius=0)
+    assert [item.chunk.content for item in results] == ["salary policy details"]
+
+
+class FailingReranker:
+    """A reranker whose scoring failed: returns ``None`` like ``Reranker.score`` does."""
+
+    def score(self, query, texts):
+        return None
+
+
+def test_a_failed_reranker_gates_on_the_semantic_threshold_not_the_reranker_one():
+    # A reranker threshold of 0.3 on cosine scores would let the unrelated FAQ chunk (0.99) and more through.
+    retriever = ContextRetriever(FakeEmbeddings([1, 0, 0]), reranker=FailingReranker())
+    results = _search(retriever, _snapshot(), threshold=0.3, semantic_threshold=0.999, expansion_radius=0)
     assert [item.chunk.content for item in results] == ["salary policy details"]
 
 

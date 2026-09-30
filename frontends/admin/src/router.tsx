@@ -7,16 +7,19 @@ import { useI18n } from "./i18n/I18nProvider";
 import { useSession } from "./lib/session";
 import { AccessPage } from "./pages/AccessPage";
 import { AuditPage } from "./pages/AuditPage";
+import { ChatPage } from "./pages/chat/ChatPage";
 import { ConversationPage } from "./pages/conversations/ConversationPage";
 import { ConversationsPage } from "./pages/conversations/ConversationsPage";
 import { FeedbackPage } from "./pages/FeedbackPage";
 import { HandoffsPage } from "./pages/HandoffsPage";
 import { DocumentPage } from "./pages/knowledge/DocumentPage";
 import { KnowledgePage } from "./pages/knowledge/KnowledgePage";
+import { ReviewQueuePage } from "./pages/knowledge/ReviewQueuePage";
 import { LoginPage } from "./pages/LoginPage";
 import { LogsPage } from "./pages/LogsPage";
 import { OverviewPage } from "./pages/overview/OverviewPage";
 import { SettingsPage } from "./pages/settings/SettingsPage";
+import { WidgetPreviewPage } from "./pages/widget/WidgetPreviewPage";
 
 /** Pages only owners may open (the backend refuses the calls for anyone else anyway). */
 function OwnerOnly({ children }: { children: ReactNode }) {
@@ -37,7 +40,7 @@ function RouteError() {
   return <Callout tone="danger">{t("errors.page", { message })}</Callout>;
 }
 
-const handle = (crumb: RouteHandle["crumb"]): RouteHandle => ({ crumb });
+const handle = (crumb: RouteHandle["crumb"], bleed = false): RouteHandle => ({ crumb, bleed });
 
 /** The route table, used by the browser router (main.tsx) and the smoke tests. */
 export const routes: RouteObject[] = [
@@ -48,8 +51,11 @@ export const routes: RouteObject[] = [
     errorElement: <RouteError />,
     children: [
       { index: true, element: <OverviewPage />, handle: handle("nav.overview") },
+      { path: "chat", element: <ChatPage />, handle: handle("nav.chat", true) },
+      { path: "widget", element: <WidgetPreviewPage />, handle: handle("nav.widget") },
       { path: "knowledge", element: <KnowledgePage />, handle: handle("nav.knowledge") },
       { path: "knowledge/:id", element: <DocumentPage />, handle: handle("nav.knowledge") },
+      { path: "review", element: <ReviewQueuePage />, handle: handle("nav.review") },
       { path: "conversations", element: <ConversationsPage />, handle: handle("nav.conversations") },
       { path: "conversations/:id", element: <ConversationPage />, handle: handle("nav.conversations") },
       { path: "feedback", element: <FeedbackPage />, handle: handle("nav.feedback") },

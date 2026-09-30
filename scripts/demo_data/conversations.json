@@ -1,0 +1,57 @@
+[
+  {"turns": [
+    {"message": "xin chào"},
+    {"message": "Em mới tốt nghiệp cấp 3, muốn sang Đức làm việc thì đi theo diện nào?", "rating": 1},
+    {"message": "diện đó cần tiếng Đức trình độ nào?", "rating": 1},
+    {"message": "học đến trình độ đó mất bao lâu?"}
+  ]},
+  {"turns": [
+    {"message": "Học nghề điều dưỡng ở Đức có được trả lương không?", "rating": 1},
+    {"message": "khoảng bao nhiêu một tháng?"}
+  ]},
+  {"turns": [
+    {"message": "Đi Đức theo diện học nghề thì tổng chi phí khoảng bao nhiêu?", "rating": 1},
+    {"message": "có được vay vốn không?", "rating": 1}
+  ]},
+  {"turns": [
+    {"message": "Có công ty hứa đi Đức không cần tiếng, bao đỗ visa, đặt cọc 50 triệu. Có đáng tin không?", "rating": 1}
+  ]},
+  {"turns": [
+    {"message": "Hồ sơ xin visa đi Đức cần những giấy tờ gì?", "rating": 1},
+    {"message": "nộp hồ sơ ở đâu?"}
+  ]},
+  {"turns": [
+    {"message": "Trung tâm có tư vấn ở Hương Sơn không, lịch thế nào?", "rating": 1}
+  ]},
+  {"turns": [
+    {"message": "Tôi 34 tuổi, chưa có bằng nghề, còn cơ hội sang Đức không?"},
+    {"message": "tôi muốn gặp nhân viên tư vấn", "contact": {"name": "Nguyễn Văn Demo", "phone": "0900000001", "details": "Muốn tư vấn diện học nghề cho người trên 30 tuổi"}}
+  ]},
+  {"turns": [
+    {"message": "Thẻ cơ hội Chancenkarte là gì?", "rating": 1},
+    {"message": "ai thì phù hợp với thẻ này?"}
+  ]},
+  {"turns": [
+    {"message": "Học phí khóa B1 ở trung tâm là bao nhiêu?", "rating": 1},
+    {"message": "có được giảm học phí không?", "rating": 1}
+  ]},
+  {"turns": [
+    {"message": "What language level do I need to work as a nurse in Germany?", "rating": 1},
+    {"message": "and how long does it take to get there from zero?"}
+  ]},
+  {"turns": [
+    {"message": "Thời tiết Hà Tĩnh hôm nay thế nào?", "rating": -1, "comment": "Hỏi thử ngoài phạm vi"}
+  ]},
+  {"turns": [
+    {"message": "Sang Đức rồi có được đưa vợ con sang không?", "rating": 1},
+    {"message": "Lương điều dưỡng chính thức ở Đức cao nhất bao nhiêu?", "rating": -1, "comment": "Chưa có số liệu lương sau khi tốt nghiệp"}
+  ]},
+  {"turns": [
+    {"message": "cho tôi nói chuyện với nhân viên", "contact": {"name": "Trần Thị Mẫu", "email": "demo.visitor@example.com", "details": "Hỏi về công nhận bằng điều dưỡng"}}
+  ]},
+  {"turns": [
+    {"message": "Bằng điều dưỡng Việt Nam có được công nhận ở Đức không?", "rating": 1},
+    {"message": "thủ tục công nhận mất bao lâu?"},
+    {"message": "cảm ơn nhé"}
+  ]}
+]
