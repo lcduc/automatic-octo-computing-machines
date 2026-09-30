@@ -1,0 +1,93 @@
+/* Features waiting for backend support: visible, dimmed and marked, never actionable. */
+
+.planned-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 1px 6px;
+  border-radius: var(--radius-full);
+  border: 1px dashed var(--border-strong);
+  background: var(--bg-subtle);
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+.chat-banner .planned-badge {
+  border-color: rgb(255 255 255 / 0.35);
+  background: rgb(255 255 255 / 0.1);
+  color: rgb(255 255 255 / 0.8);
+}
+.btn--planned:disabled {
+  opacity: 0.6;
+  border-style: dashed;
+}
+.chat-banner__btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.planned-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+.planned-section__note {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text-muted);
+}
+.planned-section__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  opacity: 0.75;
+}
+/* The badge sits on the label row so the control keeps the full form width. */
+.planned-field {
+  position: relative;
+}
+.planned-field > .planned-badge {
+  position: absolute;
+  top: 0;
+  right: 0;
+}
+
+/* Workflow steps (draft → review → approved → published). */
+.stepper {
+  list-style: none;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.stepper__step {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 6px var(--space-3);
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-main);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+.stepper__step--done {
+  border-color: var(--status-success-border);
+  background: var(--status-success-bg);
+  color: var(--status-success-text);
+}
+.stepper__dot {
+  width: 20px;
+  height: 20px;
+  border-radius: var(--radius-full);
+  display: grid;
+  place-items: center;
+  background: var(--bg-surface);
+  border: 1px solid currentcolor;
+  font-size: 11px;
+}

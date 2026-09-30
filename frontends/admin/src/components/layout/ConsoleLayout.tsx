@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Outlet } from "react-router";
+import { Outlet, useMatches } from "react-router";
 import { useI18n } from "../../i18n/I18nProvider";
 import { query } from "../../lib/api";
 import { capabilitiesFor } from "../../lib/permissions";
@@ -7,8 +7,9 @@ import { SessionProvider } from "../../lib/session";
 import type { AdminUser, KnowledgeDocument, Handoff, Page } from "../../lib/types";
 import { useApi } from "../../lib/use-api";
 import { ErrorState, LoadingState } from "../ui/primitives";
+import { ChangePasswordModal } from "./ChangePasswordModal";
 import { Sidebar } from "./Sidebar";
-import { TopBar } from "./TopBar";
+import { TopBar, type RouteHandle } from "./TopBar";
 
 /** How often the sidebar badge and the bell re-check pending work. */
 const ALERT_REFRESH_MS = 30_000;
@@ -18,12 +19,15 @@ export function ConsoleLayout() {
   const { t } = useI18n();
   const { data: admin, error, reload } = useApi<AdminUser>("auth/me");
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [changingPassword, setChangingPassword] = useState(false);
+  const bleed = useMatches().some((match) => (match.handle as RouteHandle | undefined)?.bleed);
   const pending = useApi<Page<Handoff>>(admin ? `handoffs${query({ status: "open", limit: 1 })}` : null, ALERT_REFRESH_MS);
   const failed = useApi<Page<KnowledgeDocument>>(admin ? `knowledge/documents${query({ status: "failed", limit: 1 })}` : null, ALERT_REFRESH_MS);
 
   if (error) return <ErrorState message={error} onRetry={reload} />;
   if (!admin) return <LoadingState />;
-  const pendingHandoffs = pending.data?.total ?? 0;
+  const pendingHandoffs = pending.data?.total ?? null;
+  const openPasswordDialog = () => setChangingPassword(true);
 
   return (
     <SessionProvider admin={admin}>
@@ -33,17 +37,24 @@ export function ConsoleLayout() {
       <div className="shell">
         <Sidebar
           capabilities={capabilitiesFor(admin.role)}
-          pendingHandoffs={pendingHandoffs}
+          pendingHandoffs={pendingHandoffs ?? 0}
           open={sidebarOpen}
           onNavigate={() => setSidebarOpen(false)}
+          onChangePassword={openPasswordDialog}
         />
         <div className="shell__main">
-          <TopBar onMenu={() => setSidebarOpen((value) => !value)} pendingHandoffs={pendingHandoffs} failedDocuments={failed.data?.total ?? 0} />
-          <main id="main" className="shell__content" tabIndex={-1}>
+          <TopBar
+            onMenu={() => setSidebarOpen((value) => !value)}
+            onChangePassword={openPasswordDialog}
+            pendingHandoffs={pendingHandoffs}
+            failedDocuments={failed.data?.total ?? 0}
+          />
+          <main id="main" className={bleed ? "shell__content shell__content--bleed" : "shell__content"} tabIndex={-1}>
             <Outlet />
           </main>
         </div>
       </div>
+      {changingPassword && <ChangePasswordModal onClose={() => setChangingPassword(false)} />}
     </SessionProvider>
   );
 }

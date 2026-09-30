@@ -1,6 +1,7 @@
 import { ArrowLeft, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
+import { ApprovalWorkflow } from "../../components/knowledge/ApprovalWorkflow";
 import { MetadataEditor } from "../../components/knowledge/MetadataEditor";
 import { ConfirmDialog } from "../../components/ui/Modal";
 import { Badge, Callout, Card, ErrorState, Field, LoadingState, PageHeader, Switch } from "../../components/ui/primitives";
@@ -248,6 +249,8 @@ export function DocumentPage() {
           <ChunkingPanel key={`${data.updated_at}-${data.chunk_count}`} document={data} strategies={strategies.data ?? []} onRechunked={(updated) => document.setData(updated)} />
         )}
       </div>
+
+      <ApprovalWorkflow enabled={data.enabled} />
 
       <CitingAnswers documentId={data.id} />
 

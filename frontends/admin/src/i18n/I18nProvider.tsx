@@ -26,7 +26,7 @@ function initialLanguage(): Language {
   } catch {
     // Storage can be blocked (private mode); the default language is fine.
   }
-  return "vi";
+  return "en";
 }
 
 /** Replace `{name}` placeholders with values. */

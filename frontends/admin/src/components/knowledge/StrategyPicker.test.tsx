@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { useState } from "react";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { I18nProvider } from "../../i18n/I18nProvider";
 import type { ChunkingSpec, ChunkingStrategyInfo } from "../../lib/types";
 import { defaultSpec, StrategyPicker } from "./StrategyPicker";
@@ -37,6 +37,8 @@ function Harness({ onSpec }: { onSpec: (spec: ChunkingSpec) => void }) {
 }
 
 describe("StrategyPicker", () => {
+  beforeEach(() => window.localStorage.setItem("admin.language", "vi")); // the queries below read Vietnamese labels
+
   it("builds defaults from the schema and edits typed parameters", () => {
     const specs: ChunkingSpec[] = [];
     render(

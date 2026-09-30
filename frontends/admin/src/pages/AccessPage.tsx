@@ -1,4 +1,5 @@
-import { Copy, KeyRound, RefreshCw, UserPlus } from "lucide-react";
+import { Copy, Eye, KeyRound, RefreshCw, Trash2, UserPlus } from "lucide-react";
+import { PlannedBadge, PlannedButton } from "../components/ui/Planned";
 import { useState, type FormEvent } from "react";
 import { Modal } from "../components/ui/Modal";
 import { Badge, Callout, Card, ErrorState, Field, LoadingState, PageHeader } from "../components/ui/primitives";
@@ -8,9 +9,9 @@ import { adminApi } from "../lib/api";
 import { useSession } from "../lib/session";
 import { API_KEY_SCOPES, ROLES, type AdminUser, type ApiKey, type ApiKeyCreated, type ApiKeyScope, type Role } from "../lib/types";
 import { useApi } from "../lib/use-api";
+import { NewUserDialog } from "./access/NewUserDialog";
+import { RoleMatrix } from "./access/RoleMatrix";
 
-/** Same rule as the backend (AdminCreate.password). */
-const MIN_PASSWORD_LENGTH = 10;
 /** Same defaults and bounds as the backend (ApiKeyCreate / ApiKeyRotate). */
 const DEFAULT_KEY_RATE_LIMIT = 60;
 const MAX_KEY_RATE_LIMIT = 10_000;
@@ -22,9 +23,7 @@ function Users() {
   const { admin } = useSession();
   const toast = useToast();
   const users = useApi<AdminUser[]>("users");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [role, setRole] = useState<Role>("viewer");
+  const [creating, setCreating] = useState(false);
 
   const update = async (user: AdminUser, changes: Partial<Pick<AdminUser, "role" | "disabled">>) => {
     try {
@@ -36,21 +35,17 @@ function Users() {
     }
   };
 
-  const create = async (event: FormEvent) => {
-    event.preventDefault();
-    try {
-      await adminApi("users", { method: "POST", body: { email, password, role } });
-      toast.success(t("access.userCreated", { email }));
-      setEmail("");
-      setPassword("");
-      users.reload();
-    } catch (reason) {
-      toast.error((reason as Error).message);
-    }
-  };
-
   return (
-    <Card title={t("access.users")} flush>
+    <Card
+      title={t("access.users")}
+      flush
+      actions={
+        <button type="button" className="btn btn--primary btn--sm" onClick={() => setCreating(true)}>
+          <UserPlus size={16} aria-hidden />
+          {t("access.addUser")}
+        </button>
+      }
+    >
       {users.error && <ErrorState message={users.error} onRetry={users.reload} />}
       {users.loading && <LoadingState />}
       {users.data && (
@@ -62,6 +57,11 @@ function Users() {
                 <th scope="col">{t("access.role")}</th>
                 <th scope="col">{t("access.lastLogin")}</th>
                 <th scope="col">{t("access.state")}</th>
+                <th scope="col">
+                  <span className="row">
+                    {t("access.more")} <PlannedBadge />
+                  </span>
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -86,33 +86,28 @@ function Users() {
                       {user.disabled ? t("access.enable") : t("access.disable")}
                     </button>
                   </td>
+                  <td>
+                    <div className="row">
+                      <PlannedButton small icon={Eye} label={t("access.viewAs")} />
+                      <PlannedButton small icon={Trash2} label={t("common.delete")} danger />
+                    </div>
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
       )}
-      <form className="card__body toolbar" onSubmit={create}>
-        <Field label={t("access.email")}>
-          <input className="input" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
-        </Field>
-        <Field label={t("access.initialPassword")} hint={t("account.passwordHint", { min: MIN_PASSWORD_LENGTH })}>
-          <input className="input" type="password" autoComplete="new-password" required minLength={MIN_PASSWORD_LENGTH} value={password} onChange={(e) => setPassword(e.target.value)} />
-        </Field>
-        <Field label={t("access.role")} hint={t(`role.${role}.hint`)}>
-          <select className="select" value={role} onChange={(e) => setRole(e.target.value as Role)}>
-            {ROLES.map((value) => (
-              <option key={value} value={value}>
-                {t(`role.${value}`)}
-              </option>
-            ))}
-          </select>
-        </Field>
-        <button type="submit" className="btn btn--primary">
-          <UserPlus size={16} aria-hidden />
-          {t("access.addUser")}
-        </button>
-      </form>
+      {creating && (
+        <NewUserDialog
+          onClose={() => setCreating(false)}
+          onCreated={(email) => {
+            setCreating(false);
+            toast.success(t("access.userCreated", { email }));
+            users.reload();
+          }}
+        />
+      )}
     </Card>
   );
 }
@@ -277,6 +272,7 @@ export function AccessPage() {
     <>
       <PageHeader title={t("access.title")} description={t("access.description")} />
       <Users />
+      <RoleMatrix />
       <ApiKeys />
     </>
   );

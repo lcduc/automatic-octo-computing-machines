@@ -1,13 +1,20 @@
 import {
   BookOpen,
-  Bot,
+  CheckCheck,
+  ChevronRight,
+  Database,
   FileClock,
   Headset,
+  KeyRound,
   LayoutDashboard,
+  LogOut,
+  MessageSquareQuote,
   MessagesSquare,
+  MonitorSmartphone,
   ScrollText,
   Settings,
   ShieldCheck,
+  Sparkles,
   ThumbsUp,
   type LucideIcon,
 } from "lucide-react";
@@ -15,37 +22,59 @@ import { NavLink } from "react-router";
 import { useI18n } from "../../i18n/I18nProvider";
 import type { MessageKey } from "../../i18n/vi";
 import type { Capabilities } from "../../lib/permissions";
+import { useSession } from "../../lib/session";
+
+/** Colour the item takes when it is the current page (see `.nav-item--*` in shell.css). */
+type Accent = "gold" | "blue" | "amber" | "red" | "purple" | "green";
 
 interface NavItem {
   to: string;
   label: MessageKey;
+  hint: MessageKey;
   icon: LucideIcon;
+  accent: Accent;
   /** Hidden unless the admin has this capability. */
   requires?: keyof Capabilities;
   end?: boolean;
 }
 
-const GROUPS: Array<{ label: MessageKey; items: NavItem[] }> = [
+export interface NavGroup {
+  label: MessageKey;
+  items: NavItem[];
+}
+
+/** The console's navigation; the topbar breadcrumb uses the group label as the section name. */
+export const NAV_GROUPS: NavGroup[] = [
+  {
+    label: "nav.group.portal",
+    items: [
+      { to: "/chat", label: "nav.chat", hint: "nav.chat.hint", icon: MessageSquareQuote, accent: "gold" },
+      { to: "/widget", label: "nav.widget", hint: "nav.widget.hint", icon: MonitorSmartphone, accent: "gold" },
+      { to: "/handoffs", label: "nav.handoffs", hint: "nav.handoffs.hint", icon: Headset, accent: "blue" },
+    ],
+  },
   {
     label: "nav.group.operations",
     items: [
-      { to: "/", label: "nav.overview", icon: LayoutDashboard, end: true },
-      { to: "/conversations", label: "nav.conversations", icon: MessagesSquare },
-      { to: "/handoffs", label: "nav.handoffs", icon: Headset },
-      { to: "/feedback", label: "nav.feedback", icon: ThumbsUp },
+      { to: "/", label: "nav.overview", hint: "nav.overview.hint", icon: LayoutDashboard, accent: "green", end: true },
+      { to: "/conversations", label: "nav.conversations", hint: "nav.conversations.hint", icon: MessagesSquare, accent: "blue" },
+      { to: "/feedback", label: "nav.feedback", hint: "nav.feedback.hint", icon: ThumbsUp, accent: "amber" },
     ],
   },
   {
     label: "nav.group.knowledge",
-    items: [{ to: "/knowledge", label: "nav.knowledge", icon: BookOpen }],
+    items: [
+      { to: "/knowledge", label: "nav.knowledge", hint: "nav.knowledge.hint", icon: BookOpen, accent: "blue" },
+      { to: "/review", label: "nav.review", hint: "nav.review.hint", icon: CheckCheck, accent: "amber" },
+    ],
   },
   {
     label: "nav.group.system",
     items: [
-      { to: "/settings", label: "nav.settings", icon: Settings },
-      { to: "/logs", label: "nav.logs", icon: ScrollText },
-      { to: "/access", label: "nav.access", icon: ShieldCheck, requires: "isOwner" },
-      { to: "/audit", label: "nav.audit", icon: FileClock, requires: "isOwner" },
+      { to: "/settings", label: "nav.settings", hint: "nav.settings.hint", icon: Settings, accent: "amber" },
+      { to: "/logs", label: "nav.logs", hint: "nav.logs.hint", icon: ScrollText, accent: "green" },
+      { to: "/access", label: "nav.access", hint: "nav.access.hint", icon: ShieldCheck, accent: "red", requires: "isOwner" },
+      { to: "/audit", label: "nav.audit", hint: "nav.audit.hint", icon: FileClock, accent: "purple", requires: "isOwner" },
     ],
   },
 ];
@@ -55,38 +84,52 @@ interface SidebarProps {
   pendingHandoffs: number;
   open: boolean;
   onNavigate: () => void;
+  onChangePassword: () => void;
 }
 
-export function Sidebar({ capabilities, pendingHandoffs, open, onNavigate }: SidebarProps) {
+export function Sidebar({ capabilities, pendingHandoffs, open, onNavigate, onChangePassword }: SidebarProps) {
   const { t } = useI18n();
+  const { admin, signOut } = useSession();
   return (
     <aside className={open ? "sidebar sidebar--open" : "sidebar"} aria-label={t("nav.label")}>
       <div className="sidebar__brand">
-        <span className="sidebar__logo" aria-hidden>
-          <Bot size={20} />
-        </span>
-        <div>
-          <div className="sidebar__title">{t("app.title")}</div>
-          <div className="sidebar__subtitle">{t("app.subtitle")}</div>
+        <div className="sidebar__identity">
+          <span className="sidebar__logo" aria-hidden>
+            <Sparkles size={20} />
+          </span>
+          <div>
+            <div className="sidebar__title">{t("app.title")}</div>
+            <div className="sidebar__subtitle">{t("app.subtitle")}</div>
+          </div>
+        </div>
+        <div className="sidebar__pill">
+          <Database size={13} aria-hidden />
+          {t("app.badge")}
         </div>
       </div>
+
       <nav className="sidebar__nav">
-        {GROUPS.map((group) => {
+        {NAV_GROUPS.map((group) => {
           const items = group.items.filter((item) => !item.requires || capabilities[item.requires]);
           if (!items.length) return null;
           return (
             <div key={group.label}>
               <div className="sidebar__group-label">{t(group.label)}</div>
               <ul className="sidebar__list">
-                {items.map(({ to, label, icon: Icon, end }) => (
+                {items.map(({ to, label, hint, icon: Icon, accent, end }) => (
                   <li key={to}>
-                    <NavLink to={to} end={end} className="nav-item" onClick={onNavigate}>
-                      <Icon size={17} aria-hidden />
-                      {t(label)}
-                      {to === "/handoffs" && pendingHandoffs > 0 && (
+                    <NavLink to={to} end={end} className={`nav-item nav-item--${accent}`} onClick={onNavigate}>
+                      <Icon size={18} aria-hidden />
+                      <span className="nav-item__text">
+                        <span className="nav-item__label">{t(label)}</span>
+                        <span className="nav-item__hint">{t(hint)}</span>
+                      </span>
+                      {to === "/handoffs" && pendingHandoffs > 0 ? (
                         <span className="nav-item__badge" aria-label={t("nav.pendingCount", { count: pendingHandoffs })}>
                           {pendingHandoffs}
                         </span>
+                      ) : (
+                        <ChevronRight size={14} className="nav-item__chevron" aria-hidden />
                       )}
                     </NavLink>
                   </li>
@@ -96,7 +139,31 @@ export function Sidebar({ capabilities, pendingHandoffs, open, onNavigate }: Sid
           );
         })}
       </nav>
-      <div className="sidebar__footer">{t("app.footer")}</div>
+
+      <div className="sidebar__profile">
+        <div className="sidebar__who">
+          <span className={`avatar avatar--lg role--${admin.role}`} aria-hidden>
+            {admin.email.slice(0, 1)}
+          </span>
+          <div className="nav-item__text">
+            <div className="sidebar__name" title={admin.email}>
+              {admin.email}
+            </div>
+            <span className={`role-chip role--${admin.role}`}>{t(`role.${admin.role}`)}</span>
+          </div>
+        </div>
+        <div className="sidebar__actions">
+          <button type="button" className="sidebar__action sidebar__action--grow" onClick={onChangePassword}>
+            <KeyRound size={12} aria-hidden />
+            {t("account.changePassword")}
+          </button>
+          <button type="button" className="sidebar__action sidebar__action--danger" onClick={() => void signOut()}>
+            <LogOut size={12} aria-hidden />
+            {t("account.signOut")}
+          </button>
+        </div>
+        <div className="sidebar__footnote">{t("app.footer")}</div>
+      </div>
     </aside>
   );
 }

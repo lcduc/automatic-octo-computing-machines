@@ -136,15 +136,13 @@ export function Switch({ checked, onChange, label, disabled }: { checked: boolea
 
 export function KpiCard({ icon, label, value, hint, tone }: { icon: ReactNode; label: string; value: string; hint?: string; tone?: "gold" | "teal" | "rose" }) {
   return (
-    <div className="card kpi">
-      <span className={tone ? `kpi__icon kpi__icon--${tone}` : "kpi__icon"} aria-hidden>
-        {icon}
-      </span>
-      <div>
-        <div className="kpi__label">{label}</div>
-        <div className="kpi__value">{value}</div>
-        {hint && <div className="kpi__hint">{hint}</div>}
+    <div className={tone ? `card kpi kpi--${tone}` : "card kpi"}>
+      <div className="kpi__head">
+        <span className="kpi__label">{label}</span>
+        <span aria-hidden>{icon}</span>
       </div>
+      <div className="kpi__value">{value}</div>
+      {hint && <div className="kpi__hint">{hint}</div>}
     </div>
   );
 }

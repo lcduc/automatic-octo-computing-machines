@@ -12,7 +12,7 @@ const LOG_LIMIT = 200;
 
 export function LogsPage() {
   const { t, formatDateTime } = useI18n();
-  const [level, setLevel] = useState("WARNING");
+  const [level, setLevel] = useState("INFO");
   const [draft, setDraft] = useState({ contains: "", request_id: "" });
   const [filters, setFilters] = useState(draft);
   const { data, error, loading, reload } = useApi<LogEntry[]>(`logs${query({ level, contains: filters.contains, request_id: filters.request_id, limit: LOG_LIMIT })}`);
