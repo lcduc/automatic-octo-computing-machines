@@ -123,7 +123,7 @@ class LLMConfig:
     @staticmethod
     def EMBEDDING_MODEL() -> str:
         """Sentence-transformers model used to embed chunks and queries."""
-        return env_str("EMBEDDING_MODEL", "paraphrase-multilingual-MiniLM-L12-v2")
+        return env_str("EMBEDDING_MODEL", "intfloat/multilingual-e5-small")
 
     @staticmethod
     def MAX_CONTEXT_LENGTH() -> int:

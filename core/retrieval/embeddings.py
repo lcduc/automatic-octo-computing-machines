@@ -1,6 +1,6 @@
 """
 Embedding service for text vectorization using sentence transformers.
-Provides GPU/CPU fallback and multiple model support for robust embedding generation.
+Provides GPU/CPU fallback and the query/passage prompts a model was trained with.
 """
 
 # Standard library imports
@@ -19,13 +19,17 @@ logger = logging.getLogger(__name__)
 embedder = None
 _embedding_service_instance = None
 
-#: Last-resort fallback if the configured/default multilingual model can't
-#: load at all (e.g. registry outage). Also multilingual — the service must
-#: keep working for Vietnamese queries even in this degraded path.
-_EMERGENCY_FALLBACK_MODEL = "paraphrase-multilingual-MiniLM-L12-v2"
-
 #: Chunks embedded per forward pass during ingestion (fits comfortably in 12GB VRAM).
 PASSAGE_BATCH_SIZE = 32
+
+#: E5 is trained with these prefixes; its model card reports a quality drop without them.
+E5_PROMPTS = {"query": "query: ", "document": "passage: "}
+#: Prompts of models that need them but do not ship them; any other model uses its own (usually none).
+MODEL_PROMPTS = {
+    "intfloat/multilingual-e5-small": E5_PROMPTS,
+    "intfloat/multilingual-e5-base": E5_PROMPTS,
+    "intfloat/multilingual-e5-large": E5_PROMPTS,
+}
 
 
 class EmbeddingService:
@@ -53,53 +57,39 @@ class EmbeddingService:
             gpu_available = bool(torch) and torch.cuda.is_available()
             logger.info("GPU availability for embeddings: %s", gpu_available)
 
-            primary_model = Config.LLM.EMBEDDING_MODEL()
+            model_name = Config.LLM.EMBEDDING_MODEL()
             cache_folder = Config.Paths.MODELS_DIR()
 
-            # Both candidates are multilingual (English + Vietnamese, among
-            # others) — the fallback must not silently downgrade to an
-            # English-only model if the configured one fails to load.
-            models_to_try = list(dict.fromkeys([primary_model, _EMERGENCY_FALLBACK_MODEL]))
-
-            for model_name in models_to_try:
-                if gpu_available:
-                    try:
-                        self.embedder = SentenceTransformer(
-                            model_name, device="cuda", cache_folder=cache_folder
-                        )
-                        logger.info("Embedding model '%s' loaded on GPU", model_name)
-                        break
-                    except Exception:
-                        logger.exception(
-                            "GPU load failed for embedding model '%s'; falling back to CPU",
-                            model_name,
-                        )
-
+            # No fallback model: stored vectors live in EMBEDDING_MODEL's space, and
+            # any other model (even one of the same dimension) would return garbage.
+            for device in ("cuda", "cpu") if gpu_available else ("cpu",):
                 try:
                     self.embedder = SentenceTransformer(
-                        model_name, device="cpu", cache_folder=cache_folder
+                        model_name,
+                        device=device,
+                        cache_folder=cache_folder,
+                        prompts=MODEL_PROMPTS.get(model_name),
                     )
-                    logger.info("Embedding model '%s' loaded on CPU", model_name)
+                    logger.info("Embedding model '%s' loaded on %s", model_name, device)
                     break
                 except Exception:
-                    logger.exception("Failed to load embedding model '%s'", model_name)
-                    continue
+                    logger.exception("Failed to load embedding model '%s' on %s", model_name, device)
 
             if self.embedder is None:
-                raise RuntimeError("Failed to load any embedding model")
+                raise RuntimeError(f"Failed to load embedding model '{model_name}'")
 
         return self.embedder
 
-    def encode(self, texts, convert_to_numpy=True):
+    def _encode_query(self, texts, convert_to_numpy=True):
         """
-        Encode texts into vector embeddings for similarity search with caching.
+        Encode search queries (with the model's query prompt), caching single texts.
 
         Args:
-            texts: List of text strings to encode
+            texts: Query string or list of query strings.
             convert_to_numpy: Whether to return numpy arrays (default: True)
 
         Returns:
-            Vector embeddings ready for similarity calculations
+            Query embeddings, not normalized.
         """
         # Normalize a bare string to a one-element list so the cache lookup and
         # the encoder below both see the same shape.
@@ -115,7 +105,7 @@ class EmbeddingService:
             self._cache_misses += 1
 
         embedder = self.get_embedder()
-        embeddings = embedder.encode(texts, convert_to_numpy=convert_to_numpy)
+        embeddings = embedder.encode_query(texts, convert_to_numpy=convert_to_numpy)
 
         # Cache single text results
         if self._cache_enabled and len(texts) == 1:
@@ -151,7 +141,7 @@ class EmbeddingService:
         if not texts:
             return np.zeros((0, 0), dtype=np.float32)
         logger.info("Embedding %d passages", len(texts))
-        vectors = self.get_embedder().encode(
+        vectors = self.get_embedder().encode_document(
             list(texts),
             batch_size=batch_size,
             convert_to_numpy=True,
@@ -169,7 +159,7 @@ class EmbeddingService:
         """
         import numpy as np
 
-        vector = np.asarray(self.encode([query], convert_to_numpy=True), dtype=np.float32)
+        vector = np.asarray(self._encode_query([query], convert_to_numpy=True), dtype=np.float32)
         vector = np.asarray(self.apply_query_adapter(vector), dtype=np.float32).reshape(-1)
         norm = float(np.linalg.norm(vector))
         return vector / norm if norm > 0 else vector

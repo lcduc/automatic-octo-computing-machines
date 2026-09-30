@@ -11,6 +11,7 @@ import numpy as np
 import pytest
 from starlette.testclient import TestClient
 
+from config.settings import Config
 from core.document_processing.remote_ocr_engine import RemoteOCREngine
 from core.infrastructure.model_server.app import create_model_server_app
 from core.infrastructure.model_server.scheduler import Lane, PriorityScheduler
@@ -21,7 +22,7 @@ TOKEN = "m" * 48
 
 
 class FakeEmbedding:
-    model_name = "paraphrase-multilingual-MiniLM-L12-v2"
+    model_name = Config.LLM.EMBEDDING_MODEL()
 
 
 class FakeOcr:
