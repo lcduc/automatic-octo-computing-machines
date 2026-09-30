@@ -4,14 +4,14 @@ Hybrid retrieval over the in-memory knowledge snapshot.
 Semantic similarity (embeddings) and keyword relevance (BM25) are fused by
 weighted reciprocal rank fusion (RET-04), scaled by each source's priority,
 reranked by a cross-encoder, gated by an absolute
-relevance threshold and finally expanded with neighbouring chunks of the same
-document so the LLM reads contiguous passages.
+relevance threshold, and the best match is finally expanded with its
+neighbouring chunks of the same document so the LLM reads a contiguous passage.
 """
 
 # Standard library imports
 import logging
 from datetime import date
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import List, Optional, Sequence, Tuple
 
 # Third-party imports
 import numpy as np
@@ -121,14 +121,14 @@ class ContextRetriever:
             threshold: Minimum relevance (reranker score, or cosine similarity
                 when no reranker ran) for a chunk to count as a match.
             max_context_chunks: Cap on returned chunks including neighbours.
-            expansion_radius: Neighbours added on each side of a match (same document).
+            expansion_radius: Neighbours added on each side of the best match (same document).
             sources: Restrict to these source names; ``None`` searches all.
             access_level: The caller's tier level; higher-tier documents are skipped.
             today: The local date for effective-date filtering (default: today).
 
         Returns:
-            Matched chunks first-ranked-first, each followed by its neighbours in
-            document order. Empty when nothing clears ``threshold``.
+            The best match between its neighbours in document order, then the
+            other matches by rank. Empty when nothing clears ``threshold``.
         """
         if snapshot.is_empty or not query.strip():
             return []
@@ -145,27 +145,32 @@ class ContextRetriever:
             texts = [self._rerank_text(snapshot.chunks[candidates[p]]) for p in pool]
             rerank_scores = self._reranker.score(query, texts)
 
-        scored: List[RetrievedChunk] = []
+        #: (snapshot index, match) pairs; the index locates the best match's neighbours.
+        scored: List[Tuple[int, RetrievedChunk]] = []
         for rank, position in enumerate(pool):
             chunk = snapshot.chunks[candidates[position]]
             rerank = float(rerank_scores[rank]) if rerank_scores is not None else None
             relevance = rerank if rerank is not None else float(semantic[position])
             if relevance < threshold:
                 continue
-            scored.append(
+            scored.append((
+                int(candidates[position]),
                 RetrievedChunk(
                     chunk=chunk,
                     relevance=relevance,
                     semantic_score=float(semantic[position]),
                     keyword_score=float(keyword[position]),
                     rerank_score=rerank,
-                )
-            )
+                ),
+            ))
 
-        scored.sort(key=lambda item: item.relevance * item.chunk.source_priority, reverse=True)
-        matches = scored[:top_k]
-        logger.debug("Search matched %d/%d pooled chunks", len(matches), len(pool))
-        return self._expand(snapshot, matches, max_context_chunks, expansion_radius)
+        scored.sort(key=lambda pair: pair[1].relevance * pair[1].chunk.source_priority, reverse=True)
+        ranked = scored[:top_k]
+        logger.debug("Search matched %d/%d pooled chunks", len(ranked), len(pool))
+        if not ranked:
+            return []
+        matches = [match for _, match in ranked]
+        return self._expand(snapshot, matches, ranked[0][0], max_context_chunks, expansion_radius)
 
     @staticmethod
     def _rerank_text(chunk: IndexedChunk) -> str:
@@ -182,40 +187,46 @@ class ContextRetriever:
     def _expand(
         snapshot: KnowledgeSnapshot,
         matches: List[RetrievedChunk],
+        best_index: int,
         max_chunks: int,
         radius: int,
     ) -> List[RetrievedChunk]:
-        """Add same-document neighbours around each match, capped at ``max_chunks``."""
-        index_of: Dict[str, int] = {}
-        if radius > 0:
-            index_of = {chunk.chunk_id: i for i, chunk in enumerate(snapshot.chunks)}
+        """
+        Surround the best match with its same-document neighbours; the other matches follow by rank.
 
-        selected: Dict[str, RetrievedChunk] = {}
-        ordered: List[RetrievedChunk] = []
-        for match in matches:
-            if len(ordered) >= max_chunks:
-                break
-            window = [match]
-            if radius > 0:
-                centre = index_of[match.chunk.chunk_id]
-                for offset in range(-radius, radius + 1):
-                    neighbour_index = centre + offset
-                    if offset == 0 or not 0 <= neighbour_index < len(snapshot.chunks):
-                        continue
-                    neighbour = snapshot.chunks[neighbour_index]
-                    if neighbour.document_id == match.chunk.document_id:
-                        window.append(RetrievedChunk(chunk=neighbour, relevance=0.0, matched=False))
-                window.sort(key=lambda item: item.chunk.position)
-            for item in window:
-                if len(ordered) >= max_chunks:
-                    break
-                existing = selected.get(item.chunk.chunk_id)
-                if existing is not None:
-                    # A neighbour that is also a real match keeps its match data.
-                    if item.matched and not existing.matched:
-                        ordered[ordered.index(existing)] = item
-                        selected[item.chunk.chunk_id] = item
-                    continue
-                selected[item.chunk.chunk_id] = item
-                ordered.append(item)
-        return ordered
+        Returns ``[before…, best, after…, 2nd, 3rd, …]``. Neighbours only take the
+        slots the matches leave under ``max_chunks``, nearest first, so a tight
+        cap drops context, never a match. A neighbour that is itself a match
+        stays in its reading position with its match data.
+
+        Args:
+            snapshot: Corpus the matches came from.
+            matches: Matched chunks, best first.
+            best_index: Index of ``matches[0]`` in ``snapshot.chunks``.
+            max_chunks: Cap on returned chunks, neighbours included.
+            radius: Neighbours taken on each side of the best match.
+        """
+        matches = matches[:max_chunks]
+        if radius <= 0:
+            return matches
+        best = matches[0].chunk
+        match_by_id = {match.chunk.chunk_id: match for match in matches}
+
+        #: (offset from the best match, chunk) in document order.
+        window: List[Tuple[int, RetrievedChunk]] = []
+        for offset in range(-radius, radius + 1):
+            index = best_index + offset
+            if not 0 <= index < len(snapshot.chunks):
+                continue
+            chunk = snapshot.chunks[index]
+            # Index adjacency alone could skip a gap (a chunk left out of the index).
+            if chunk.document_id != best.document_id or chunk.position != best.position + offset:
+                continue
+            window.append((offset, match_by_id.get(chunk.chunk_id) or RetrievedChunk(chunk, 0.0, matched=False)))
+
+        free_slots = max_chunks - len(matches)
+        neighbour_offsets = sorted((offset for offset, item in window if not item.matched), key=abs)
+        kept_offsets = set(neighbour_offsets[:free_slots])
+        passage = [item for offset, item in window if item.matched or offset in kept_offsets]
+        in_passage = {item.chunk.chunk_id for item in passage}
+        return passage + [match for match in matches[1:] if match.chunk.chunk_id not in in_passage]

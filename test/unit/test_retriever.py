@@ -86,6 +86,53 @@ def test_match_is_expanded_with_same_document_neighbours_in_order():
     assert [item.matched for item in results] == [False, True, False]
 
 
+def _ranked_snapshot(documents=4):
+    """``documents`` docs of filler / answer / filler; answer ``d`` ranks d-th."""
+    rows = []
+    for rank in range(documents):
+        document_id = uuid.uuid4()
+        rows += [
+            _row(document_id, 0, f"before {rank}", [0.0, 1.0, 0.0]),
+            _row(document_id, 1, f"answer {rank}", [1.0, 0.05 * rank, 0.0]),
+            _row(document_id, 2, f"after {rank}", [0.0, 0.0, 1.0]),
+        ]
+    return KnowledgeSnapshot.build(rows, version=1)
+
+
+def test_only_the_best_match_is_expanded_and_the_other_matches_follow_by_rank():
+    retriever = ContextRetriever(FakeEmbeddings([1, 0, 0]), reranker=None)
+    results = _search(retriever, _ranked_snapshot(), top_k=4, max_context_chunks=6)
+    assert [item.chunk.content for item in results] == [
+        "before 0", "answer 0", "after 0", "answer 1", "answer 2", "answer 3",
+    ]
+    assert [item.matched for item in results] == [False, True, False, True, True, True]
+
+
+def test_a_tight_cap_drops_neighbours_before_matches():
+    retriever = ContextRetriever(FakeEmbeddings([1, 0, 0]), reranker=None)
+    results = _search(retriever, _ranked_snapshot(), top_k=4, max_context_chunks=5)
+    assert [item.chunk.content for item in results] == ["before 0", "answer 0", "answer 1", "answer 2", "answer 3"]
+
+
+def test_a_neighbour_that_is_also_a_match_keeps_its_place_and_match_data_once():
+    rows = [
+        _row(DOC_A, 0, "salary policy", [1.0, 0.0, 0.0]),
+        _row(DOC_A, 1, "salary table", [0.9, 0.1, 0.0]),
+        _row(DOC_A, 2, "closing remarks", [0.0, 0.0, 1.0]),
+    ]
+    retriever = ContextRetriever(FakeEmbeddings([1, 0, 0]), reranker=None)
+    results = _search(retriever, KnowledgeSnapshot.build(rows, version=1), top_k=2)
+    assert [(item.chunk.content, item.matched) for item in results] == [("salary policy", True), ("salary table", True)]
+
+
+def test_a_chunk_missing_from_the_index_leaves_no_false_neighbour():
+    # Position 1 is not indexed (e.g. no embedding), so position 2 is not adjacent to 0.
+    rows = [_row(DOC_A, 0, "salary policy", [1.0, 0.0, 0.0]), _row(DOC_A, 2, "closing remarks", [0.0, 0.0, 1.0])]
+    retriever = ContextRetriever(FakeEmbeddings([1, 0, 0]), reranker=None)
+    results = _search(retriever, KnowledgeSnapshot.build(rows, version=1), top_k=1)
+    assert [item.chunk.content for item in results] == ["salary policy"]
+
+
 def test_neighbours_never_cross_document_boundaries():
     retriever = ContextRetriever(FakeEmbeddings([1, 0, 0]), FakeReranker("faq about"))
     results = _search(retriever, _snapshot(), top_k=1)

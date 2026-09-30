@@ -322,7 +322,7 @@ class RAGConfig:
 
     @staticmethod
     def CONTEXT_EXPANSION_RADIUS() -> int:
-        """Neighbour chunks of the same document pulled in on each side of a hit (0 disables)."""
+        """Neighbour chunks of the same document pulled in on each side of the best hit (0 disables)."""
         return env_int("CONTEXT_EXPANSION_RADIUS", 1)
 
     @staticmethod
