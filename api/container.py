@@ -107,6 +107,7 @@ class AppContainer:
             self.business_database = Database(BusinessDbConfig.BUSINESS_DB_URL(), BusinessDbConfig.BUSINESS_DB_POOL_SIZE())
             executor = SqlToolExecutor(self.business_database, BusinessDbConfig.SQL_TOOL_STATEMENT_TIMEOUT_MS())
             self.sql_tools = SqlToolCatalog(self.database, executor, self.host_identity.tier_level)
+        self.embedding = None
         self.reranker = None
         self.llm = None
         self.pipeline: Optional[ChatbotService] = None
@@ -133,7 +134,7 @@ class AppContainer:
             self.business_database.connect()
             await self.sql_tools.load()
 
-        embedding = await self._load_embedding_service()
+        self.embedding = embedding = await self._load_embedding_service()
         self.reranker = await self._load_reranker()
         self.llm = self._create_llm()
         openai = self._openai_extras()
