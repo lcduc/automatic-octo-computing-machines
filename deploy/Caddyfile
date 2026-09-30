@@ -18,7 +18,9 @@
 
 # Admin domain: the admin web on its own origin, sharing nothing with the chat
 # (checklist Invariant 7). Only the admin API is reachable here, same-origin, so
-# the HttpOnly session cookie never needs CORS.
+# the HttpOnly session cookie never needs CORS. The admin's demo chat uses the
+# widget server's /api/chat routes (proxied, never the backend's public API), and
+# the widget preview may frame the chat domain; the admin itself is never framed.
 {$PUBLIC_DOMAIN_ADMIN} {
 	encode zstd gzip
 	request_body {
@@ -26,7 +28,7 @@
 	}
 	header {
 		Strict-Transport-Security "max-age=31536000; includeSubDomains"
-		Content-Security-Policy "default-src 'self'; img-src 'self' data:; font-src 'self'; style-src 'self'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'"
+		Content-Security-Policy "default-src 'self'; img-src 'self' data:; font-src 'self'; style-src 'self'; script-src 'self'; connect-src 'self'; frame-src https://{$PUBLIC_DOMAIN_CHAT}; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'"
 		X-Frame-Options "DENY"
 		X-Content-Type-Options "nosniff"
 		Referrer-Policy "no-referrer"
@@ -36,6 +38,12 @@
 	handle /api/v1/admin/* {
 		reverse_proxy api:8500 {
 			# The live usage feed is Server-Sent Events.
+			flush_interval -1
+		}
+	}
+	# Demo chat: the widget server's routes, which relay to the API with its service token.
+	handle /api/chat/* {
+		reverse_proxy web:3000 {
 			flush_interval -1
 		}
 	}

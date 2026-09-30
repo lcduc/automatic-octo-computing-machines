@@ -351,7 +351,9 @@ cd frontends/admin && npm ci && npm run dev
 
 Sign in with the account from step 2. The Vite dev server proxies `/api/v1/admin`
 to `BACKEND_URL` (default `http://127.0.0.1:8500`), so the session cookie stays on
-one origin as it does behind Caddy, and no CORS setup is needed.
+one origin as it does behind Caddy, and no CORS setup is needed. It also proxies
+`/api/chat` to the widget server (`WIDGET_URL`, default `http://127.0.0.1:3000`):
+*Thử trò chuyện* (demo chat) and *Xem trước khung chat* (widget preview) need step 4 running.
 
 **4. Chat widget** (`http://localhost:3000`, `/embed-demo` shows it embedded), to
 produce conversations, feedback and handoffs to look at in the admin web:
@@ -361,6 +363,11 @@ cd frontends/widget && npm ci
 cp .env.example .env.local   # BFF_SERVICE_TOKEN = the backend's; VISITOR_COOKIE_SECRET: 32+ random characters
 npm run dev
 ```
+
+For the admin's widget preview, let the admin frame the widget: add
+`http://localhost:5174` to `WIDGET_ALLOWED_PARENTS` in `.env.local`. In production
+compose does this for `https://PUBLIC_DOMAIN_ADMIN`, and the admin service gets
+`WIDGET_ORIGIN=https://PUBLIC_DOMAIN_CHAT` (served as `/runtime-config.json`).
 
 The whole stack from this checkout, with images built locally
 (`docker-compose.override.yml` is merged automatically here and never shipped).

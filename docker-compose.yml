@@ -178,7 +178,8 @@ services:
       BACKEND_URL: http://api:8500
       BFF_SERVICE_TOKEN: ${BFF_SERVICE_TOKEN:?run the installer to generate secrets}
       VISITOR_COOKIE_SECRET: ${VISITOR_COOKIE_SECRET:?run the installer to generate secrets}
-      WIDGET_ALLOWED_PARENTS: ${HOST_ORIGIN:?set HOST_ORIGIN (the site embedding the widget)}
+      # The client site, plus the admin web's widget preview.
+      WIDGET_ALLOWED_PARENTS: "${HOST_ORIGIN:?set HOST_ORIGIN (the site embedding the widget)} https://${PUBLIC_DOMAIN_ADMIN:?set PUBLIC_DOMAIN_ADMIN}"
     depends_on:
       api:
         condition: service_healthy
@@ -192,6 +193,9 @@ services:
   admin:
     <<: *hardening
     image: ${REGISTRY:-ghcr.io/lcduc}/chatbot-admin:${IMAGE_TAG:-dev}
+    environment:
+      # Read by the admin's Caddy for /runtime-config.json (the widget preview).
+      WIDGET_ORIGIN: https://${PUBLIC_DOMAIN_CHAT:?set PUBLIC_DOMAIN_CHAT}
     networks: [edge]
     deploy:
       resources:
