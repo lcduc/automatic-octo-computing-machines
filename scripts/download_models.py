@@ -19,6 +19,7 @@ import logging
 
 # Local imports
 from config.settings import Config
+from core.retrieval.reranker import RERANKER_FALLBACK_MODEL
 
 logger = logging.getLogger(__name__)
 
@@ -43,9 +44,8 @@ class ModelDownloader:
         SentenceTransformer(model_name, device="cpu", cache_folder=self._models_dir)
         return model_name
 
-    def download_reranker_model(self) -> str:
-        """Download the configured cross-encoder reranker model."""
-        model_name = Config.RAG.RERANKER_MODEL()
+    def download_reranker_model(self, model_name: str) -> str:
+        """Download one cross-encoder reranker model."""
         logger.info("Downloading reranker model '%s' to %s", model_name, self._models_dir)
 
         from transformers import AutoModelForSequenceClassification, AutoTokenizer
@@ -88,12 +88,15 @@ class ModelDownloader:
     def download_all(self) -> None:
         """Download every model the running configuration needs."""
         embedding_model = self.download_embedding_model()
-        reranker_model = self.download_reranker_model()
+        reranker_model = self.download_reranker_model(Config.RAG.RERANKER_MODEL())
+        # Baked in too: the fallback is needed exactly when the network or the primary fails.
+        fallback_model = self.download_reranker_model(RERANKER_FALLBACK_MODEL)
         self.download_ocr_model()
         logger.info(
-            "Model download complete: embedding=%s reranker=%s dir=%s",
+            "Model download complete: embedding=%s reranker=%s (fallback %s) dir=%s",
             embedding_model,
             reranker_model,
+            fallback_model,
             self._models_dir,
         )
 

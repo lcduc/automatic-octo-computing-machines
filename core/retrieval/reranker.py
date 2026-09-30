@@ -5,11 +5,7 @@ Uses a cross-encoder if available, otherwise falls back to a lightweight heurist
 
 from typing import List, Dict, Any, Optional
 import logging
-import os
 import threading
-
-# Set trust_remote_code environment variable before importing sentence_transformers
-os.environ["HF_TRUST_REMOTE_CODE"] = "True"
 
 logger = logging.getLogger(__name__)
 
@@ -19,17 +15,18 @@ try:
 except Exception:
     TRANSFORMERS_AVAILABLE = False
 
+#: Loaded when the configured reranker cannot be: multilingual (mMARCO, Vietnamese
+#: included), Apache-2.0, no remote code. Weaker than the default, and its scores
+#: suit the same ``SIMILARITY_THRESHOLD`` (0.3 on the calibration pairs). Safe to
+#: swap in, unlike an embedding fallback: rerank scores are computed fresh per turn.
+RERANKER_FALLBACK_MODEL = "cross-encoder/mmarco-mMiniLMv2-L12-H384-v1"
+
 
 class Reranker:
     """
     Rerank retrieval results given the user query and candidate chunks.
     If a CrossEncoder model is available, use it; otherwise, rely on combined scores provided upstream.
     """
-
-    #: Last-resort fallback if the configured reranker can't load at all.
-    #: English-only, so it only kicks in as a degraded emergency path — the
-    #: configured default must stay a multilingual model for Vietnamese support.
-    _EMERGENCY_FALLBACK_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2"
 
     def __init__(self, model_name: str = None):
         self._model = None
@@ -41,7 +38,7 @@ class Reranker:
         cache_dir = Config.Paths.MODELS_DIR()
 
         if TRANSFORMERS_AVAILABLE:
-            candidates = list(dict.fromkeys([model_name, self._EMERGENCY_FALLBACK_MODEL]))
+            candidates = list(dict.fromkeys([model_name, RERANKER_FALLBACK_MODEL]))
             for candidate in candidates:
                 try:
                     # Loaded directly via `transformers` (not
@@ -66,6 +63,8 @@ class Reranker:
                     )
                     self._model = self._create_cross_encoder_wrapper(model, tokenizer)
                     logger.info("Reranker loaded (transformers): %s", candidate)
+                    if candidate != model_name:
+                        logger.warning("Reranker '%s' unavailable; running on fallback '%s'", model_name, candidate)
 
                     self._model_name = candidate
                     break

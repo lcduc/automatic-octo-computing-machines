@@ -342,9 +342,10 @@ class RAGConfig:
         Cross-encoder model used for reranking.
 
         Defaults to a multilingual model because the corpus and queries are a
-        mix of English and Vietnamese.
+        mix of English and Vietnamese; Apache-2.0 and no remote code (the
+        earlier Jina v2 default is CC-BY-NC, not usable commercially).
         """
-        return env_str("RERANKER_MODEL", "jinaai/jina-reranker-v2-base-multilingual")
+        return env_str("RERANKER_MODEL", "BAAI/bge-reranker-v2-m3")
 
     @staticmethod
     def RETRIEVAL_MAX_CONCURRENCY() -> int:
