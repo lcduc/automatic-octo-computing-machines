@@ -2,8 +2,9 @@
 Docling-based document processor for conversion and heading-aware chunking.
 
 Uses Docling's DocumentConverter to convert a local file path and export
-markdown, then chunks by markdown headings. PDFs with no extractable text
-layer (scanned/image-only) are routed around Docling's own OCR: pages are
+markdown, then chunks by markdown headings. PDFs with no usable text layer
+(scanned/image-only, or gibberish from a broken font encoding) are routed
+around Docling, whose own OCR is disabled: pages are
 rendered to images and run through a separate OCR engine (see
 core/document_processing/ocr/), then chunked as plain text instead of
 markdown headings, since OCR output has no heading structure.
@@ -125,12 +126,16 @@ class DoclingProcessor:
         """
         Docling converter whose PDF models are capped at ``OCR_CPU_THREADS``.
 
+        Docling's own OCR is off: PDFs reach this converter only when their text
+        layer is usable, and the rest go to the configured OCR engine instead.
+
         Docling applies the cap with ``torch.set_num_threads`` on CPU, which is
         process-wide, so CPU embeddings share the same cap once a PDF is parsed.
         """
         # ceiling: parsing shares the API process's torch thread pool, move it to a worker process if the cap slows chat
         pdf_options = PdfPipelineOptions(
-            accelerator_options=AcceleratorOptions(num_threads=Config.OCR.OCR_CPU_THREADS())
+            do_ocr=False,
+            accelerator_options=AcceleratorOptions(num_threads=Config.OCR.OCR_CPU_THREADS()),
         )
         return DocumentConverter(format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=pdf_options)})
 
@@ -147,21 +152,19 @@ class DoclingProcessor:
             pdf_path: Path to the PDF on disk.
 
         Returns:
-            True when ``OCR_FORCE_ALL_PDFS`` is set, or when none of the first
-            few pages have an extractable text layer (i.e. the PDF is a scan).
-            Defaults to True on inspection failure so a broken/unreadable PDF
-            still gets a chance via OCR rather than silently returning no text.
+            True when ``OCR_FORCE_ALL_PDFS`` is set, or when the text layer of
+            the first few pages is empty (a scan) or gibberish (a broken font
+            encoding). Defaults to True on inspection failure so a
+            broken/unreadable PDF still gets a chance via OCR rather than
+            silently returning no text.
         """
         if Config.OCR.OCR_FORCE_ALL_PDFS():
             return True
         try:
-            doc = fitz.open(str(pdf_path))
-            try:
+            with fitz.open(str(pdf_path)) as doc:
                 sample = range(min(self._TEXT_LAYER_SAMPLE_PAGES, len(doc)))
-                has_text = any(doc[i].get_text().strip() for i in sample)
-                return not has_text
-            finally:
-                doc.close()
+                text = "".join(doc[i].get_text() for i in sample)
+            return TextUtils.needs_ocr_fallback(text)
         except Exception:
             logger.exception("Failed to inspect PDF text layer for %s; assuming OCR is needed", pdf_path)
             return True
