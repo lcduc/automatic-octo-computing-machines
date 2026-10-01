@@ -39,6 +39,7 @@ load_dotenv()
 from core.retrieval.knowledge_index import KnowledgeSnapshot  # noqa: E402
 from core.retrieval.retriever import ContextRetriever  # noqa: E402
 from models.knowledge import RetrievedChunk  # noqa: E402
+from scripts.eval_baseline import EvalBaseline  # noqa: E402
 from scripts.threshold_calibrator import ThresholdCalibrator  # noqa: E402
 
 logger = logging.getLogger(__name__)
@@ -64,6 +65,8 @@ class QueryResult:
     best_rerank: Optional[float]
     #: The same for cosine similarity, from a search without the reranker.
     best_cosine: float
+    #: For an unanswerable question: ``off_topic`` or ``unanswerable`` (on topic, but not in the knowledge base).
+    kind: Optional[str] = None
 
 
 class RetrievalEvaluator:
@@ -94,7 +97,7 @@ class RetrievalEvaluator:
         self._semantic_weight = semantic_weight
         self._access_level = access_level
 
-    def evaluate(self, query: str, expected_document: Optional[str]) -> QueryResult:
+    def evaluate(self, query: str, expected_document: Optional[str], kind: Optional[str] = None) -> QueryResult:
         """Score one question; the ranking comes from the reranked search when there is one."""
         cosine_matches = self._search(self._cosine_only, query)
         matches = self._search(self._reranked, query) if self._reranked else cosine_matches
@@ -103,7 +106,7 @@ class RetrievalEvaluator:
         best_rerank = self._best(matches, expected_document, "rerank_score") if self._reranked else None
         return QueryResult(
             query, expected_document, documents, rank, best_rerank,
-            self._best(cosine_matches, expected_document, "semantic_score"),
+            self._best(cosine_matches, expected_document, "semantic_score"), kind,
         )
 
     def _search(self, retriever: ContextRetriever, query: str) -> List[RetrievedChunk]:
@@ -124,13 +127,27 @@ class RetrievalEvaluator:
         return max(scores, default=NO_MATCH)
 
 
+KIND_UNANSWERABLE = "unanswerable"
+
+
 def calibration(results: List[QueryResult], score: str, current: float) -> Dict[str, Any]:
-    """Rates of the ``current`` threshold and the best one for ``score`` ("best_rerank" / "best_cosine")."""
+    """
+    Rates of the ``current`` threshold and the best one for ``score`` ("best_rerank" / "best_cosine").
+
+    The threshold is only a floor: questions marked ``unanswerable`` (on topic, not in the knowledge
+    base) overlap with answerable ones in score, so they are left out of the calibration and reported
+    as ``on_topic_unanswerable_reaching_the_model``, the share that clears the threshold in force.
+    """
+    negatives = [r for r in results if r.expected_document is None and r.kind != KIND_UNANSWERABLE]
+    on_topic = [getattr(r, score) for r in results if r.kind == KIND_UNANSWERABLE]
     calibrator = ThresholdCalibrator(
         [getattr(r, score) for r in results if r.expected_document is not None],
-        [getattr(r, score) for r in results if r.expected_document is None],
+        [getattr(r, score) for r in negatives],
     )
-    return {"current": asdict(calibrator.rates(current)), "best": asdict(calibrator.best())}
+    report = {"current": asdict(calibrator.rates(current)), "best": asdict(calibrator.best())}
+    if on_topic:
+        report["on_topic_unanswerable_reaching_the_model"] = sum(value >= current for value in on_topic) / len(on_topic)
+    return report
 
 
 def build_report(
@@ -177,6 +194,9 @@ def print_report(report: Dict[str, Any]) -> None:
             continue
         print(_format_rates("current", gate["current"]))
         print(_format_rates("best", gate["best"]))
+        if "on_topic_unanswerable_reaching_the_model" in gate:
+            print(f"    on-topic unanswerable questions that clear the current threshold (the model decides): "
+                  f"{gate['on_topic_unanswerable_reaching_the_model']:.0%}")
     if report["misses"]:
         print("\n  Expected document not retrieved:")
         for miss in report["misses"]:
@@ -214,7 +234,7 @@ async def run(golden_set: List[Dict[str, Optional[str]]], access_level: int) -> 
         )
         logger.info("Evaluating %d questions (reranker %s)", len(golden_set), "on" if reranked else "off")
         results = [
-            await asyncio.to_thread(evaluator.evaluate, item["query"], item["expected_document"])
+            await asyncio.to_thread(evaluator.evaluate, item["query"], item["expected_document"], item.get("kind"))
             for item in golden_set
         ]
         return build_report(
@@ -235,6 +255,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--access-level", type=int, default=ANONYMOUS_ACCESS_LEVEL,
                         help="Ask as this access level (default: anonymous visitor)")
     parser.add_argument("--out", type=Path, default=None, help="Also save the full JSON report here")
+    parser.add_argument("--check", action="store_true", help="Fail (exit 1) when recall/MRR regress against the committed baseline")
+    parser.add_argument("--write-baseline", action="store_true", help="Record this report as the baseline (then commit the file)")
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 
@@ -245,6 +267,15 @@ def main(argv: Optional[List[str]] = None) -> int:
         with open(args.out, "w", encoding="utf-8") as file:
             json.dump(report, file, ensure_ascii=False, indent=2, default=str)
         print(f"Full report saved to {args.out}")
+    baseline, name = EvalBaseline(), args.golden_set.stem
+    if args.write_baseline:
+        baseline.write(name, baseline.retrieval_values(report))
+        print("Baseline written; commit scripts/demo_data/eval_baseline.json")
+    if args.check:
+        problems = baseline.check_retrieval(name, report)
+        for problem in problems:
+            print(f"REGRESSION: {problem}")
+        return 1 if problems else 0
     return 0
 
 

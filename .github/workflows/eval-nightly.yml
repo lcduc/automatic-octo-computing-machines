@@ -1,0 +1,69 @@
+name: Retrieval eval (nightly)
+
+# Seeds the demo knowledge base into a fresh database and checks recall@k and MRR of the real
+# retriever (embedding model + reranker) against the committed baselines. Too heavy for every PR
+# (database, ~2.7 GB of models), so it runs every night and on demand. No LLM calls, no secrets.
+# A failure means retrieval got worse: re-run scripts.eval_rag locally, fix it, or, if the change
+# is intended, re-record the baseline with --write-baseline and commit scripts/demo_data/eval_baseline.json.
+
+on:
+  schedule:
+    - cron: "0 19 * * *" # 02:00 in Vietnam
+  workflow_dispatch:
+
+jobs:
+  retrieval:
+    name: Recall and MRR against the baselines
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: chatbot
+          POSTGRES_PASSWORD: chatbot_ci
+          POSTGRES_DB: chatbot_eval
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U chatbot" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql+asyncpg://chatbot:chatbot_ci@localhost:5432/chatbot_eval
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      # Same CPU torch install as ci.yml (torch is deliberately absent from requirements.txt).
+      - name: Install CPU torch
+        run: pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Cache models
+        uses: actions/cache@v6
+        with:
+          path: |
+            model_weights/models--intfloat--multilingual-e5-small
+            model_weights/models--BAAI--bge-reranker-v2-m3
+          key: models-e5-small-bge-reranker-v2-m3-v1
+
+      - name: Create the schema
+        run: alembic upgrade head
+
+      - name: Seed the demo knowledge base
+        run: python -m scripts.seed_demo documents
+
+      - name: Retrieval eval (colloquial dev set)
+        run: python -m scripts.eval_rag --check --golden-set scripts/demo_data/golden_colloquial_dev.json
+
+      - name: Retrieval eval (colloquial held-out set)
+        run: python -m scripts.eval_rag --check --golden-set scripts/demo_data/golden_colloquial_holdout.json
+
+      - name: Retrieval eval (original golden set)
+        run: python -m scripts.eval_rag --check --golden-set scripts/demo_data/golden_queries.json
