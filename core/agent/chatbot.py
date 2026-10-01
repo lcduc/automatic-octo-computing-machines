@@ -329,7 +329,7 @@ class ChatbotService:
         """
         snapshot = self._index.snapshot
         top_k = _or_default(policy.retrieval_top_k, Config.RAG.RETRIEVAL_TOP_K)
-        threshold = _or_default(policy.similarity_threshold, Config.RAG.SIMILARITY_THRESHOLD)
+        threshold = Config.RAG.SIMILARITY_THRESHOLD()
         semantic_threshold = Config.RAG.SEMANTIC_THRESHOLD()
         today = datetime.now(ZoneInfo(Config.Server.APP_TIMEZONE())).date()
         if trace is not None:

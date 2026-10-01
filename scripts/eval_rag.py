@@ -218,7 +218,7 @@ async def run(golden_set: List[Dict[str, Optional[str]]], access_level: int) -> 
             for item in golden_set
         ]
         return build_report(
-            results, policy.retrieval_top_k, policy.similarity_threshold,
+            results, policy.retrieval_top_k, Config.RAG.SIMILARITY_THRESHOLD(),
             Config.RAG.SEMANTIC_THRESHOLD(), reranked is not None,
         )
     finally:

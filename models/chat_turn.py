@@ -67,7 +67,6 @@ class ChatPolicy:
     #: Words or phrases that always go to a human (accent-insensitive); empty disables.
     handoff_topics: Sequence[str] = ()
     #: Retrieval tuning; ``None`` = the env default.
-    similarity_threshold: Optional[float] = None
     semantic_weight: Optional[float] = None
     retrieval_top_k: Optional[int] = None
     max_context_chunks: Optional[int] = None

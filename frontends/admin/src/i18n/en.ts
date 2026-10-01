@@ -455,8 +455,6 @@ export const en: Record<MessageKey, string> = {
   "models.reset": "Reset to default ({value})",
   "models.envOnly": "The embedding model ({embedding}) and reranker ({reranker}) can only be changed in .env, because all knowledge must be re-embedded at start-up.",
   "models.retrieval": "Retrieval",
-  "models.threshold": "Relevance threshold",
-  "models.thresholdHint": "Chunks scoring lower are not used; with none left the assistant gives the standard reply.",
   "models.weight": "Semantic weight",
   "models.weightHint": "Share of the score from semantic search; the rest comes from keyword search.",
   "models.topK": "Chunks kept",

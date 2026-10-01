@@ -453,8 +453,6 @@ export const vi = {
   "models.reset": "Về mặc định ({value})",
   "models.envOnly": "Mô hình nhúng ({embedding}) và xếp hạng lại ({reranker}) chỉ đổi được trong .env vì cần nhúng lại toàn bộ tri thức khi khởi động.",
   "models.retrieval": "Truy xuất",
-  "models.threshold": "Ngưỡng liên quan",
-  "models.thresholdHint": "Đoạn có điểm thấp hơn không được dùng; nếu không còn đoạn nào, trợ lý ảo dùng câu trả lời mặc định.",
   "models.weight": "Trọng số ngữ nghĩa",
   "models.weightHint": "Phần điểm từ tìm kiếm ngữ nghĩa; phần còn lại từ tìm theo từ khoá.",
   "models.topK": "Số đoạn giữ lại",

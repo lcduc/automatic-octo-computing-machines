@@ -8,7 +8,7 @@ import type { Settings, SystemStatus } from "../../lib/types";
 import { useSaveSettings } from "./use-save-settings";
 
 type ModelKey = "chat_model" | "light_model";
-type TuningKey = "similarity_threshold" | "semantic_weight" | "retrieval_top_k" | "max_context_chunks";
+type TuningKey = "semantic_weight" | "retrieval_top_k" | "max_context_chunks";
 
 const MODELS: Array<{ key: ModelKey; label: MessageKey; hint: MessageKey }> = [
   { key: "chat_model", label: "models.chat", hint: "models.chatHint" },
@@ -16,7 +16,6 @@ const MODELS: Array<{ key: ModelKey; label: MessageKey; hint: MessageKey }> = [
 ];
 /** Same bounds as the backend's SettingsUpdate. */
 const TUNING: Array<{ key: TuningKey; label: MessageKey; hint: MessageKey; min: number; max: number; step: number }> = [
-  { key: "similarity_threshold", label: "models.threshold", hint: "models.thresholdHint", min: 0, max: 1, step: 0.01 },
   { key: "semantic_weight", label: "models.weight", hint: "models.weightHint", min: 0, max: 1, step: 0.05 },
   { key: "retrieval_top_k", label: "models.topK", hint: "models.topKHint", min: 1, max: 20, step: 1 },
   { key: "max_context_chunks", label: "models.contextChunks", hint: "models.contextChunksHint", min: 1, max: 20, step: 1 },

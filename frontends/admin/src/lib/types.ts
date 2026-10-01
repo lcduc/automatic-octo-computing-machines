@@ -338,7 +338,6 @@ export interface Settings {
   widget_suggested_questions: string[];
   chat_model: string;
   light_model: string;
-  similarity_threshold: number;
   semantic_weight: number;
   retrieval_top_k: number;
   max_context_chunks: number;
