@@ -31,6 +31,7 @@ from .pricing_service import PricingService
 from .settings_service import SettingsService
 from .usage_service import BudgetVerdict, UsageService
 
+from utils.text_utils import TextUtils
 logger = logging.getLogger(__name__)
 
 #: Outcome stored when the visitor disconnected before the answer finished.
@@ -135,7 +136,7 @@ class ChatService:
         if self._slots.locked():
             raise ServiceUnavailableError("Hệ thống đang bận, vui lòng thử lại sau giây lát.")
 
-        redacted = self._redact(message.strip())
+        redacted = self._redact(TextUtils.normalize_chat_text(message))
         history_limit = Config.Chat.MAX_HISTORY_TURNS() * 2
         async with self._database.session() as session:
             repository = ConversationRepository(session)

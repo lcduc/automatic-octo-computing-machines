@@ -102,7 +102,7 @@ class InputGuard:
     @staticmethod
     def _normalize(text: str) -> str:
         """Lower-case, strip Vietnamese accents and collapse whitespace."""
-        folded = TextUtils.strip_vietnamese_accents(text.lower())
+        folded = TextUtils.strip_vietnamese_accents(TextUtils.normalize_chat_text(text).lower())
         return re.sub(r"\s+", " ", folded).strip()
 
     def classify_rules(self, text: str) -> GuardVerdict:

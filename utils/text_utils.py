@@ -266,6 +266,31 @@ class TextUtils:
         return without_marks
 
     @staticmethod
+    def normalize_chat_text(text: str) -> str:
+        """
+        Canonical form of a visitor's message, applied before anything reads it.
+
+        NFKC folds look-alike forms (fullwidth letters, decomposed Vietnamese accents) into plain
+        ones; zero-width and other invisible characters are dropped, so a phrase cannot be split by
+        them to slip past a pattern; other control characters become spaces and spaces are collapsed.
+        Newlines survive (at most one blank line in a row).
+        """
+        if not text:
+            return ""
+
+        import unicodedata
+
+        folded = unicodedata.normalize("NFKC", text)
+        kept = []
+        for char in folded:
+            category = unicodedata.category(char)
+            if category == "Cf":
+                continue
+            kept.append(" " if category == "Cc" and char not in "\n\t" else char)
+        cleaned = re.sub(r"[ \t]+", " ", "".join(kept).replace("\r\n", "\n"))
+        return re.sub(r"\n{3,}", "\n\n", cleaned).strip()
+
+    @staticmethod
     def tokenize_for_search(text: str) -> List[str]:
         """
         Keyword-search tokens: lower-cased, accent-free, punctuation stripped.
