@@ -193,3 +193,6 @@ frontends/*/.env*
 /.deploy_history
 /.answers.toml
 *.answers.toml
+
+# Local eval and run logs
+logs/
