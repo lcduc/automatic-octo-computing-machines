@@ -85,6 +85,8 @@ class TurnRequest:
     sources: Optional[Sequence[str]] = None
     #: The verified caller, for tools (tier gate, ``user_id``).
     context: ToolContext = field(default_factory=ToolContext)
+    #: A staff member is already replying in this conversation: the bot must not answer.
+    staff_active: bool = False
     #: Filled in by the pipeline as it runs; stored with the answer (ADM-05).
     trace: TurnTrace = field(default_factory=TurnTrace)
 

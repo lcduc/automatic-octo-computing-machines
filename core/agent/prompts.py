@@ -134,6 +134,18 @@ class AutoReplies:
     TIMEOUT = "Xin lỗi, hệ thống phản hồi quá lâu. Bạn vui lòng thử lại với câu hỏi ngắn gọn hơn."
     BUSY = "Hệ thống đang quá tải. Bạn vui lòng thử lại sau giây lát."
     BUDGET_EXCEEDED = "Bạn đã dùng hết lượt hỏi đáp trong hôm nay. Vui lòng quay lại vào ngày mai."
+    #: Staff already replied in this conversation; the bot stays out of it (no LLM call).
+    STAFF_ACTIVE = (
+        "Nhân viên hỗ trợ đang theo dõi cuộc trò chuyện này và sẽ phản hồi bạn. "
+        "Tin nhắn của bạn đã được ghi lại."
+    )
+    #: The question is about something this assistant does not cover (no LLM call).
+    OFF_TOPIC = (
+        "Xin lỗi, mình chỉ hỗ trợ các câu hỏi về làm việc, học tập và sinh sống tại Đức, như visa, tiếng Đức, "
+        "công nhận bằng cấp, học nghề hay chi phí. Bạn muốn hỏi về nội dung nào trong số đó?"
+    )
+    #: The visitor only announced a question ("cho em hỏi"); asked once, then handed to staff.
+    CLARIFY = "Bạn muốn hỏi về vấn đề gì? Bạn cứ nêu câu hỏi cụ thể, mình sẽ hỗ trợ ngay."
     #: Monthly spend cap nearly reached: anonymous visitors are paused first.
     SPEND_PAUSED_ANONYMOUS = (
         "Trợ lý ảo tạm ngừng phục vụ khách chưa đăng nhập. "

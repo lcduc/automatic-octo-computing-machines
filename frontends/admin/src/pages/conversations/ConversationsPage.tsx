@@ -6,7 +6,7 @@ import { OUTCOMES, type ConversationSummary, type Page } from "../../lib/types";
 import { useApi } from "../../lib/use-api";
 
 const PAGE_SIZE = 50;
-const STATUSES = ["active", "handoff_pending", "closed"] as const;
+const STATUSES = ["active", "handoff_pending", "staff_active", "closed"] as const;
 
 export function ConversationsPage() {
   const { t, formatDateTime, formatNumber } = useI18n();

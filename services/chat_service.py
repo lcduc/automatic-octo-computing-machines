@@ -19,11 +19,19 @@ from core.guardrails.pii_redactor import PiiRedactor
 from core.storage.conversation_repository import ConversationRepository
 from core.storage.database import Database
 from core.storage.tables.base import utc_now
-from core.storage.tables.conversation_tables import Conversation, HandoffRequest, Message, TokenUsage
+from core.storage.tables.conversation_tables import (
+    CONVERSATION_STATUS_STAFF_ACTIVE,
+    HANDOFF_ACTIVE_STATUSES,
+    Conversation,
+    HandoffRequest,
+    Message,
+    TokenUsage,
+)
 from core.storage.tables.observability_tables import MessageTrace
 from models.caller import ChatCaller
 from models.chat_turn import FALLBACK_MODE_HANDOFF, HandoffReason, TurnDelta, TurnOutcome, TurnRequest, TurnResult, TurnUsage
 from models.tool_context import ToolContext
+from utils.text_utils import TextUtils
 from .errors import NotFoundError, RateLimitedError, ServiceUnavailableError
 from .handoff_service import HandoffService
 from .live_feed_service import LiveFeedService
@@ -31,7 +39,6 @@ from .pricing_service import PricingService
 from .settings_service import SettingsService
 from .usage_service import BudgetVerdict, UsageService
 
-from utils.text_utils import TextUtils
 logger = logging.getLogger(__name__)
 
 #: Outcome stored when the visitor disconnected before the answer finished.
@@ -147,6 +154,7 @@ class ChatService:
             )
             conversation.message_count += 1
             conversation.last_activity_at = utc_now()
+            staff_active = conversation.status == CONVERSATION_STATUS_STAFF_ACTIVE
 
         # The outcome lets ``recent_history`` drop failed turns' apologies.
         history = [{"role": row.role, "content": row.content, "outcome": row.outcome} for row in history_rows]
@@ -158,6 +166,7 @@ class ChatService:
             policy=self._settings.chat_policy(),
             sources=sources,
             context=ToolContext(user_id=caller.user_id, tier_level=caller.tier_level),
+            staff_active=staff_active,
         )
         return PreparedTurn(caller, conversation.id, uuid.uuid4(), request, time.perf_counter(),
                             previous_answer=previous_answer)
@@ -337,7 +346,13 @@ class ChatService:
                 if conversation is not None:
                     conversation.message_count += 1
                     conversation.last_activity_at = utc_now()
-                    if result.handoff_reason is not None:
+                    # One ticket in progress per conversation: a later handoff reason is already covered by it.
+                    waiting = result.handoff_reason is not None and await repository.active_handoff(
+                        turn.conversation_id, HANDOFF_ACTIVE_STATUSES
+                    )
+                    if waiting:
+                        logger.info("Conversation %s already has a ticket in progress", turn.conversation_id)
+                    elif result.handoff_reason is not None:
                         handoff = self._handoffs.open_request(
                             repository, conversation, turn.assistant_message_id, result.handoff_reason.value,
                             turn.caller.user_id,

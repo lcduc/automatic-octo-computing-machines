@@ -139,6 +139,7 @@ export const vi = {
   "conversationStatus.active": "Đang diễn ra",
   "conversationStatus.handoff_pending": "Chờ nhân viên",
   "conversationStatus.closed": "Đã đóng",
+  "conversationStatus.staff_active": "Nhân viên đang hỗ trợ",
 
   "overview.title": "Tổng quan",
   "overview.description": "Hoạt động của trợ lý ảo, lượng token tiêu thụ và phản hồi của người dùng.",

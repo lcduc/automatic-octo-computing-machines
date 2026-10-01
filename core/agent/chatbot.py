@@ -54,6 +54,7 @@ from models.turn_trace import (
     ROUTE_TOOL,
     ROUTE_TOPIC,
 )
+    ROUTE_STAFF,
 from .base_llm_provider import BaseLLMProvider
 from .confidence import ConfidenceScorer
 from .history import recent_history
@@ -179,6 +180,11 @@ class ChatbotService:
             yield TurnResult(TurnOutcome.BLOCKED, policy.guard_block_message, guard_reason=verdict.reason)
             return
         if verdict.action == GuardAction.GREETING:
+        if request.staff_active:
+            trace.route = ROUTE_STAFF
+            yield TurnResult(TurnOutcome.HANDOFF, AutoReplies.STAFF_ACTIVE)
+            return
+
             yield TurnResult(TurnOutcome.SMALLTALK, policy.greeting_message)
             return
         if verdict.action == GuardAction.THANKS:

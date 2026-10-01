@@ -141,6 +141,7 @@ export const en: Record<MessageKey, string> = {
   "conversationStatus.active": "Active",
   "conversationStatus.handoff_pending": "Waiting for staff",
   "conversationStatus.closed": "Closed",
+  "conversationStatus.staff_active": "Staff replying",
 
   "overview.title": "Overview",
   "overview.description": "Assistant activity, token usage and user feedback.",
