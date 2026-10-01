@@ -207,7 +207,7 @@ export interface DataSubjectDeleted {
 }
 
 export type HandoffStatus = "open" | "assigned" | "answered" | "closed";
-export const HANDOFF_REASONS = ["no_knowledge", "user_request", "sensitive_topic", "repeated_no_answer", "negative_feedback", "tool_error"] as const;
+export const HANDOFF_REASONS = ["no_knowledge", "user_request", "sensitive_topic", "repeated_no_answer", "negative_feedback", "tool_error", "ambiguous_repeated"] as const;
 
 export interface Handoff {
   id: string;
@@ -338,7 +338,6 @@ export interface Settings {
   widget_suggested_questions: string[];
   chat_model: string;
   light_model: string;
-  similarity_threshold: number;
   semantic_weight: number;
   retrieval_top_k: number;
   max_context_chunks: number;

@@ -1,203 +1,283 @@
-#!/usr/bin/env python3
 """
-eval_rag.py
+Retrieval eval and threshold calibration against the live knowledge base.
 
-Cheap, fast retrieval-accuracy check for the RAG pipeline.
+Runs a labelled golden set through the same retriever, models and admin
+settings the chat path uses, with the relevance gates switched off, and reports:
 
-Runs a small golden set of (query, expected_source) pairs through the same
-``ContextRetriever.hybrid_search()`` the live chat path uses (see
-``ChatbotService._retrieve_context`` in core/agent/chatbot.py), and reports
-recall@k, precision@k and MRR against the expected source folder under
-data/chunks/.
+- recall@k / MRR: does the expected document come back for answerable questions;
+- for ``SIMILARITY_THRESHOLD`` (reranker score, the normal gate) and
+  ``SEMANTIC_THRESHOLD`` (cosine, the gate when no reranker scored): how many
+  answerable questions the current value lets through and how many
+  unanswerable ones it refuses, and the value that separates the two best.
 
-No LLM calls are made — this only exercises embeddings + BM25 retrieval, so
-it costs nothing and runs in seconds against an already-built vector store.
+Golden set: a JSON list of ``{"query": ..., "expected_document": <document title> | null}``;
+``null`` marks a question the knowledge base cannot answer, which the bot should refuse.
 
-Usage:
-  python scripts/eval_rag.py
-  python scripts/eval_rag.py --golden-set data/eval/golden_queries.json --out data/logs/eval_report.json
+No LLM calls are made. Usage (from the repository root, with the venv active)::
+
+    python -m scripts.eval_rag
+    python -m scripts.eval_rag --golden-set my_set.json --out logs/eval_report.json
 """
+
+# Standard library imports
 import argparse
+import asyncio
 import json
 import logging
-import os
+import math
 import sys
+from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# Third-party imports
+from dotenv import load_dotenv
 
-from config.settings import Config
-from core.retrieval.retriever import ContextRetriever
-from core.storage import get_vector_store_provider
+load_dotenv()
+
+# Local imports
+from core.retrieval.knowledge_index import KnowledgeSnapshot  # noqa: E402
+from core.retrieval.retriever import ContextRetriever  # noqa: E402
+from models.knowledge import RetrievedChunk  # noqa: E402
+from scripts.eval_baseline import EvalBaseline  # noqa: E402
+from scripts.threshold_calibrator import ThresholdCalibrator  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_GOLDEN_SET_PATH = "data/eval/golden_queries.json"
+DEFAULT_GOLDEN_SET_PATH = Path(__file__).parent / "demo_data" / "golden_queries.json"
+#: Score of a question whose expected document (or any chunk) was not retrieved at all.
+NO_MATCH = -math.inf
+#: Access level of an anonymous widget visitor, which the eval asks as by default.
+ANONYMOUS_ACCESS_LEVEL = 0
+
+
+@dataclass(frozen=True)
+class QueryResult:
+    """Ungated retrieval outcome of one golden question."""
+
+    query: str
+    expected_document: Optional[str]
+    #: Distinct document titles in rank order.
+    documents: List[str]
+    #: 1-based rank of the expected document, ``None`` when missed or unanswerable.
+    rank: Optional[int]
+    #: Best reranker score over the expected document's chunks (any chunk when unanswerable).
+    best_rerank: Optional[float]
+    #: The same for cosine similarity, from a search without the reranker.
+    best_cosine: float
+    #: For an unanswerable question: ``off_topic`` or ``unanswerable`` (on topic, but not in the knowledge base).
+    kind: Optional[str] = None
 
 
 class RetrievalEvaluator:
-    """Runs a golden query set through hybrid search and scores recall@k / MRR."""
+    """Runs golden questions through the live retriever with the relevance gates off."""
 
-    def __init__(self, retriever: ContextRetriever, k: int, semantic_weight: float):
+    def __init__(
+        self,
+        snapshot: KnowledgeSnapshot,
+        reranked: Optional[ContextRetriever],
+        cosine_only: ContextRetriever,
+        top_k: int,
+        semantic_weight: float,
+        access_level: int,
+    ):
         """
         Args:
-            retriever: Retriever to evaluate; shares the live vector store.
-            k: Number of results requested per query, matching the live
-                ``RETRIEVAL_TOP_K`` the chat path uses.
-            semantic_weight: Semantic-vs-keyword fusion weight, matching the
-                live ``SEMANTIC_WEIGHT``.
+            snapshot: Corpus to search.
+            reranked: Retriever with the live reranker; ``None`` when reranking is off.
+            cosine_only: Retriever without a reranker, as the chat path runs when reranking fails.
+            top_k: Matches per question, as the live ``retrieval_top_k``.
+            semantic_weight: Embedding-vs-BM25 fusion weight, as the live setting.
+            access_level: Caller access level; higher-tier documents are skipped.
         """
-        self._retriever = retriever
-        self._k = k
+        self._snapshot = snapshot
+        self._reranked = reranked
+        self._cosine_only = cosine_only
+        self._top_k = top_k
         self._semantic_weight = semantic_weight
+        self._access_level = access_level
 
-    def evaluate_one(
-        self, query: str, expected_source: str, embeddings, documents: List[str]
-    ) -> Dict[str, Any]:
-        """
-        Run one query and score it against its expected source.
-
-        Returns:
-            Dict with the query, expected source, retrieved source order,
-            whether the expected source was found, its rank if found, and
-            precision@k (the fraction of returned chunks that belong to the
-            expected source).
-        """
-        results = self._retriever.hybrid_search(
-            query, embeddings, documents, k=self._k, semantic_weight=self._semantic_weight
+    def evaluate(self, query: str, expected_document: Optional[str], kind: Optional[str] = None) -> QueryResult:
+        """Score one question; the ranking comes from the reranked search when there is one."""
+        cosine_matches = self._search(self._cosine_only, query)
+        matches = self._search(self._reranked, query) if self._reranked else cosine_matches
+        documents = list(dict.fromkeys(match.chunk.document_title for match in matches))
+        rank = documents.index(expected_document) + 1 if expected_document in documents else None
+        best_rerank = self._best(matches, expected_document, "rerank_score") if self._reranked else None
+        return QueryResult(
+            query, expected_document, documents, rank, best_rerank,
+            self._best(cosine_matches, expected_document, "semantic_score"), kind,
         )
-        retrieved_sources = [r.get("source_id", "unknown") for r in results]
-        hit = expected_source in retrieved_sources
-        rank = retrieved_sources.index(expected_source) + 1 if hit else None
-        relevant_count = sum(1 for source in retrieved_sources if source == expected_source)
-        precision_at_k = relevant_count / len(retrieved_sources) if retrieved_sources else 0.0
-        return {
-            "query": query,
-            "expected_source": expected_source,
-            "retrieved_sources": retrieved_sources,
-            "hit": hit,
-            "rank": rank,
-            "precision_at_k": precision_at_k,
-        }
 
-    def evaluate_all(
-        self, golden_set: List[Dict[str, str]], embeddings, documents: List[str]
-    ) -> Dict[str, Any]:
-        """
-        Run the full golden set and aggregate recall@k / precision@k / MRR, overall and per source.
+    def _search(self, retriever: ContextRetriever, query: str) -> List[RetrievedChunk]:
+        """Top-k matches with every score kept: no threshold, no neighbour expansion."""
+        return retriever.search(
+            query, self._snapshot, top_k=self._top_k, semantic_weight=self._semantic_weight,
+            threshold=NO_MATCH, semantic_threshold=NO_MATCH, max_context_chunks=self._top_k,
+            expansion_radius=0, access_level=self._access_level,
+        )
 
-        Returns:
-            Report dict with overall metrics, a per-source breakdown, the
-            list of missed queries, and every individual query result.
-        """
-        per_query = [
-            self.evaluate_one(item["query"], item["expected_source"], embeddings, documents)
-            for item in golden_set
+    @staticmethod
+    def _best(matches: List[RetrievedChunk], expected_document: Optional[str], score: str) -> float:
+        """Highest ``score`` among the expected document's chunks, or all chunks when none is expected."""
+        scores = [
+            getattr(match, score) for match in matches
+            if expected_document is None or match.chunk.document_title == expected_document
         ]
-
-        total = len(per_query)
-        hits = sum(1 for r in per_query if r["hit"])
-        mrr = sum(1.0 / r["rank"] for r in per_query if r["hit"]) / total if total else 0.0
-        mean_precision_at_k = sum(r["precision_at_k"] for r in per_query) / total if total else 0.0
-
-        by_source: Dict[str, Dict[str, Any]] = {}
-        for r in per_query:
-            bucket = by_source.setdefault(
-                r["expected_source"], {"total": 0, "hits": 0, "precision_sum": 0.0}
-            )
-            bucket["total"] += 1
-            bucket["hits"] += 1 if r["hit"] else 0
-            bucket["precision_sum"] += r["precision_at_k"]
-
-        return {
-            "k": self._k,
-            "total_queries": total,
-            "recall_at_k": hits / total if total else 0.0,
-            "precision_at_k": mean_precision_at_k,
-            "mrr": mrr,
-            "by_source": {
-                source: {
-                    "total": stats["total"],
-                    "hits": stats["hits"],
-                    "recall": stats["hits"] / stats["total"],
-                    "precision_at_k": stats["precision_sum"] / stats["total"],
-                }
-                for source, stats in sorted(by_source.items())
-            },
-            "misses": [r for r in per_query if not r["hit"]],
-            "per_query": per_query,
-        }
+        return max(scores, default=NO_MATCH)
 
 
-def load_golden_set(path: str) -> List[Dict[str, str]]:
-    """Load the (query, expected_source) golden set from a JSON file."""
-    with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)
+KIND_UNANSWERABLE = "unanswerable"
+
+
+def calibration(results: List[QueryResult], score: str, current: float) -> Dict[str, Any]:
+    """
+    Rates of the ``current`` threshold and the best one for ``score`` ("best_rerank" / "best_cosine").
+
+    The threshold is only a floor: questions marked ``unanswerable`` (on topic, not in the knowledge
+    base) overlap with answerable ones in score, so they are left out of the calibration and reported
+    as ``on_topic_unanswerable_reaching_the_model``, the share that clears the threshold in force.
+    """
+    negatives = [r for r in results if r.expected_document is None and r.kind != KIND_UNANSWERABLE]
+    on_topic = [getattr(r, score) for r in results if r.kind == KIND_UNANSWERABLE]
+    calibrator = ThresholdCalibrator(
+        [getattr(r, score) for r in results if r.expected_document is not None],
+        [getattr(r, score) for r in negatives],
+    )
+    report = {"current": asdict(calibrator.rates(current)), "best": asdict(calibrator.best())}
+    if on_topic:
+        report["on_topic_unanswerable_reaching_the_model"] = sum(value >= current for value in on_topic) / len(on_topic)
+    return report
+
+
+def build_report(
+    results: List[QueryResult], top_k: int, similarity_threshold: float, semantic_threshold: float, reranked: bool
+) -> Dict[str, Any]:
+    """Recall/MRR over the answerable questions and the calibration of both gates."""
+    answerable = [r for r in results if r.expected_document is not None]
+    hits = [r for r in answerable if r.rank is not None]
+    total = len(answerable)
+    return {
+        "top_k": top_k,
+        "answerable": total,
+        "unanswerable": len(results) - total,
+        "recall_at_k": len(hits) / total if total else 0.0,
+        "mrr": sum(1 / r.rank for r in hits) / total if total else 0.0,
+        "similarity_threshold": (
+            calibration(results, "best_rerank", similarity_threshold) if reranked else None
+        ),
+        "semantic_threshold": calibration(results, "best_cosine", semantic_threshold),
+        "misses": [asdict(r) for r in answerable if r.rank is None],
+        "per_query": [asdict(r) for r in results],
+    }
+
+
+def _format_rates(label: str, rates: Dict[str, float]) -> str:
+    """One line: threshold, answered share, refused share."""
+    return (
+        f"    {label:8s} {rates['threshold']:.3f}  answers {rates['answered']:.0%} of answerable, "
+        f"refuses {rates['refused']:.0%} of unanswerable"
+    )
 
 
 def print_report(report: Dict[str, Any]) -> None:
-    """Print a human-readable summary of the evaluation report."""
-    print(f"\nRetrieval eval -- {report['total_queries']} queries, k={report['k']}")
-    print(f"  Recall@{report['k']}:    {report['recall_at_k']:.1%}")
-    print(f"  Precision@{report['k']}: {report['precision_at_k']:.1%}")
-    print(f"  MRR:        {report['mrr']:.3f}")
-
-    print("\n  By source:")
-    for source, stats in report["by_source"].items():
-        print(
-            f"    {source:6s} {stats['hits']}/{stats['total']}  "
-            f"(recall {stats['recall']:.0%}, precision {stats['precision_at_k']:.0%})"
-        )
-
+    """Print a human-readable summary of the report."""
+    print(f"\nRetrieval: {report['answerable']} answerable + {report['unanswerable']} unanswerable questions, "
+          f"k={report['top_k']}")
+    print(f"  Recall@{report['top_k']}: {report['recall_at_k']:.1%}   MRR: {report['mrr']:.3f}")
+    for name, label in (("similarity_threshold", "SIMILARITY_THRESHOLD (reranker)"),
+                        ("semantic_threshold", "SEMANTIC_THRESHOLD (cosine, no reranker)")):
+        print(f"\n  {label}")
+        gate = report[name]
+        if gate is None:
+            print("    reranking is off; not calibrated")
+            continue
+        print(_format_rates("current", gate["current"]))
+        print(_format_rates("best", gate["best"]))
+        if "on_topic_unanswerable_reaching_the_model" in gate:
+            print(f"    on-topic unanswerable questions that clear the current threshold (the model decides): "
+                  f"{gate['on_topic_unanswerable_reaching_the_model']:.0%}")
     if report["misses"]:
-        print("\n  Misses:")
+        print("\n  Expected document not retrieved:")
         for miss in report["misses"]:
-            print(f"    [{miss['expected_source']}] '{miss['query']}' -> got {miss['retrieved_sources']}")
+            print(f"    '{miss['query']}' -> {miss['documents']}")
     print()
 
 
-def main() -> None:
-    """Load the vector store and golden set, run the eval, print and optionally save the report."""
+def load_golden_set(path: Path) -> List[Dict[str, Optional[str]]]:
+    """Load the ``[{"query", "expected_document"}]`` golden set."""
+    with open(path, "r", encoding="utf-8") as file:
+        return json.load(file)
+
+
+async def run(golden_set: List[Dict[str, Optional[str]]], access_level: int) -> Dict[str, Any]:
+    """Start the app services, evaluate every question, and build the report."""
+    from api.container import AppContainer
+    from config.settings import Config
+
+    container = AppContainer()
+    await container.start()
+    try:
+        snapshot = container.index.snapshot
+        if snapshot.is_empty:
+            raise SystemExit("The knowledge base is empty; add documents first (e.g. python -m scripts.seed_demo documents).")
+        titles = {chunk.document_title for chunk in snapshot.chunks}
+        unknown = {item["expected_document"] for item in golden_set} - titles - {None}
+        if unknown:
+            logger.warning("Golden set names documents not in the knowledge base: %s", sorted(unknown))
+
+        policy = container.settings.chat_policy()
+        reranked = ContextRetriever(container.embedding, container.reranker) if container.reranker else None
+        evaluator = RetrievalEvaluator(
+            snapshot, reranked, ContextRetriever(container.embedding, None),
+            policy.retrieval_top_k, policy.semantic_weight, access_level,
+        )
+        logger.info("Evaluating %d questions (reranker %s)", len(golden_set), "on" if reranked else "off")
+        results = [
+            await asyncio.to_thread(evaluator.evaluate, item["query"], item["expected_document"], item.get("kind"))
+            for item in golden_set
+        ]
+        return build_report(
+            results, policy.retrieval_top_k, Config.RAG.SIMILARITY_THRESHOLD(),
+            Config.RAG.SEMANTIC_THRESHOLD(), reranked is not None,
+        )
+    finally:
+        await container.stop()
+
+
+def main(argv: Optional[List[str]] = None) -> int:
+    """CLI entry point; returns the exit code."""
     if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
-        # Diacritic-heavy Vietnamese queries/sources otherwise crash a
-        # cp1252 Windows console with UnicodeEncodeError.
+        # Vietnamese titles otherwise crash a cp1252 Windows console with UnicodeEncodeError.
         sys.stdout.reconfigure(encoding="utf-8")
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--golden-set", type=Path, default=DEFAULT_GOLDEN_SET_PATH, help="Golden set JSON file")
+    parser.add_argument("--access-level", type=int, default=ANONYMOUS_ACCESS_LEVEL,
+                        help="Ask as this access level (default: anonymous visitor)")
+    parser.add_argument("--out", type=Path, default=None, help="Also save the full JSON report here")
+    parser.add_argument("--check", action="store_true", help="Fail (exit 1) when recall/MRR regress against the committed baseline")
+    parser.add_argument("--write-baseline", action="store_true", help="Record this report as the baseline (then commit the file)")
+    args = parser.parse_args(argv)
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--golden-set", default=DEFAULT_GOLDEN_SET_PATH, help="Path to the golden query JSON file"
-    )
-    parser.add_argument(
-        "--k", type=int, default=None, help="Override Config.RAG.RETRIEVAL_TOP_K for this run"
-    )
-    parser.add_argument("--out", default=None, help="Optional path to save the full JSON report")
-    args = parser.parse_args()
-
-    golden_set = load_golden_set(args.golden_set)
-
-    provider = get_vector_store_provider()
-    data = provider.get_data()
-    if data is None:
-        raise SystemExit("Vector store could not be loaded -- is data/vectors populated?")
-    _, embeddings, documents = data
-    if not documents:
-        raise SystemExit("Vector store is empty -- rebuild it first (POST /cleanup/vectors/rebuild).")
-
-    k = args.k or Config.RAG.RETRIEVAL_TOP_K()
-    evaluator = RetrievalEvaluator(
-        ContextRetriever(), k=k, semantic_weight=Config.RAG.SEMANTIC_WEIGHT()
-    )
-    report = evaluator.evaluate_all(golden_set, embeddings, documents)
-
+    report = asyncio.run(run(load_golden_set(args.golden_set), args.access_level))
     print_report(report)
-
     if args.out:
-        Path(args.out).parent.mkdir(parents=True, exist_ok=True)
-        with open(args.out, "w", encoding="utf-8") as f:
-            json.dump(report, f, ensure_ascii=False, indent=2)
+        args.out.parent.mkdir(parents=True, exist_ok=True)
+        with open(args.out, "w", encoding="utf-8") as file:
+            json.dump(report, file, ensure_ascii=False, indent=2, default=str)
         print(f"Full report saved to {args.out}")
+    baseline, name = EvalBaseline(), args.golden_set.stem
+    if args.write_baseline:
+        baseline.write(name, baseline.retrieval_values(report))
+        print("Baseline written; commit scripts/demo_data/eval_baseline.json")
+    if args.check:
+        problems = baseline.check_retrieval(name, report)
+        for problem in problems:
+            print(f"REGRESSION: {problem}")
+        return 1 if problems else 0
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

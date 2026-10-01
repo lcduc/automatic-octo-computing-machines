@@ -100,6 +100,7 @@ export const vi = {
   "handoffReason.repeated_no_answer": "Nhiều lần không trả lời được",
   "handoffReason.negative_feedback": "Đánh giá chưa tốt",
   "handoffReason.tool_error": "Lỗi tra cứu dữ liệu",
+  "handoffReason.ambiguous_repeated": "Câu hỏi chưa rõ sau khi hỏi lại",
   "handoffReason.other": "Khác",
   "outcome.agent_reply": "Nhân viên trả lời",
   "handoffs.due": "Hạn phản hồi",
@@ -138,6 +139,7 @@ export const vi = {
 
   "conversationStatus.active": "Đang diễn ra",
   "conversationStatus.handoff_pending": "Chờ nhân viên",
+  "conversationStatus.staff_active": "Nhân viên đang hỗ trợ",
   "conversationStatus.closed": "Đã đóng",
 
   "overview.title": "Tổng quan",
@@ -453,8 +455,6 @@ export const vi = {
   "models.reset": "Về mặc định ({value})",
   "models.envOnly": "Mô hình nhúng ({embedding}) và xếp hạng lại ({reranker}) chỉ đổi được trong .env vì cần nhúng lại toàn bộ tri thức khi khởi động.",
   "models.retrieval": "Truy xuất",
-  "models.threshold": "Ngưỡng liên quan",
-  "models.thresholdHint": "Đoạn có điểm thấp hơn không được dùng; nếu không còn đoạn nào, trợ lý ảo dùng câu trả lời mặc định.",
   "models.weight": "Trọng số ngữ nghĩa",
   "models.weightHint": "Phần điểm từ tìm kiếm ngữ nghĩa; phần còn lại từ tìm theo từ khoá.",
   "models.topK": "Số đoạn giữ lại",

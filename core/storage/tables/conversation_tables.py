@@ -20,6 +20,8 @@ from .base import Base, created_at_column, updated_at_column, utc_now, uuid_pk
 
 CONVERSATION_STATUS_ACTIVE = "active"
 CONVERSATION_STATUS_HANDOFF = "handoff_pending"
+#: A staff member has replied: the bot stays silent until the ticket is closed.
+CONVERSATION_STATUS_STAFF_ACTIVE = "staff_active"
 CONVERSATION_STATUS_CLOSED = "closed"
 
 #: Ticket lifecycle (HND-16): open -> assigned -> answered -> closed.

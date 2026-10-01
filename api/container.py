@@ -30,6 +30,7 @@ from core.infrastructure.smtp_mailer import SmtpMailer
 from core.retrieval.remote_models import RemoteReranker, embedding_service, model_server_client
 from core.retrieval.knowledge_index import KnowledgeIndex
 from core.retrieval.retriever import ContextRetriever
+from core.routing.embedding_router import EmbeddingRouter
 from core.storage.database import Database
 from core.storage.upload_store import UploadStore
 from services.audit_service import AuditService
@@ -107,6 +108,7 @@ class AppContainer:
             self.business_database = Database(BusinessDbConfig.BUSINESS_DB_URL(), BusinessDbConfig.BUSINESS_DB_POOL_SIZE())
             executor = SqlToolExecutor(self.business_database, BusinessDbConfig.SQL_TOOL_STATEMENT_TIMEOUT_MS())
             self.sql_tools = SqlToolCatalog(self.database, executor, self.host_identity.tier_level)
+        self.embedding = None
         self.reranker = None
         self.llm = None
         self.pipeline: Optional[ChatbotService] = None
@@ -133,7 +135,7 @@ class AppContainer:
             self.business_database.connect()
             await self.sql_tools.load()
 
-        embedding = await self._load_embedding_service()
+        self.embedding = embedding = await self._load_embedding_service()
         self.reranker = await self._load_reranker()
         self.llm = self._create_llm()
         openai = self._openai_extras()
@@ -201,6 +203,10 @@ class AppContainer:
         """The configured chat-completion provider."""
         return LLMProviderFactory.create()
 
+    def _create_router(self, embedding) -> Optional[EmbeddingRouter]:
+        """The embedding router over the retriever's embedding service."""
+        return EmbeddingRouter(embedding)
+
     async def check_model(self, model: str) -> None:
         """
         Answer one tiny prompt with ``model`` on the chat provider.
@@ -239,6 +245,7 @@ class AppContainer:
             cache=ResponseCache(Config.LLM.LLM_CACHE_MAX_ENTRIES(), Config.LLM.LLM_CACHE_TTL()),
             intent_router=intent_router,
             tool_agent=tool_agent,
+            router=self._create_router(embedding),
         )
 
     async def stop(self) -> None:

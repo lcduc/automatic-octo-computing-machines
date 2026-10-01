@@ -17,7 +17,7 @@ from typing import List, Optional, Sequence, Tuple
 import numpy as np
 
 # Local imports
-from models.knowledge import IndexedChunk, RetrievedChunk
+from models.knowledge import IndexedChunk, RetrievalResults, RetrievedChunk
 from utils.text_utils import TextUtils
 from .knowledge_index import KnowledgeSnapshot
 
@@ -110,7 +110,7 @@ class ContextRetriever:
         sources: Optional[Sequence[str]] = None,
         access_level: int = 0,
         today: Optional[date] = None,
-    ) -> List[RetrievedChunk]:
+    ) -> RetrievalResults:
         """
         Return matched chunks (plus neighbours for context), best first.
 
@@ -134,10 +134,10 @@ class ContextRetriever:
             other matches by rank. Empty when nothing clears the threshold in force.
         """
         if snapshot.is_empty or not query.strip():
-            return []
+            return RetrievalResults()
         candidates = self._candidate_indices(snapshot, sources, access_level, today or date.today())
         if candidates.size == 0:
-            return []
+            return RetrievalResults()
 
         semantic, keyword, fused = self._hybrid_scores(query, snapshot, candidates, semantic_weight)
         pool_size = min(len(candidates), max(top_k * RERANK_POOL_MULTIPLIER, MIN_RERANK_POOL))
@@ -148,6 +148,7 @@ class ContextRetriever:
             texts = [self._rerank_text(snapshot.chunks[candidates[p]]) for p in pool]
             rerank_scores = self._reranker.score(query, texts)
         gate = threshold if rerank_scores is not None else semantic_threshold
+        best_rerank = float(max(rerank_scores)) if rerank_scores is not None and len(rerank_scores) else None
 
         #: (snapshot index, match) pairs; the index locates the best match's neighbours.
         scored: List[Tuple[int, RetrievedChunk]] = []
@@ -172,9 +173,10 @@ class ContextRetriever:
         ranked = scored[:top_k]
         logger.debug("Search matched %d/%d pooled chunks", len(ranked), len(pool))
         if not ranked:
-            return []
+            return RetrievalResults(best_rerank=best_rerank)
         matches = [match for _, match in ranked]
-        return self._expand(snapshot, matches, ranked[0][0], max_context_chunks, expansion_radius)
+        expanded = self._expand(snapshot, matches, ranked[0][0], max_context_chunks, expansion_radius)
+        return RetrievalResults(expanded, best_rerank)
 
     @staticmethod
     def _rerank_text(chunk: IndexedChunk) -> str:

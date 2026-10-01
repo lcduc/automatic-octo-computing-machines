@@ -346,7 +346,6 @@ Runtime settings apply from the next chat turn, with no restart.
 | `assistant_instructions` | string ≤4000 | Extra system-prompt instructions (persona, scope, tone) |
 | `widget_title` (≤80), `widget_welcome_message` (≤500), `widget_primary_color` (`#RRGGBB`), `widget_suggested_questions` (≤6) | | The widget's look (public via `/widget/config`) |
 | `chat_model`, `light_model` | model id ≤100, `[A-Za-z0-9._:/-]` | Answer model and the cheaper rewrite/routing model of the configured provider. **A new value is tried with one tiny request first; if the provider rejects it you get 400 and nothing is saved.** |
-| `similarity_threshold` | 0–1 | Minimum relevance a chunk needs |
 | `semantic_weight` | 0–1 | Semantic share of the hybrid score (the rest is keyword search) |
 | `retrieval_top_k`, `max_context_chunks` | 1–20 | Chunks kept after reranking; cap after neighbour expansion |
 

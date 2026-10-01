@@ -199,7 +199,6 @@ class SettingsUpdate(BaseModel):
     widget_suggested_questions: Optional[List[str]] = Field(None, max_length=MAX_SUGGESTED_QUESTIONS)
     chat_model: Optional[str] = Field(None, max_length=MAX_MODEL_NAME, pattern=MODEL_NAME_PATTERN)
     light_model: Optional[str] = Field(None, max_length=MAX_MODEL_NAME, pattern=MODEL_NAME_PATTERN)
-    similarity_threshold: Optional[float] = Field(None, ge=0.0, le=1.0)
     semantic_weight: Optional[float] = Field(None, ge=0.0, le=1.0)
     retrieval_top_k: Optional[int] = Field(None, ge=1, le=MAX_RETRIEVAL_CHUNKS)
     max_context_chunks: Optional[int] = Field(None, ge=1, le=MAX_RETRIEVAL_CHUNKS)

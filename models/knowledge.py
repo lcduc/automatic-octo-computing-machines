@@ -82,6 +82,20 @@ class IndexedChunk:
     effective_to: Optional[date] = None
 
 
+class RetrievalResults(list):
+    """
+    The chunks a search returned (a plain list to callers).
+
+    ``best_rerank`` is the highest reranker score among the chunks considered, before the relevance
+    gate removed any: it tells "nothing here is related" (near 0) from "related, but not enough".
+    It is ``None`` when no reranker scored the pool.
+    """
+
+    def __init__(self, items=(), best_rerank: Optional[float] = None):
+        super().__init__(items)
+        self.best_rerank = best_rerank
+
+
 @dataclass
 class RetrievedChunk:
     """A chunk selected for the prompt context, with its scores."""

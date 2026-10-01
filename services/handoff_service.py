@@ -23,6 +23,7 @@ from core.storage.tables.base import utc_now
 from core.storage.tables.conversation_tables import (
     CONVERSATION_STATUS_ACTIVE,
     CONVERSATION_STATUS_HANDOFF,
+    CONVERSATION_STATUS_STAFF_ACTIVE,
     HANDOFF_ACTIVE_STATUSES,
     HANDOFF_STATUS_ANSWERED,
     HANDOFF_STATUS_ASSIGNED,
@@ -189,7 +190,7 @@ class HandoffService:
             if note is not None:
                 request.note = note
             if request.status in (HANDOFF_STATUS_ANSWERED, HANDOFF_STATUS_CLOSED):
-                await self._reactivate(repository, request)
+                await self._after_staff_action(repository, request)
         logger.info("Ticket %s updated by %s (status=%s)", handoff_id, updated_by, request.status)
         return request
 
@@ -214,7 +215,7 @@ class HandoffService:
             request.answer, request.answered_at = text, utc_now()
             request.assigned_to = request.assigned_to or answered_by
             request.status = HANDOFF_STATUS_ANSWERED
-            await self._reactivate(repository, request)
+            await self._after_staff_action(repository, request)
             recipient = request.contact_email
         if recipient and self._mailer is not None:
             await self._email(request, recipient, text)
@@ -256,8 +257,13 @@ class HandoffService:
         return request
 
     @staticmethod
-    async def _reactivate(repository: ConversationRepository, request: HandoffRequest) -> None:
-        """The bot may answer again once staff have replied or closed the ticket."""
+    async def _after_staff_action(repository: ConversationRepository, request: HandoffRequest) -> None:
+        """
+        Who talks next: once staff have replied the bot stays silent (a bot talking over a live
+        person is worse than none), and it answers again when the ticket is closed.
+        """
         conversation = await repository.get_conversation(request.conversation_id)
         if conversation is not None:
-            conversation.status = CONVERSATION_STATUS_ACTIVE
+            conversation.status = (
+                CONVERSATION_STATUS_ACTIVE if request.status == HANDOFF_STATUS_CLOSED else CONVERSATION_STATUS_STAFF_ACTIVE
+            )

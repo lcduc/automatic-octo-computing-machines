@@ -1,0 +1,64 @@
+{
+  "version": 1,
+  "description": "Example messages per route for the embedding router. Edit the examples, never the thresholds, to change what a route catches; re-run `python -m scripts.eval_router` after every edit.",
+  "routes": {
+    "greeting": [
+      "xin chào", "chào bạn", "chào ad", "chào anh chị", "chào bot", "hello", "hi", "hey bạn ơi",
+      "alo", "alo có ai không", "xin chao", "chao ban", "hello bạn", "hi bạn ơi",
+      "chào buổi sáng", "chào buổi tối", "good morning", "hello, anyone there?", "dạ em chào ạ", "chào bạn nhé"
+    ],
+    "thanks": [
+      "cảm ơn", "cảm ơn bạn", "cảm ơn nhiều nhé", "cám ơn ad", "cảm ơn bạn đã hỗ trợ", "ok cảm ơn",
+      "thanks", "thank you", "thank you so much", "cảm ơn nha", "cam on ban", "cam on nhieu",
+      "tks bạn", "mình hiểu rồi, cảm ơn nhé", "dạ em cảm ơn ạ", "ok mình biết rồi, thanks", "cảm ơn, hết rồi ạ",
+      "vậy là đủ rồi, cảm ơn bạn"
+    ],
+    "handoff_request": [
+      "cho tôi nói chuyện với nhân viên", "tôi muốn gặp người thật", "kết nối tôi với tư vấn viên",
+      "cho mình gặp nhân viên tư vấn", "chuyển tôi sang người hỗ trợ", "bạn là bot à, cho tôi gặp người",
+      "tôi muốn nói chuyện với người thật chứ không phải máy", "cho em gặp cán bộ tư vấn", "có số điện thoại của nhân viên không",
+      "I want to talk to a human", "let me speak with a real person", "connect me to a staff member",
+      "cho minh noi chuyen voi nhan vien", "gọi cho tôi được không, tôi muốn hỏi trực tiếp", "tôi cần người tư vấn trực tiếp",
+      "bot trả lời không đúng, cho tôi gặp người", "chuyển cho nhân viên giúp em", "liên hệ trực tiếp với trung tâm thế nào",
+      "bạn nối máy cho tư vấn viên giúp mình được không", "can I speak to somebody from the staff", "I need a real person, not a bot",
+      "cho mình số hotline để gọi hỏi trực tiếp"
+    ],
+    "ambiguous": [
+      "cho em hỏi", "cho mình hỏi chút", "ad ơi cho em hỏi", "em muốn hỏi", "mình có câu hỏi", "tôi cần hỏi một việc",
+      "hỏi chút được không", "cho hỏi với", "admin ơi", "anh ơi cho em hỏi cái này", "cho em hỏi chút ạ",
+      "em có thắc mắc", "mình muốn được tư vấn", "tôi cần giúp đỡ", "giúp mình với", "can I ask something",
+      "cho hoi chut", "em muon hoi", "có ai ở đó giúp em được không", "mình hỏi cái này được không"
+    ],
+    "off_topic": [
+      "thời tiết hôm nay thế nào", "giá vàng hôm nay bao nhiêu", "cách nấu phở bò ngon", "công thức làm bánh mì",
+      "ai thắng trận bóng đá tối qua", "kết quả xổ số hôm nay", "viết giúp tôi một bài thơ", "kể cho tôi nghe một câu chuyện cười",
+      "đăng ký xe máy mới cần giấy tờ gì", "làm thế nào để mở tài khoản chứng khoán", "mua laptop nào tốt",
+      "viết code Python đảo ngược chuỗi", "giải giúp mình bài toán lớp 9", "bệnh tiểu đường nên ăn gì",
+      "thủ tục xin visa du lịch Mỹ", "đi Hàn Quốc theo chương trình EPS cần điều kiện gì", "lương thực tập sinh ở Nhật Bản",
+      "du học đại học ở Úc cần IELTS bao nhiêu", "mức lương tối thiểu ở Pháp là bao nhiêu", "visa Canada diện tay nghề",
+      "luật lao động Việt Nam cho nghỉ phép bao nhiêu ngày", "bitcoin giá bao nhiêu", "tỷ số trận Việt Nam hôm nay",
+      "what is the capital of France", "write me a poem about the sea", "how do I cook fried rice",
+      "xin visa đi Mỹ diện làm việc cần giấy tờ gì", "đi Singapore làm việc cần điều kiện gì", "định cư Canada diện tay nghề thế nào",
+      "đi Đài Loan lao động lương bao nhiêu", "du học Hàn Quốc học bổng toàn phần", "làm việc ở Dubai cần những gì",
+      "hướng dẫn cài phần mềm trên máy tính", "giải thích giúp mình một khái niệm vật lý", "dịch đoạn văn này sang tiếng Anh",
+      "viết thư xin việc bằng tiếng Việt giúp mình", "bé nhà mình bị ho lâu nên uống thuốc gì", "luật giao thông phạt nồng độ cồn",
+      "lãi suất ngân hàng tháng này", "mua điện thoại nào tốt tầm 10 triệu"
+    ],
+    "rag_question": [
+      "đi Đức làm việc cần điều kiện gì", "sang Đức làm điều dưỡng thì cần chuẩn bị những gì", "học nghề ở Đức có được trả lương không",
+      "cần trình độ tiếng Đức nào để xin visa", "học tiếng Đức đến B1 mất bao lâu", "bằng đại học Việt Nam có được công nhận ở Đức không",
+      "chi phí đi Đức theo diện học nghề khoảng bao nhiêu", "hồ sơ xin visa lao động Đức gồm những giấy tờ gì",
+      "thẻ cơ hội Chancenkarte là gì", "ngành nào ở Đức đang thiếu nhân lực", "làm bao lâu thì được định cư ở Đức",
+      "lương brutto và netto khác nhau thế nào", "ở Đức phải đóng những loại bảo hiểm nào", "thuê phòng ở Đức giá khoảng bao nhiêu",
+      "đăng ký địa chỉ Anmeldung ở đâu", "thử việc ở Đức kéo dài bao lâu", "công ty nợ lương thì phải làm sao",
+      "làm sao nhận biết công ty môi giới lừa đảo", "có được đưa vợ con sang Đức không", "học nghề xong có được ở lại làm việc không",
+      "trung tâm có mở lớp tiếng Đức không", "học phí khóa tiếng Đức là bao nhiêu", "tư vấn ở trung tâm có mất phí không",
+      "tôi 35 tuổi còn đi học nghề được không", "làm thêm giờ ở Đức có được trả thêm tiền không", "Blue Card dành cho ai",
+      "em mới tốt nghiệp cấp 3 muốn sang Đức thì đi diện nào", "thợ điện có tay nghề sang Đức xin việc thế nào",
+      "công nhận bằng điều dưỡng mất bao lâu", "mở tài khoản ngân hàng ở Đức cần gì", "đổi chỗ làm ở Đức có ảnh hưởng visa không",
+      "chuyển khoản đặt cọc thuê nhà trước khi sang có an toàn không", "mức lương tối thiểu ở Đức hiện nay",
+      "nghỉ phép năm ở Đức được bao nhiêu ngày", "what German level do I need to work as a nurse", "how much does an Ausbildung pay",
+      "sang duc roi phai lam gi dau tien", "tien thue phong o duc bao nhieu", "lich tu van o huyen Huong Son"
+    ]
+  }
+}

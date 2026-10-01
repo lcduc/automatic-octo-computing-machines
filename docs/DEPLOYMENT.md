@@ -346,7 +346,9 @@ In `.env`:
 **3. Admin web** (`http://localhost:5174`)
 
 ```bash
-cd frontends/admin && npm ci && npm run dev
+cd frontends/admin
+npm ci
+npm run dev
 ```
 
 Sign in with the account from step 2. The Vite dev server proxies `/api/v1/admin`
@@ -359,7 +361,8 @@ one origin as it does behind Caddy, and no CORS setup is needed. It also proxies
 produce conversations, feedback and handoffs to look at in the admin web:
 
 ```bash
-cd frontends/widget && npm ci
+cd frontends/widget
+npm ci
 cp .env.example .env.local   # BFF_SERVICE_TOKEN = the backend's; VISITOR_COOKIE_SECRET: 32+ random characters
 npm run dev
 ```

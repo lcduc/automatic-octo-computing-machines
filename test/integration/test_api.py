@@ -64,6 +64,9 @@ class FakeContainer(AppContainer):
     def _create_llm(self):
         return FakeLLM()
 
+    def _create_router(self, embedding):
+        return None  # the fake bag-of-words embeddings cannot route by meaning (and are seeded per run)
+
     def _openai_extras(self):
         return None
 
@@ -414,8 +417,13 @@ def test_models_and_retrieval_settings_apply_live_and_reset_to_defaults(client):
     assert client.get("/api/v1/admin/settings", headers=admin).json()["chat_model"] == defaults["chat_model"]
     assert client.patch("/api/v1/admin/settings", json={"chat_model": "fake-main-2"}, headers=admin).status_code == 200
 
-    client.patch("/api/v1/admin/settings", json={"similarity_threshold": 1.0}, headers=admin)
-    assert _chat(client, "văn phòng mở cửa lúc mấy giờ vậy")[-1]["outcome"] == "denied"
-    reset = client.delete("/api/v1/admin/settings/similarity_threshold", headers=admin).json()
-    assert reset["similarity_threshold"] == defaults["similarity_threshold"]
+    assert client.patch("/api/v1/admin/settings", json={"retrieval_top_k": 1}, headers=admin).json()["retrieval_top_k"] == 1
+    assert _chat(client, "văn phòng mở cửa lúc mấy giờ vậy")[-1]["outcome"] == "answered"
+    reset = client.delete("/api/v1/admin/settings/retrieval_top_k", headers=admin).json()
+    assert reset["retrieval_top_k"] == defaults["retrieval_top_k"]
+
+    # The relevance floor is an operator setting: admins neither see nor change it.
+    assert "similarity_threshold" not in defaults and "similarity_threshold" not in reset
+    ignored = client.patch("/api/v1/admin/settings", json={"similarity_threshold": 1.0}, headers=admin).json()
+    assert "similarity_threshold" not in ignored
     assert _chat(client, "văn phòng mở cửa lúc mấy giờ vậy")[-1]["outcome"] == "answered"

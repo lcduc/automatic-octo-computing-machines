@@ -3,6 +3,7 @@
 import uuid
 
 import numpy as np
+import pytest
 
 from core.retrieval.knowledge_index import KnowledgeSnapshot
 from core.retrieval.retriever import RRF_K, ContextRetriever
@@ -77,6 +78,15 @@ def test_snapshot_merges_document_and_chunk_metadata_and_indexes_sources():
 def test_nothing_above_threshold_returns_empty_so_caller_can_fall_back():
     retriever = ContextRetriever(FakeEmbeddings([0, 1, 0]), FakeReranker("nonexistent"))
     assert _search(retriever, _snapshot()) == []
+
+
+def test_an_empty_result_still_reports_the_best_score_the_gate_removed():
+    retriever = ContextRetriever(FakeEmbeddings([0, 1, 0]), FakeReranker("nonexistent"))
+    results = _search(retriever, _snapshot())
+    assert results == [] and results.best_rerank == pytest.approx(0.05)  # related-looking, but below the 0.5 gate
+
+    no_reranker = _search(ContextRetriever(FakeEmbeddings([0, 1, 0]), None), _snapshot(), semantic_threshold=2.0)
+    assert no_reranker == [] and no_reranker.best_rerank is None  # nothing scored: no verdict on relatedness
 
 
 def test_match_is_expanded_with_same_document_neighbours_in_order():

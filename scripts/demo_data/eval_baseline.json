@@ -1,0 +1,21 @@
+{
+  "golden_colloquial_dev": {
+    "answerable": 25,
+    "mrr": 1.0,
+    "recall_at_k": 1.0
+  },
+  "golden_colloquial_holdout": {
+    "answerable": 16,
+    "mrr": 1.0,
+    "recall_at_k": 1.0
+  },
+  "golden_queries": {
+    "answerable": 40,
+    "mrr": 0.975,
+    "recall_at_k": 1.0
+  },
+  "router": {
+    "accuracy": 0.8466,
+    "cases": 189
+  }
+}

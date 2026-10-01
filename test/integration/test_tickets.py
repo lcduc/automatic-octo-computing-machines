@@ -68,6 +68,33 @@ def test_ticket_contact_answer_in_chat_and_by_email(client):  # noqa: F811
     assert closed.json()["closed_at"]
 
 
+def test_one_ticket_per_conversation_and_the_bot_goes_quiet_once_staff_replied(client):  # noqa: F811
+    admin = _admin_headers(client)
+    _handoff_mode(client, admin)
+    conversation, first = _say(client, "cho tôi gặp nhân viên tư vấn")
+    assert first["handoff_id"]
+
+    # Another handoff trigger while the ticket is open: same reply, no second ticket.
+    _, second = _say(client, "tôi muốn khiếu nại dịch vụ", conversation_id=conversation)
+    assert second["outcome"] == "handoff" and second["handoff_id"] is None
+    assert len(client.get(HANDOFFS, headers=admin).json()["items"]) == 1
+
+    ticket = first["handoff_id"]
+    assert client.post(f"{HANDOFFS}/{ticket}/answer", json={"text": "Chào bạn, mình là nhân viên."}, headers=admin).status_code == 200
+    listed = client.get("/api/v1/admin/conversations?status=staff_active", headers=admin).json()["items"]
+    assert [item["id"] for item in listed] == [conversation]
+
+    # Staff are in the conversation: the bot does not answer, even a plain greeting, and opens no ticket.
+    _, quiet = _say(client, "xin chào", conversation_id=conversation)
+    assert quiet["outcome"] == "handoff" and "Nhân viên hỗ trợ đang theo dõi" in quiet["text"]
+    assert quiet["handoff_id"] is None and len(client.get(HANDOFFS, headers=admin).json()["items"]) == 1
+
+    # Closing the ticket gives the conversation back to the bot.
+    assert client.patch(f"{HANDOFFS}/{ticket}", json={"status": "closed"}, headers=admin).status_code == 200
+    _, back = _say(client, "xin chào", conversation_id=conversation)
+    assert back["outcome"] == "smalltalk"
+
+
 def test_support_agents_answer_but_cannot_reveal_contact(client):  # noqa: F811
     admin = _admin_headers(client)
     _handoff_mode(client, admin)

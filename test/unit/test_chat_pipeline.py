@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 
 from core.agent.chatbot import ChatbotService
+from core.agent.prompts import AutoReplies
 from core.agent.response_cache import ResponseCache
 from core.guardrails.input_guard import InputGuard
 from core.retrieval.knowledge_index import KnowledgeSnapshot
@@ -134,6 +135,72 @@ async def test_guard_block_and_smalltalk_never_reach_the_llm():
     assert (blocked.outcome, blocked.text, blocked.guard_reason) == (TurnOutcome.BLOCKED, "BLOCKED", "prompt_injection")
     assert (hello.outcome, hello.text) == (TurnOutcome.SMALLTALK, "HELLO")
     assert llm.stream_calls == [] and llm.complete_calls == []
+
+
+@pytest.mark.asyncio
+async def test_moderation_overlaps_retrieval_but_gates_the_answer_and_skips_canned_replies():
+    calls = []
+
+    async def flagged(text):
+        calls.append(text)
+        return "xấu" in text
+
+    def pipeline(llm):
+        built = _pipeline(llm)
+        built._guard = InputGuard(flagged)
+        return built
+
+    llm = FakeLLM()
+    _, hello = await _collect(pipeline(llm), "xin chào")
+    assert hello.outcome == TurnOutcome.SMALLTALK and calls == []  # a canned reply never pays for moderation
+
+    _, ok = await _collect(pipeline(llm), "lương tối thiểu vùng là bao nhiêu")
+    assert ok.outcome == TurnOutcome.ANSWERED and calls == ["lương tối thiểu vùng là bao nhiêu"]
+
+    llm = FakeLLM()
+    _, blocked = await _collect(pipeline(llm), "lương tối thiểu vùng xấu là bao nhiêu")
+    assert (blocked.outcome, blocked.guard_reason) == (TurnOutcome.BLOCKED, "moderation_flagged")
+    assert llm.stream_calls == []  # retrieval ran, the answer was never generated
+
+
+@pytest.mark.asyncio
+async def test_a_no_answer_marker_becomes_a_handoff_without_showing_anything_or_caching():
+    handoff_policy = ChatPolicy(**{**POLICY.__dict__, "fallback_mode": "handoff"})
+    llm = FakeLLM(answer="[NO_ANSWER]")
+    pipeline = _pipeline(llm)
+    events, result = await _collect(pipeline, "lương tối thiểu vùng là bao nhiêu", policy=handoff_policy)
+    assert result.outcome == TurnOutcome.HANDOFF and result.handoff_reason.value == "no_knowledge"
+    assert result.text == "HANDOFF" and not any(isinstance(e, TurnDelta) for e in events)
+    assert [e.purpose for e in events if isinstance(e, TurnUsage)] == ["answer"]  # the call is still charged
+
+    # Not cached: the same question reaches the model again.
+    await _collect(pipeline, "lương tối thiểu vùng là bao nhiêu", policy=handoff_policy)
+    assert len(llm.stream_calls) == 2
+
+    _, denied = await _collect(_pipeline(FakeLLM(answer="[NO_ANSWER]")), "lương tối thiểu vùng là bao nhiêu")
+    assert (denied.outcome, denied.text) == (TurnOutcome.DENIED, "DENY")
+
+
+@pytest.mark.asyncio
+async def test_the_marker_is_refused_not_handed_off_when_the_message_looks_off_topic():
+    from test.unit.test_embedding_router import StubRouter
+    from core.routing.embedding_router import RouteIntent
+
+    handoff_policy = ChatPolicy(**{**POLICY.__dict__, "fallback_mode": "handoff"})
+    pipeline = _pipeline(FakeLLM(answer="[NO_ANSWER]"))
+    pipeline._router = StubRouter(RouteIntent.RAG_QUESTION, lead=0.1)
+    _, result = await _collect(pipeline, "lương tối thiểu vùng là bao nhiêu", policy=handoff_policy)
+    assert (result.outcome, result.text) == (TurnOutcome.DENIED, AutoReplies.OFF_TOPIC)
+
+
+@pytest.mark.asyncio
+async def test_bot_stays_silent_while_staff_are_replying():
+    llm = FakeLLM()
+    request = TurnRequest(query="lương tối thiểu vùng là bao nhiêu", history=[], policy=POLICY, staff_active=True)
+    events = [e async for e in _pipeline(llm).run(request)]
+    result = events[-1]
+    assert (result.outcome, result.text, result.handoff_reason) == (TurnOutcome.HANDOFF, AutoReplies.STAFF_ACTIVE, None)
+    assert request.trace.route == "staff_active" and llm.stream_calls == [] and llm.complete_calls == []
 
 
 @pytest.mark.asyncio

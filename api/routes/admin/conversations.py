@@ -39,7 +39,7 @@ OUTCOME_PATTERN = "^(answered|smalltalk|denied|handoff|blocked|login_required|ag
 @router.get("/conversations", response_model=Page[ConversationSummary], dependencies=[read_access])
 async def list_conversations(
     outcome: Optional[str] = Query(None, pattern=OUTCOME_PATTERN, description="Only conversations with such an answer"),
-    status: Optional[str] = Query(None, pattern="^(active|handoff_pending|closed)$"),
+    status: Optional[str] = Query(None, pattern="^(active|handoff_pending|staff_active|closed)$"),
     since: Optional[datetime] = None,
     limit: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
     offset: int = Query(0, ge=0),

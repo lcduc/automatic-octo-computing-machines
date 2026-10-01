@@ -88,6 +88,23 @@ jobs:
       - name: Run tests
         run: pytest
 
+      # Router regression gate: fails when a real question is taken by a shortcut or accuracy drops
+      # past the tolerance in scripts/eval_baseline.py. It needs only the small embedding model
+      # (~470 MB), cached so a PR does not re-download it. No LLM, no secrets. The retrieval eval
+      # (database + the 2.2 GB reranker) runs nightly in eval-nightly.yml.
+      - name: Cache embedding model
+        uses: actions/cache@v6
+        with:
+          path: model_weights/models--intfloat--multilingual-e5-small
+          key: model-e5-small-v1
+
+      - name: Router eval (regression gate)
+        run: >-
+          python -m scripts.eval_router --check
+          --golden-set scripts/demo_data/golden_colloquial_dev.json
+          --golden-set scripts/demo_data/golden_colloquial_holdout.json
+          --golden-set scripts/demo_data/golden_queries.json
+
   widget:
     name: Chat widget (lint, types, tests, build)
     runs-on: ubuntu-latest

@@ -102,6 +102,7 @@ export const en: Record<MessageKey, string> = {
   "handoffReason.repeated_no_answer": "Repeatedly unanswered",
   "handoffReason.negative_feedback": "Negative feedback",
   "handoffReason.tool_error": "Data lookup failed",
+  "handoffReason.ambiguous_repeated": "Still unclear after a follow-up question",
   "handoffReason.other": "Other",
   "outcome.agent_reply": "Staff reply",
   "handoffs.due": "Due",
@@ -140,6 +141,7 @@ export const en: Record<MessageKey, string> = {
 
   "conversationStatus.active": "Active",
   "conversationStatus.handoff_pending": "Waiting for staff",
+  "conversationStatus.staff_active": "Staff replying",
   "conversationStatus.closed": "Closed",
 
   "overview.title": "Overview",
@@ -455,8 +457,6 @@ export const en: Record<MessageKey, string> = {
   "models.reset": "Reset to default ({value})",
   "models.envOnly": "The embedding model ({embedding}) and reranker ({reranker}) can only be changed in .env, because all knowledge must be re-embedded at start-up.",
   "models.retrieval": "Retrieval",
-  "models.threshold": "Relevance threshold",
-  "models.thresholdHint": "Chunks scoring lower are not used; with none left the assistant gives the standard reply.",
   "models.weight": "Semantic weight",
   "models.weightHint": "Share of the score from semantic search; the rest comes from keyword search.",
   "models.topK": "Chunks kept",
