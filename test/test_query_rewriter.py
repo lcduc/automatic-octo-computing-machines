@@ -78,3 +78,31 @@ async def test_rewrite_falls_back_to_original_query_on_empty_response():
     result, _usage = await rewriter.rewrite("follow up question", history)
 
     assert result == "follow up question"
+
+
+@pytest.mark.asyncio
+async def test_unaccented_vietnamese_without_history_is_rewritten_once_with_accents():
+    client = _StubClientProvider(response="tiền phòng ở Đức mỗi tháng bao nhiêu")
+    rewriter = QueryRewriter(client)
+
+    result, usage = await rewriter.rewrite("tien phong o duc moi thang bao nhieu vay anh", None)
+
+    assert result == "tiền phòng ở Đức mỗi tháng bao nhiêu"
+    assert len(client.calls) == 1
+    assert "(chưa có)" in client.calls[0][-1]["content"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "query",
+    [
+        "tiền phòng ở Đức mỗi tháng bao nhiêu",  # already accented
+        "What language level do I need to work as a nurse in Germany?",  # English
+        "Blue Card",  # too short to tell
+        "Anmeldung",
+    ],
+)
+async def test_other_first_messages_cost_no_rewrite_call(query):
+    client = _StubClientProvider(response="should never be used")
+    result, _usage = await QueryRewriter(client).rewrite(query, None)
+    assert result == query and client.calls == []

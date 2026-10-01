@@ -118,19 +118,22 @@ class InputGuard:
             return GuardVerdict(GuardAction.THANKS)
         return GuardVerdict(GuardAction.ALLOW)
 
-    async def check(self, text: str) -> GuardVerdict:
+    @property
+    def moderates(self) -> bool:
+        """Whether a moderation endpoint is configured."""
+        return self._moderator is not None
+
+    async def is_flagged(self, text: str) -> bool:
         """
-        Full screening: rules, then moderation for messages still allowed.
+        Ask the moderation endpoint (a network call) whether ``text`` is harmful.
 
         Returns:
-            The verdict; moderation failures are logged and treated as allowed.
+            ``True`` when flagged; a failing endpoint is logged and treated as not flagged.
         """
-        verdict = self.classify_rules(text)
-        if verdict.action != GuardAction.ALLOW or self._moderator is None:
-            return verdict
+        if self._moderator is None:
+            return False
         try:
-            if await self._moderator(text):
-                return GuardVerdict(GuardAction.BLOCK, "moderation_flagged")
+            return bool(await self._moderator(text))
         except Exception:
             logger.exception("Moderation check failed; allowing message")
-        return verdict
+            return False

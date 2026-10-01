@@ -100,6 +100,7 @@ export const vi = {
   "handoffReason.repeated_no_answer": "Nhiều lần không trả lời được",
   "handoffReason.negative_feedback": "Đánh giá chưa tốt",
   "handoffReason.tool_error": "Lỗi tra cứu dữ liệu",
+  "handoffReason.ambiguous_repeated": "Câu hỏi chưa rõ sau khi hỏi lại",
   "handoffReason.other": "Khác",
   "outcome.agent_reply": "Nhân viên trả lời",
   "handoffs.due": "Hạn phản hồi",
@@ -138,8 +139,8 @@ export const vi = {
 
   "conversationStatus.active": "Đang diễn ra",
   "conversationStatus.handoff_pending": "Chờ nhân viên",
-  "conversationStatus.closed": "Đã đóng",
   "conversationStatus.staff_active": "Nhân viên đang hỗ trợ",
+  "conversationStatus.closed": "Đã đóng",
 
   "overview.title": "Tổng quan",
   "overview.description": "Hoạt động của trợ lý ảo, lượng token tiêu thụ và phản hồi của người dùng.",

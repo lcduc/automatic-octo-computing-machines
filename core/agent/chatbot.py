@@ -29,6 +29,7 @@ from core.guardrails.topic_matcher import matching_topic
 from core.retrieval.context_builder import ContextAssembler
 from core.retrieval.knowledge_index import KnowledgeIndex
 from core.retrieval.retriever import ContextRetriever
+from core.routing.embedding_router import EmbeddingRouter, RouteDecision, RouteIntent
 from models.chat_turn import (
     FALLBACK_MODE_HANDOFF,
     ChatPolicy,
@@ -40,26 +41,29 @@ from models.chat_turn import (
     TurnUsage,
 )
 from models.intent import IntentType
-from models.knowledge import RetrievedChunk
+from models.knowledge import RetrievalResults, RetrievedChunk
 from models.llm import StreamDelta
 from models.tool_context import ToolContext
 from models.turn_trace import (
     ROUTE_CACHE,
+    ROUTE_CLARIFY,
     ROUTE_FALLBACK,
     ROUTE_GUARD,
     ROUTE_HUMAN,
     ROUTE_LOGIN,
+    ROUTE_OFF_TOPIC,
     ROUTE_RAG,
     ROUTE_SMALLTALK,
+    ROUTE_STAFF,
     ROUTE_TOOL,
     ROUTE_TOPIC,
 )
-    ROUTE_STAFF,
+from .answer_marker import NoAnswerFilter
 from .base_llm_provider import BaseLLMProvider
 from .confidence import ConfidenceScorer
 from .history import recent_history
 from .intent_router import IntentRouter
-from .prompts import AutoReplies, PromptManager
+from .prompts import AutoReplies, PromptManager, SystemPrompts
 from .query_rewriter import QueryRewriter
 from .response_cache import ResponseCache
 from .tool_calling_agent import ToolCallingAgent
@@ -100,6 +104,7 @@ class ChatbotService:
         cache: ResponseCache,
         intent_router: Optional[IntentRouter] = None,
         tool_agent: Optional[ToolCallingAgent] = None,
+        router: Optional[EmbeddingRouter] = None,
     ):
         """
         Args:
@@ -111,6 +116,8 @@ class ChatbotService:
             intent_router: Routes action requests to ``tool_agent``; both
                 ``None`` disables tool calling.
             tool_agent: Tool-calling engine.
+            router: Embedding router for small talk, handoff requests, off-topic and vague
+                messages; ``None`` sends everything the guard allows to retrieval.
         """
         self._llm = llm_provider
         self._retriever = retriever
@@ -119,6 +126,7 @@ class ChatbotService:
         self._cache = cache
         self._intent_router = intent_router
         self._tool_agent = tool_agent
+        self._router = router
         self._rewriter = QueryRewriter(llm_provider)
         self._prompts = PromptManager()
         self._assembler = ContextAssembler()
@@ -172,19 +180,19 @@ class ChatbotService:
         history = recent_history(request.history, Config.Chat.MAX_HISTORY_TURNS() * 2)
         trace = request.trace
 
+        if request.staff_active:
+            trace.route = ROUTE_STAFF
+            yield TurnResult(TurnOutcome.HANDOFF, AutoReplies.STAFF_ACTIVE)
+            return
+
         with trace.step("guard"):
-            verdict = await self._guard.check(request.query)
+            verdict = self._guard.classify_rules(request.query)
         trace.route = ROUTE_SMALLTALK if verdict.action in (GuardAction.GREETING, GuardAction.THANKS) else ROUTE_GUARD
         if verdict.action == GuardAction.BLOCK:
             logger.info("Message blocked by guardrails (%s)", verdict.reason)
             yield TurnResult(TurnOutcome.BLOCKED, policy.guard_block_message, guard_reason=verdict.reason)
             return
         if verdict.action == GuardAction.GREETING:
-        if request.staff_active:
-            trace.route = ROUTE_STAFF
-            yield TurnResult(TurnOutcome.HANDOFF, AutoReplies.STAFF_ACTIVE)
-            return
-
             yield TurnResult(TurnOutcome.SMALLTALK, policy.greeting_message)
             return
         if verdict.action == GuardAction.THANKS:
@@ -197,16 +205,23 @@ class ChatbotService:
             yield TurnResult(TurnOutcome.HANDOFF, policy.handoff_message, handoff_reason=HandoffReason.SENSITIVE_TOPIC)
             return
         if verdict.action == GuardAction.HUMAN_REQUESTED:
-            # An explicit ask for a person is never a knowledge question: with handoff
-            # off, say so instead of searching and replying "no information".
             trace.route = ROUTE_HUMAN
-            if policy.fallback_mode == FALLBACK_MODE_HANDOFF:
-                yield TurnResult(
-                    TurnOutcome.HANDOFF, policy.handoff_message, handoff_reason=HandoffReason.USER_REQUEST
-                )
-            else:
-                yield TurnResult(TurnOutcome.DENIED, AutoReplies.HUMAN_UNAVAILABLE)
+            yield self._human_request(policy)
             return
+
+        decision: Optional[RouteDecision] = None
+        if self._router is not None:
+            with trace.step("router"):
+                decision = await asyncio.to_thread(self._router.classify, request.query)
+            early = self._route_reply(decision, request, history)
+            if early is not None:
+                yield early
+                return
+
+        # Moderation is a network call: it overlaps routing, rewrite and retrieval, and is only
+        # awaited right before an answer is generated. Canned replies above never pay for it.
+        # ceiling: an un-awaited call still completes in the background on paths that need no answer.
+        moderation = asyncio.create_task(self._guard.is_flagged(request.query)) if self._guard.moderates else None
 
         if self._intent_router is not None and self._tool_agent is not None:
             with trace.step("intent"):
@@ -222,6 +237,10 @@ class ChatbotService:
                 return
             if intent == IntentType.ACTION:
                 trace.route = ROUTE_TOOL
+                blocked = await self._moderation_block(moderation, request)
+                if blocked is not None:
+                    yield blocked
+                    return
                 async for event in self._run_tool_agent(request, history, deadline, chat_model, light_model):
                     yield event
                 return
@@ -246,8 +265,7 @@ class ChatbotService:
                     rewritten = None
         trace.record_chunks(results)
         if not matched:
-            trace.route = ROUTE_FALLBACK
-            yield self._fallback(request, rewritten)
+            yield self._unanswered(request, decision, rewritten, results.best_rerank)
             return
 
         documents_block = self._assembler.build(results, Config.LLM.MAX_CONTEXT_LENGTH())
@@ -273,21 +291,37 @@ class ChatbotService:
             )
             return
 
+        blocked = await self._moderation_block(moderation, request)
+        if blocked is not None:
+            yield blocked
+            return
+
         messages = [
             {"role": "system", "content": system_prompt},
             *history,
             {"role": "user", "content": self._prompts.build_user_turn(request.query, documents_block)},
         ]
         pieces: List[str] = []
+        no_answer = NoAnswerFilter()
         with trace.step("generation"):
             async for delta in self._with_deadline(self._llm.stream(messages, model=chat_model), deadline):
                 if delta.usage is not None:
                     yield TurnUsage(PURPOSE_ANSWER, delta.usage)
-                if delta.text:
-                    pieces.append(delta.text)
-                    yield TurnDelta(delta.text)
+                shown = no_answer.feed(delta.text) if delta.text else ""
+                if shown:
+                    pieces.append(shown)
+                    yield TurnDelta(shown)
+            tail = no_answer.finish()
+            if tail:
+                pieces.append(tail)
+                yield TurnDelta(tail)
 
         answer = "".join(pieces).strip()
+        if no_answer.no_answer or SystemPrompts.NO_ANSWER_MARKER in answer:
+            # The documents did not answer the question: staff take it, nothing hedged is shown.
+            logger.info("The model found no answer in the retrieved documents")
+            yield self._unanswered(request, decision, rewritten, results.best_rerank)
+            return
         if not answer:
             # An empty completion (e.g. a provider-side safety block) is no answer.
             trace.route = ROUTE_FALLBACK
@@ -326,7 +360,7 @@ class ChatbotService:
 
     async def _retrieve(
         self, query: str, sources, policy: ChatPolicy, deadline: float, context: ToolContext, trace=None
-    ) -> List[RetrievedChunk]:
+    ) -> RetrievalResults:
         """
         Run hybrid search in a worker thread, bounded by the retrieval slots and the deadline.
 
@@ -345,7 +379,7 @@ class ChatbotService:
                 "knowledge_version": snapshot.version,
             }
         if snapshot.is_empty:
-            return []
+            return RetrievalResults()
         async with self._retrieval_slots:
             return await asyncio.wait_for(
                 asyncio.to_thread(
@@ -368,6 +402,85 @@ class ChatbotService:
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
+
+    @staticmethod
+    async def _moderation_block(moderation: Optional["asyncio.Task[bool]"], request: TurnRequest) -> Optional[TurnResult]:
+        """Wait for the moderation verdict; the blocked reply when the message was flagged, else ``None``."""
+        if moderation is None:
+            return None
+        with request.trace.step("moderation"):
+            flagged = await moderation
+        if not flagged:
+            return None
+        logger.info("Message flagged by moderation")
+        request.trace.route = ROUTE_GUARD
+        return TurnResult(TurnOutcome.BLOCKED, request.policy.guard_block_message, guard_reason="moderation_flagged")
+
+    @staticmethod
+    def _human_request(policy: ChatPolicy) -> TurnResult:
+        """
+        Reply to an explicit ask for a person. It is never a knowledge question: with handoff
+        off, say so instead of searching and replying "no information".
+        """
+        if policy.fallback_mode == FALLBACK_MODE_HANDOFF:
+            return TurnResult(TurnOutcome.HANDOFF, policy.handoff_message, handoff_reason=HandoffReason.USER_REQUEST)
+        return TurnResult(TurnOutcome.DENIED, AutoReplies.HUMAN_UNAVAILABLE)
+
+    def _route_reply(
+        self, decision: RouteDecision, request: TurnRequest, history: List[Dict[str, str]]
+    ) -> Optional[TurnResult]:
+        """
+        The canned reply for a message the router is sure about, or ``None`` to carry on to retrieval.
+
+        A vague opener ("cho em hỏi") gets one clarifying question; the next vague message goes to staff.
+        Vagueness is only judged at the start of a conversation or right after our question, because
+        a short follow-up ("khoảng bao nhiêu một tháng?") is meaningful given the history.
+        """
+        policy, trace = request.policy, request.trace
+        intent = decision.intent
+        if intent == RouteIntent.GREETING:
+            trace.route = ROUTE_SMALLTALK
+            return TurnResult(TurnOutcome.SMALLTALK, policy.greeting_message)
+        if intent == RouteIntent.THANKS:
+            trace.route = ROUTE_SMALLTALK
+            return TurnResult(TurnOutcome.SMALLTALK, policy.thanks_message)
+        if intent == RouteIntent.HANDOFF_REQUEST:
+            trace.route = ROUTE_HUMAN
+            return self._human_request(policy)
+        if intent == RouteIntent.OFF_TOPIC:
+            trace.route = ROUTE_OFF_TOPIC
+            return TurnResult(TurnOutcome.DENIED, AutoReplies.OFF_TOPIC)
+        if intent == RouteIntent.AMBIGUOUS:
+            # ceiling: the previous clarification is recognised by its fixed text; add a CLARIFY
+            # outcome if admins need to see clarifications as their own outcome.
+            asked_already = bool(history) and history[-1].get("content") == AutoReplies.CLARIFY
+            if history and not asked_already:
+                return None
+            trace.route = ROUTE_CLARIFY
+            if not asked_already:
+                return TurnResult(TurnOutcome.SMALLTALK, AutoReplies.CLARIFY)
+            if policy.fallback_mode == FALLBACK_MODE_HANDOFF:
+                return TurnResult(
+                    TurnOutcome.HANDOFF, policy.handoff_message, handoff_reason=HandoffReason.AMBIGUOUS_REPEATED
+                )
+            return TurnResult(TurnOutcome.DENIED, policy.deny_message)
+        return None
+
+    def _unanswered(
+        self, request: TurnRequest, decision: Optional[RouteDecision], rewritten: Optional[str],
+        best_rerank: Optional[float],
+    ) -> TurnResult:
+        """
+        Reply when nothing in the knowledge base answers the question.
+
+        A message that is off topic (see :meth:`RouteDecision.is_off_topic`) is refused and opens no
+        ticket; anything else is on topic, so it takes the configured fallback (handoff or deny).
+        """
+        if decision is not None and decision.is_off_topic(best_rerank):
+            request.trace.route = ROUTE_OFF_TOPIC
+            return TurnResult(TurnOutcome.DENIED, AutoReplies.OFF_TOPIC, rewritten_query=rewritten)
+        request.trace.route = ROUTE_FALLBACK
+        return self._fallback(request, rewritten)
 
     @staticmethod
     def _fallback(request: TurnRequest, rewritten: Optional[str]) -> TurnResult:

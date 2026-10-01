@@ -47,6 +47,8 @@ class HandoffReason(str, Enum):
     NEGATIVE_FEEDBACK = "negative_feedback"
     #: A private-data tool failed, HND-05.
     TOOL_ERROR = "tool_error"
+    #: Still no concrete question after one clarifying question.
+    AMBIGUOUS_REPEATED = "ambiguous_repeated"
 
 
 @dataclass(frozen=True)
@@ -83,10 +85,10 @@ class TurnRequest:
     policy: ChatPolicy
     #: Restrict retrieval to these source names; ``None`` searches all.
     sources: Optional[Sequence[str]] = None
-    #: The verified caller, for tools (tier gate, ``user_id``).
-    context: ToolContext = field(default_factory=ToolContext)
     #: A staff member is already replying in this conversation: the bot must not answer.
     staff_active: bool = False
+    #: The verified caller, for tools (tier gate, ``user_id``).
+    context: ToolContext = field(default_factory=ToolContext)
     #: Filled in by the pipeline as it runs; stored with the answer (ADM-05).
     trace: TurnTrace = field(default_factory=TurnTrace)
 

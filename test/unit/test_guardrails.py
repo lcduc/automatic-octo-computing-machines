@@ -104,12 +104,13 @@ def test_pure_greetings_and_thanks_are_recognized():
 
 
 @pytest.mark.asyncio
-async def test_moderation_blocks_flagged_and_fails_open():
+async def test_moderation_flags_and_fails_open():
     async def flagged(_text):
         return True
 
     async def broken(_text):
         raise RuntimeError("moderation down")
 
-    assert (await InputGuard(flagged).check("anything")).reason == "moderation_flagged"
-    assert (await InputGuard(broken).check("anything")).action == GuardAction.ALLOW
+    assert await InputGuard(flagged).is_flagged("anything") is True
+    assert await InputGuard(broken).is_flagged("anything") is False
+    assert await InputGuard().is_flagged("anything") is False

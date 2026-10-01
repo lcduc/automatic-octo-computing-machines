@@ -64,6 +64,9 @@ class FakeContainer(AppContainer):
     def _create_llm(self):
         return FakeLLM()
 
+    def _create_router(self, embedding):
+        return None  # the fake bag-of-words embeddings cannot route by meaning (and are seeded per run)
+
     def _openai_extras(self):
         return None
 

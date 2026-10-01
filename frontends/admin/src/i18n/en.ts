@@ -102,6 +102,7 @@ export const en: Record<MessageKey, string> = {
   "handoffReason.repeated_no_answer": "Repeatedly unanswered",
   "handoffReason.negative_feedback": "Negative feedback",
   "handoffReason.tool_error": "Data lookup failed",
+  "handoffReason.ambiguous_repeated": "Still unclear after a follow-up question",
   "handoffReason.other": "Other",
   "outcome.agent_reply": "Staff reply",
   "handoffs.due": "Due",
@@ -140,8 +141,8 @@ export const en: Record<MessageKey, string> = {
 
   "conversationStatus.active": "Active",
   "conversationStatus.handoff_pending": "Waiting for staff",
-  "conversationStatus.closed": "Closed",
   "conversationStatus.staff_active": "Staff replying",
+  "conversationStatus.closed": "Closed",
 
   "overview.title": "Overview",
   "overview.description": "Assistant activity, token usage and user feedback.",

@@ -287,13 +287,21 @@ class RAGConfig:
     @staticmethod
     def SIMILARITY_THRESHOLD() -> float:
         """
-        Minimum reranker score a chunk needs to count as a match.
+        Minimum reranker score a chunk needs to count as a match: a floor, not the answerability test.
 
         A turn with no chunk above it takes the fallback path (deny / hand
         off) without calling the LLM. Without reranker scores (reranking off
-        or failed) ``SEMANTIC_THRESHOLD`` gates instead.
+        or failed) ``SEMANTIC_THRESHOLD`` gates instead. Whether the documents
+        actually answer is decided by the model (the ``[NO_ANSWER]`` marker), because
+        scores of answerable and on-topic-unanswerable questions overlap.
+
+        0.03 (2026-10-01, ``bge-reranker-v2-m3``): calibrated on ``golden_colloquial_dev.json``
+        (best 0.032, between the highest off-topic score 0.022 and the lowest answerable 0.042) and
+        checked on ``golden_colloquial_holdout.json``. The earlier 0.3 came from questions that
+        restate an FAQ title and refused real, colloquial questions that scored 0.01 to 0.2.
+        Re-run ``python -m scripts.eval_rag`` on both sets after any model or document change.
         """
-        return env_float("SIMILARITY_THRESHOLD", 0.3)
+        return env_float("SIMILARITY_THRESHOLD", 0.03)
 
     @staticmethod
     def SEMANTIC_THRESHOLD() -> float:
@@ -416,6 +424,49 @@ class OCRConfig:
         return env_str("DATALAB_API_KEY", "")
 
 
+class RoutingConfig:
+    """Embedding router: how confident a message must look like a route before it skips retrieval."""
+
+    @staticmethod
+    def ROUTE_THRESHOLD(route: str, default: float) -> float:
+        """
+        Minimum cosine similarity to a route's examples (``ROUTE_<NAME>_THRESHOLD``).
+
+        Cosine scores sit on the embedding model's scale (E5: nearly every pair in 0.7-1.0), so
+        the defaults in ``EmbeddingRouter`` are calibrated per ``EMBEDDING_MODEL`` with
+        ``python -m scripts.eval_router``.
+        """
+        return env_float(f"ROUTE_{route.upper()}_THRESHOLD", default)
+
+    @staticmethod
+    def ROUTE_MARGIN() -> float:
+        """How far the best route must lead the runner-up for the router to act on it."""
+        return env_float("ROUTE_MARGIN", 0.01)
+
+    @staticmethod
+    def OFF_TOPIC_LEAD() -> float:
+        """
+        How much closer to the off-topic examples than to the on-topic ones a message must be for
+        an empty retrieval to refuse it as off topic instead of handing it to staff.
+        """
+        return env_float("ROUTE_OFF_TOPIC_LEAD", 0.02)
+
+    @staticmethod
+    def OFF_TOPIC_MAX_RERANK() -> float:
+        """
+        Best reranker score below which a message that found nothing is "unrelated to everything we know".
+
+        Off-topic messages score at most about 0.0006 against the demo knowledge base (some 0.004 to 0.02),
+        on-topic ones the base cannot answer at least 0.0027; this sits in the gap.
+        """
+        return env_float("ROUTE_OFF_TOPIC_MAX_RERANK", 0.001)
+
+    @staticmethod
+    def OFF_TOPIC_MIN_LEAD() -> float:
+        """A message clearly closer to the on-topic examples (lead below this) is never refused as off topic."""
+        return env_float("ROUTE_OFF_TOPIC_MIN_LEAD", -0.02)
+
+
 class LoggingConfig:
     """Log level and destination."""
 
@@ -446,6 +497,7 @@ class Config:
     Server = ServerConfig
     Security = SecurityConfig
     RAG = RAGConfig
+    Routing = RoutingConfig
     Chat = ChatConfig
     OCR = OCRConfig
     Logging = LoggingConfig

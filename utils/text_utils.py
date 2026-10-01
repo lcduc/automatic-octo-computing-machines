@@ -8,6 +8,16 @@ import re
 from typing import List
 
 
+#: Common Vietnamese words with the accents stripped, chosen to be rare in English ("can", "the", "day" are left out).
+UNACCENTED_VIETNAMESE_WORDS = frozenset({
+    "khong", "nhieu", "nao", "duoc", "cua", "toi", "minh", "em", "anh", "chi", "gi", "vay", "nhe", "nha", "thi",
+    "phai", "roi", "sang", "duc", "viec", "muon", "biet", "hoi", "cho", "voi", "nhung", "mot", "cac", "nay", "dau",
+    "tien", "het", "luong", "nghe", "hoc", "bao", "lam", "khi", "sao", "co", "va", "la", "o",
+})
+#: Unaccented-Vietnamese words a message needs before it counts as Vietnamese typed without accents.
+UNACCENTED_MIN_HITS = 3
+
+
 class TextUtils:
     """
     Utility functions for text processing, cleaning, and analysis.
@@ -289,6 +299,19 @@ class TextUtils:
             kept.append(" " if category == "Cc" and char not in "\n\t" else char)
         cleaned = re.sub(r"[ \t]+", " ", "".join(kept).replace("\r\n", "\n"))
         return re.sub(r"\n{3,}", "\n\n", cleaned).strip()
+
+    @staticmethod
+    def looks_like_unaccented_vietnamese(text: str) -> bool:
+        """
+        True for Vietnamese typed without diacritics ("tien phong o duc bao nhieu").
+
+        No accent anywhere and at least two common Vietnamese function words written without them;
+        English text and already-accented Vietnamese never match. A cheap check, not a language detector.
+        """
+        if not text or TextUtils.strip_vietnamese_accents(text) != text or "đ" in text.lower():
+            return False
+        tokens = re.findall(r"[a-z]+", text.lower())
+        return sum(token in UNACCENTED_VIETNAMESE_WORDS for token in tokens) >= UNACCENTED_MIN_HITS
 
     @staticmethod
     def tokenize_for_search(text: str) -> List[str]:
