@@ -18,8 +18,8 @@ export function FeedbackPage() {
   const { canWrite } = useSession();
   const toast = useToast();
   const [params, setParams] = useSearchParams();
-  const rating = params.get("rating") ?? "-1";
-  const reviewed = params.get("reviewed") ?? "false";
+  const rating = params.get("rating") ?? "";
+  const reviewed = params.get("reviewed") ?? "";
   const offset = Number(params.get("offset") ?? 0);
   const { data, error, loading, reload } = useApi<Page<FeedbackItem>>(
     `feedback${query({ rating: rating || undefined, reviewed: reviewed || undefined, limit: PAGE_SIZE, offset })}`,
