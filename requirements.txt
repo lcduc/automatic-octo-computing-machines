@@ -6,7 +6,7 @@ fastapi==0.141.1
 uvicorn[standard]==0.32.1
 python-multipart==0.0.32
 httpx==0.28.1
-aiofiles==24.1.0
+aiofiles==25.1.0
 
 # --- Database (PostgreSQL + pgvector) ---
 sqlalchemy[asyncio]==2.0.54
