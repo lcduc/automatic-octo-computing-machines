@@ -53,5 +53,60 @@
     {"message": "Bằng điều dưỡng Việt Nam có được công nhận ở Đức không?", "rating": 1},
     {"message": "thủ tục công nhận mất bao lâu?"},
     {"message": "cảm ơn nhé"}
+  ]},
+  {"turns": [
+    {"message": "sang duc roi thi phai lam gi dau tien vay anh", "rating": 1},
+    {"message": "anmeldung la gi, o dau vay?", "rating": 1},
+    {"message": "ko dang ky co sao ko"}
+  ]},
+  {"turns": [
+    {"message": "em dang tinh sang Duc hoc nghe, tien phong o do khoang bao nhieu 1 thang?", "rating": 1},
+    {"message": "thế còn ăn uống đi lại nữa thì sao, tháng hết khoảng bao nhiêu?"}
+  ]},
+  {"turns": [
+    {"message": "Có người trên Facebook bảo cọc 30 triệu là có phòng sẵn ở Berlin, chuyển khoản trước được không?", "rating": 1}
+  ]},
+  {"turns": [
+    {"message": "Hợp đồng ghi lương 2.800 EUR mà sao chị bảo về tay chỉ còn khoảng 2.000 vậy?", "rating": 1},
+    {"message": "brutto netto khác nhau thế nào"},
+    {"message": "có phải tự đi khai thuế không", "rating": 1}
+  ]},
+  {"turns": [
+    {"message": "Lương tối thiểu bên Đức hiện giờ là bao nhiêu một giờ?", "rating": -1, "comment": "Tài liệu không có con số cụ thể"}
+  ]},
+  {"turns": [
+    {"message": "Thử việc ở Đức tối đa mấy tháng? Trong thử việc công ty đuổi lúc nào cũng được hả?", "rating": 1},
+    {"message": "còn học nghề thì sao, có bị cho nghỉ giữa chừng không?", "rating": 1}
+  ]},
+  {"turns": [
+    {"message": "Em làm được 3 tháng rồi mà công ty chưa trả lương tháng này, em phải làm sao ạ?", "rating": 1},
+    {"message": "Betriebsrat là cái gì vậy?"},
+    {"message": "đại sứ quán ở Berlin có giúp được không?"}
+  ]},
+  {"turns": [
+    {"message": "Làm thêm giờ ở Đức có được trả thêm tiền không", "rating": 1}
+  ]},
+  {"turns": [
+    {"message": "Tôi làm thợ điện 8 năm, sang Đức dễ xin việc không?", "rating": 1},
+    {"message": "ngành nào bên đó đang thiếu người nhất?", "rating": 1},
+    {"message": "nếu làm ở đó lâu thì có được ở lại luôn không?", "rating": 1}
+  ]},
+  {"turns": [
+    {"message": "Blue Card là gì, bằng đại học CNTT thì xin được không?", "rating": 1},
+    {"message": "bao lâu thì được thường trú?"}
+  ]},
+  {"turns": [
+    {"message": "Học nghề xong rồi công ty có giữ lại làm luôn không hay phải về nước?", "rating": 1}
+  ]},
+  {"turns": [
+    {"message": "Mình muốn đổi chỗ làm sau khi sang Đức 6 tháng thì có bị ảnh hưởng visa không?", "rating": 1},
+    {"message": "vậy tư vấn cho mình với, mình đang bị ép ký hợp đồng mới", "contact": {"name": "Lê Văn Mẫu", "email": "demo.visitor2@example.com", "details": "Muốn đổi nhà tuyển dụng, đang bị yêu cầu ký hợp đồng mới"}}
+  ]},
+  {"turns": [
+    {"message": "Lương tối thiểu ở Pháp bao nhiêu?", "rating": -1, "comment": "Hỏi thử ngoài phạm vi"}
+  ]},
+  {"turns": [
+    {"message": "ad ơi cho em hỏi", "rating": 1},
+    {"message": "con em 5 tuổi, sang Đức làm điều dưỡng thì cho con đi học mẫu giáo bên đó được không"}
   ]}
 ]
