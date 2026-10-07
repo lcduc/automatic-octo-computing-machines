@@ -18,6 +18,7 @@ export function Transcript({ messages }: { messages: AdminMessage[] }) {
             <strong>{message.role === "user" ? t("conversations.user") : t("conversations.assistant")}</strong>
             <span className="small muted">{formatDateTime(message.created_at)}</span>
             {message.outcome && <Badge tone={OUTCOME_TONES[message.outcome]}>{t(`outcome.${message.outcome}`)}</Badge>}
+            {message.answered_by && <span className="small muted">{t("conversations.answeredBy", { by: message.answered_by })}</span>}
             {message.cached && <Badge>{t("conversations.cached")}</Badge>}
             {message.guard_reason && <Badge tone="danger">{message.guard_reason}</Badge>}
             {message.feedback && (
@@ -40,7 +41,7 @@ export function Transcript({ messages }: { messages: AdminMessage[] }) {
               })}
             </p>
           )}
-          {message.role === "assistant" && <TraceDetails messageId={message.id} />}
+          {message.role === "assistant" && message.outcome !== "agent_reply" && <TraceDetails messageId={message.id} />}
           {message.citations.length > 0 && (
             <div className="row mt-3">
               {message.citations.map((citation) => (

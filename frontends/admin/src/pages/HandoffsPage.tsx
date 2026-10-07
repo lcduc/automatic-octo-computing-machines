@@ -60,8 +60,36 @@ function HandoffDrawer({ handoff, onClose, onUpdated }: { handoff: Handoff; onCl
     }
   };
 
+  const replyBox = (
+    <>
+      <label className="sr-only" htmlFor="handoff-reply">{t("handoffs.answer")}</label>
+      <textarea
+        id="handoff-reply"
+        className="textarea"
+        rows={3}
+        maxLength={5000}
+        placeholder={t("handoffs.answerHint")}
+        value={answer}
+        onChange={(e) => setAnswer(e.target.value)}
+      />
+      <div className="toolbar">
+        <button type="button" className="btn btn--primary" disabled={saving || !answer.trim()} onClick={() => void call(`handoffs/${handoff.id}/answer`, { text: answer })}>
+          {t("handoffs.sendAnswer")}
+        </button>
+        {handoff.assigned_to !== admin.email && (
+          <button type="button" className="btn" disabled={saving} onClick={() => void call(`handoffs/${handoff.id}`, { assigned_to: admin.email })}>
+            {t("handoffs.assignToMe")}
+          </button>
+        )}
+        <button type="button" className="btn" disabled={saving} onClick={() => void call(`handoffs/${handoff.id}`, { status: "closed" })}>
+          {t("handoffs.close")}
+        </button>
+      </div>
+    </>
+  );
+
   return (
-    <Drawer title={t("handoffs.detail")} onClose={onClose}>
+    <Drawer title={t("handoffs.detail")} onClose={onClose} footer={canHandoff && handoff.status !== "closed" ? replyBox : undefined}>
       <dl className="dl">
         <dt>{t("handoffs.reason")}</dt>
         <dd>{t(reasonLabel(handoff.reason))}</dd>
@@ -88,28 +116,12 @@ function HandoffDrawer({ handoff, onClose, onUpdated }: { handoff: Handoff; onCl
         </dd>
         {handoff.answered_at && (<><dt>{t("handoffs.answeredAt")}</dt><dd>{formatDateTime(handoff.answered_at)} {handoff.emailed_at && <MailCheck size={14} aria-label={t("handoffs.emailed")} />}</dd></>)}
       </dl>
+      <h3>{t("handoffs.conversation")}</h3>
+      {conversation.error && <ErrorState message={conversation.error} onRetry={conversation.reload} />}
+      {conversation.loading && <LoadingState />}
+      {conversation.data && <Transcript messages={conversation.data.messages} />}
       {canHandoff ? (
         <div className="stack card card__body">
-          {handoff.status !== "closed" && (
-            <>
-              <Field label={t("handoffs.answer")} hint={t("handoffs.answerHint")}>
-                <textarea className="textarea" rows={4} maxLength={5000} value={answer} onChange={(e) => setAnswer(e.target.value)} />
-              </Field>
-              <div className="toolbar">
-                <button type="button" className="btn btn--primary" disabled={saving || !answer.trim()} onClick={() => void call(`handoffs/${handoff.id}/answer`, { text: answer })}>
-                  {t("handoffs.sendAnswer")}
-                </button>
-                {handoff.assigned_to !== admin.email && (
-                  <button type="button" className="btn" disabled={saving} onClick={() => void call(`handoffs/${handoff.id}`, { assigned_to: admin.email })}>
-                    {t("handoffs.assignToMe")}
-                  </button>
-                )}
-                <button type="button" className="btn" disabled={saving} onClick={() => void call(`handoffs/${handoff.id}`, { status: "closed" })}>
-                  {t("handoffs.close")}
-                </button>
-              </div>
-            </>
-          )}
           {handoff.status === "closed" && (
             <div>
               <button type="button" className="btn" disabled={saving} onClick={() => void call(`handoffs/${handoff.id}`, { status: "open" })}>{t("handoffs.reopen")}</button>
@@ -127,10 +139,6 @@ function HandoffDrawer({ handoff, onClose, onUpdated }: { handoff: Handoff; onCl
       ) : (
         <Callout>{t("handoffs.readOnly")}</Callout>
       )}
-      <h3>{t("handoffs.conversation")}</h3>
-      {conversation.error && <ErrorState message={conversation.error} onRetry={conversation.reload} />}
-      {conversation.loading && <LoadingState />}
-      {conversation.data && <Transcript messages={conversation.data.messages} />}
     </Drawer>
   );
 }

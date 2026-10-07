@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { isRouteErrorResponse, Link, useRouteError, type RouteObject } from "react-router";
 import { ConsoleLayout } from "./components/layout/ConsoleLayout";
 import type { RouteHandle } from "./components/layout/TopBar";
+import { LockedScreen } from "./components/ui/LockedScreen";
 import { Callout, EmptyState } from "./components/ui/primitives";
 import { useI18n } from "./i18n/I18nProvider";
 import { useSession } from "./lib/session";
@@ -14,7 +15,6 @@ import { FeedbackPage } from "./pages/FeedbackPage";
 import { HandoffsPage } from "./pages/HandoffsPage";
 import { DocumentPage } from "./pages/knowledge/DocumentPage";
 import { KnowledgePage } from "./pages/knowledge/KnowledgePage";
-import { ReviewQueuePage } from "./pages/knowledge/ReviewQueuePage";
 import { LoginPage } from "./pages/LoginPage";
 import { LogsPage } from "./pages/LogsPage";
 import { OverviewPage } from "./pages/overview/OverviewPage";
@@ -23,9 +23,8 @@ import { WidgetPreviewPage } from "./pages/widget/WidgetPreviewPage";
 
 /** Pages only owners may open (the backend refuses the calls for anyone else anyway). */
 function OwnerOnly({ children }: { children: ReactNode }) {
-  const { t } = useI18n();
   const { isOwner } = useSession();
-  return isOwner ? children : <Callout tone="warning">{t("errors.ownerOnly")}</Callout>;
+  return isOwner ? children : <LockedScreen />;
 }
 
 function NotFound() {
@@ -55,13 +54,12 @@ export const routes: RouteObject[] = [
       { path: "widget", element: <WidgetPreviewPage />, handle: handle("nav.widget") },
       { path: "knowledge", element: <KnowledgePage />, handle: handle("nav.knowledge") },
       { path: "knowledge/:id", element: <DocumentPage />, handle: handle("nav.knowledge") },
-      { path: "review", element: <ReviewQueuePage />, handle: handle("nav.review") },
       { path: "conversations", element: <ConversationsPage />, handle: handle("nav.conversations") },
       { path: "conversations/:id", element: <ConversationPage />, handle: handle("nav.conversations") },
       { path: "feedback", element: <FeedbackPage />, handle: handle("nav.feedback") },
       { path: "handoffs", element: <HandoffsPage />, handle: handle("nav.handoffs") },
-      { path: "logs", element: <LogsPage />, handle: handle("nav.logs") },
-      { path: "settings", element: <SettingsPage />, handle: handle("nav.settings") },
+      { path: "logs", element: <OwnerOnly><LogsPage /></OwnerOnly>, handle: handle("nav.logs") },
+      { path: "settings", element: <OwnerOnly><SettingsPage /></OwnerOnly>, handle: handle("nav.settings") },
       { path: "access", element: <OwnerOnly><AccessPage /></OwnerOnly>, handle: handle("nav.access") },
       { path: "audit", element: <OwnerOnly><AuditPage /></OwnerOnly>, handle: handle("nav.audit") },
       { path: "*", element: <NotFound /> },

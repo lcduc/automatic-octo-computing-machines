@@ -9,7 +9,7 @@ retention purges and deletion requests never have to reach it.
 # Standard library imports
 import logging
 import uuid
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
 # Third-party imports
 from sqlalchemy import func, select
@@ -52,6 +52,9 @@ class EvalCaseService:
             note: Why the case was added.
             created_by: Admin e-mail.
 
+        Returns:
+            The new case, or the existing one when the question is already in the set.
+
         Raises:
             NotFoundError: Unknown message, or not an assistant answer.
             InvalidRequestError: No question precedes the answer.
@@ -64,9 +67,13 @@ class EvalCaseService:
             question = (await repository.questions_for([message])).get(message.id)
             if not question:
                 raise InvalidRequestError("No question precedes this answer")
+            cleaned_question = self._clean(question)
+            existing = (await session.execute(select(EvalCase).where(EvalCase.question == cleaned_question).limit(1))).scalar_one_or_none()
+            if existing is not None:
+                return existing
             citations = message.citations or []
             case = EvalCase(
-                question=self._clean(question),
+                question=cleaned_question,
                 expected_answer=self._clean(expected_answer or message.content),
                 expected_sources=list(dict.fromkeys(c.get("title", "") for c in citations if c.get("title"))),
                 document_ids=list(dict.fromkeys(c.get("document_id", "") for c in citations if c.get("document_id"))),
@@ -76,6 +83,20 @@ class EvalCaseService:
             session.add(case)
         logger.info("Eval case %s added by %s", case.id, created_by)
         return case
+
+    async def questions_in_set(self, questions: Iterable[str]) -> Set[str]:
+        """
+        Which of these questions already have an eval case.
+
+        Cases keep no link to the message they came from, so a question counts as
+        in the set when its masked text equals a case's question.
+        """
+        cleaned = {question: self._clean(question) for question in questions}
+        if not cleaned:
+            return set()
+        async with self._database.session() as session:
+            found = set((await session.execute(select(EvalCase.question).where(EvalCase.question.in_(list(cleaned.values()))))).scalars())
+        return {question for question, masked in cleaned.items() if masked in found}
 
     async def list(self, limit: int, offset: int) -> Tuple[List[EvalCase], int]:
         """Eval cases newest first, with the total count."""

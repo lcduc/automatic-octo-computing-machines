@@ -290,6 +290,7 @@ class AdminMessage(BaseModel):
     latency_ms: Optional[int] = None
     cached: bool = False
     guard_reason: Optional[str] = None
+    answered_by: Optional[str] = None
     request_id: Optional[str] = None
     created_at: datetime
     feedback: Optional[FeedbackOut] = None
@@ -311,6 +312,7 @@ class AdminMessage(BaseModel):
             latency_ms=message.latency_ms,
             cached=message.cached,
             guard_reason=message.guard_reason,
+            answered_by=message.answered_by,
             request_id=message.request_id,
             created_at=message.created_at,
             feedback=FeedbackOut(rating=feedback.rating, comment=feedback.comment) if feedback else None,
@@ -337,6 +339,7 @@ class FeedbackItem(BaseModel):
     outcome: Optional[str] = None
     reviewed_at: Optional[datetime] = None
     reviewed_by: Optional[str] = None
+    in_eval_set: bool = False
 
 
 class FeedbackReview(BaseModel):

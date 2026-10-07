@@ -121,8 +121,15 @@ export function SourcesTab({ sources, onChanged }: { sources: Source[]; onChange
       </section>
       {canWrite && (
         <form className="card card__body toolbar" onSubmit={create}>
-          <Field label={t("sources.newName")} hint={t("sources.nameHint")}>
-            <input className="input" required pattern={NAME_PATTERN} value={name} onChange={(e) => setName(e.target.value)} />
+          <Field label={t("sources.newName")}>
+            <input
+              className="input"
+              required
+              pattern={NAME_PATTERN}
+              placeholder={t("sources.nameHint")}
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
           </Field>
           <Field label={t("sources.description")}>
             <input className="input" maxLength={500} value={description} onChange={(e) => setDescription(e.target.value)} />

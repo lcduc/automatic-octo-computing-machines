@@ -211,7 +211,7 @@ class HandoffService:
             if request.status == HANDOFF_STATUS_CLOSED:
                 raise InvalidRequestError("This ticket is closed; re-open it first")
             repository.add(Message(conversation_id=request.conversation_id, role="assistant", content=text,
-                                   outcome=OUTCOME_AGENT_REPLY, model=None))
+                                   outcome=OUTCOME_AGENT_REPLY, model=None, answered_by=answered_by))
             request.answer, request.answered_at = text, utc_now()
             request.assigned_to = request.assigned_to or answered_by
             request.status = HANDOFF_STATUS_ANSWERED

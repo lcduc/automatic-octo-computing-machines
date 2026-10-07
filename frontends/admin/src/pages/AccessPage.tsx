@@ -1,5 +1,4 @@
-import { Copy, Eye, KeyRound, RefreshCw, Trash2, UserPlus } from "lucide-react";
-import { PlannedBadge, PlannedButton } from "../components/ui/Planned";
+import { Copy, Eye, KeyRound, RefreshCw, UserPlus } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { Modal } from "../components/ui/Modal";
 import { Badge, Callout, Card, ErrorState, Field, LoadingState, PageHeader } from "../components/ui/primitives";
@@ -11,6 +10,7 @@ import { API_KEY_SCOPES, ROLES, type AdminUser, type ApiKey, type ApiKeyCreated,
 import { useApi } from "../lib/use-api";
 import { NewUserDialog } from "./access/NewUserDialog";
 import { RoleMatrix } from "./access/RoleMatrix";
+import { RolePreviewDialog } from "./access/RolePreviewDialog";
 
 /** Same defaults and bounds as the backend (ApiKeyCreate / ApiKeyRotate). */
 const DEFAULT_KEY_RATE_LIMIT = 60;
@@ -24,6 +24,7 @@ function Users() {
   const toast = useToast();
   const users = useApi<AdminUser[]>("users");
   const [creating, setCreating] = useState(false);
+  const [previewRole, setPreviewRole] = useState<Role | null>(null);
 
   const update = async (user: AdminUser, changes: Partial<Pick<AdminUser, "role" | "disabled">>) => {
     try {
@@ -57,11 +58,7 @@ function Users() {
                 <th scope="col">{t("access.role")}</th>
                 <th scope="col">{t("access.lastLogin")}</th>
                 <th scope="col">{t("access.state")}</th>
-                <th scope="col">
-                  <span className="row">
-                    {t("access.more")} <PlannedBadge />
-                  </span>
-                </th>
+                <th scope="col">{t("access.more")}</th>
               </tr>
             </thead>
             <tbody>
@@ -87,10 +84,10 @@ function Users() {
                     </button>
                   </td>
                   <td>
-                    <div className="row">
-                      <PlannedButton small icon={Eye} label={t("access.viewAs")} />
-                      <PlannedButton small icon={Trash2} label={t("common.delete")} danger />
-                    </div>
+                    <button type="button" className="btn btn--sm" onClick={() => setPreviewRole(user.role)}>
+                      <Eye size={14} aria-hidden />
+                      {t("access.viewAs")}
+                    </button>
                   </td>
                 </tr>
               ))}
@@ -98,6 +95,7 @@ function Users() {
           </table>
         </div>
       )}
+      {previewRole && <RolePreviewDialog role={previewRole} onClose={() => setPreviewRole(null)} />}
       {creating && (
         <NewUserDialog
           onClose={() => setCreating(false)}

@@ -198,10 +198,8 @@ class ConversationRepository:
             statement = statement.where(HandoffRequest.status == status)
             count_statement = count_statement.where(HandoffRequest.status == status)
         total = (await self._session.execute(count_statement)).scalar_one()
-        # Most urgent first: the earliest due ticket, then the newest.
         result = await self._session.execute(
-            statement.order_by(HandoffRequest.due_at.asc().nulls_last(), HandoffRequest.created_at.desc())
-            .limit(limit).offset(offset)
+            statement.order_by(HandoffRequest.created_at.desc()).limit(limit).offset(offset)
         )
         return list(result.scalars().all()), int(total)
 

@@ -5,7 +5,7 @@ contact with consent, masked contact, owner-only reveal, answers in the chat and
 
 import json
 
-from .test_api import BFF_TOKEN, _admin_headers, client  # noqa: F401  (fixture)
+from .test_api import ADMIN_EMAIL, BFF_TOKEN, _admin_headers, _approve, client  # noqa: F401  (fixture)
 
 HANDOFFS = "/api/v1/admin/handoffs"
 VISITOR = "visitor-ticket01"
@@ -61,6 +61,8 @@ def test_ticket_contact_answer_in_chat_and_by_email(client):  # noqa: F811
     assert mailer.sent[0][0] == ["an@example.vn"] and "60 ngày" in mailer.sent[0][2]
     history = client.get(f"/api/v1/conversations/{conversation}", headers=_headers()).json()["messages"]
     assert history[-1]["outcome"] == "agent_reply" and "60 ngày" in history[-1]["content"]
+    detail = client.get(f"/api/v1/admin/conversations/{conversation}", headers=admin).json()
+    assert detail["messages"][-1]["answered_by"] == ADMIN_EMAIL
 
     audit = client.get("/api/v1/admin/audit", headers=admin).json()["items"]
     assert any(entry["path"].endswith("/reveal-contact") for entry in audit)
@@ -118,8 +120,9 @@ def test_sensitive_topics_and_repeated_thumbs_down_open_tickets(client):  # noqa
     tickets = client.get(HANDOFFS, headers=admin).json()["items"]
     assert tickets[0]["reason"] == "sensitive_topic"
 
-    client.post("/api/v1/admin/knowledge/documents/text",
-                json={"source": "FAQ", "title": "Giờ", "content": "Văn phòng mở cửa từ 8 giờ sáng các ngày trong tuần"}, headers=admin)
+    created = client.post("/api/v1/admin/knowledge/documents/text",
+                          json={"source": "FAQ", "title": "Giờ", "content": "Văn phòng mở cửa từ 8 giờ sáng các ngày trong tuần"}, headers=admin)
+    _approve(client, admin, created.json()["id"])
     conversation, first = _say(client, "Văn phòng mở cửa từ 8 giờ sáng các ngày trong tuần", visitor="visitor-rate0001")
     _, second = _say(client, "Văn phòng mở cửa từ 8 giờ sáng các ngày trong tuần", visitor="visitor-rate0001", conversation_id=conversation)
     rate = lambda message: client.post("/api/v1/feedback", json={"message_id": message, "rating": -1},  # noqa: E731

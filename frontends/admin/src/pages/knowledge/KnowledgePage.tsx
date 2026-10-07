@@ -1,7 +1,7 @@
 import { useSearchParams } from "react-router";
 import { ErrorState, LoadingState, PageHeader, Tabs } from "../../components/ui/primitives";
 import { useI18n } from "../../i18n/I18nProvider";
-import type { ChunkingStrategyInfo, Source } from "../../lib/types";
+import type { Source } from "../../lib/types";
 import { useApi } from "../../lib/use-api";
 import { DocumentsTab } from "./DocumentsTab";
 import { SourcesTab } from "./SourcesTab";
@@ -13,7 +13,6 @@ export function KnowledgePage() {
   const [params, setParams] = useSearchParams();
   const tab: Tab = params.get("tab") === "sources" ? "sources" : "documents";
   const sources = useApi<Source[]>("knowledge/sources");
-  const strategies = useApi<ChunkingStrategyInfo[]>("knowledge/chunking/strategies");
 
   return (
     <>
@@ -29,7 +28,7 @@ export function KnowledgePage() {
       />
       {sources.error && <ErrorState message={sources.error} onRetry={sources.reload} />}
       {!sources.data && !sources.error && <LoadingState />}
-      {sources.data && tab === "documents" && <DocumentsTab sources={sources.data} strategies={strategies.data ?? []} />}
+      {sources.data && tab === "documents" && <DocumentsTab sources={sources.data} />}
       {sources.data && tab === "sources" && <SourcesTab sources={sources.data} onChanged={sources.reload} />}
     </>
   );

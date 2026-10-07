@@ -9,7 +9,7 @@ retrievable passages, each carrying its own embedding.
 
 # Standard library imports
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from typing import Any, Dict, List, Optional
 
 # Third-party imports
@@ -25,6 +25,18 @@ from .base import Base, created_at_column, updated_at_column, uuid_pk
 DOCUMENT_STATUS_PROCESSING = "processing"
 DOCUMENT_STATUS_READY = "ready"
 DOCUMENT_STATUS_FAILED = "failed"
+
+#: Review of a document before the assistant may answer from it: every new document
+#: starts ``pending`` and only an owner or editor moves it on.
+REVIEW_PENDING = "pending"
+REVIEW_APPROVED = "approved"
+REVIEW_REJECTED = "rejected"
+REVIEW_STATUSES = (REVIEW_PENDING, REVIEW_APPROVED, REVIEW_REJECTED)
+
+
+def approved_by(actor: Optional[str]) -> Dict[str, Any]:
+    """Document columns for content an operator vouches for (seed data, a CLI import): approved at creation."""
+    return {"review_status": REVIEW_APPROVED, "reviewed_by": actor, "reviewed_at": datetime.now(timezone.utc)}
 
 
 class KnowledgeSource(Base):
@@ -48,7 +60,10 @@ class KnowledgeDocument(Base):
     """One file or hand-written entry, split into retrievable chunks."""
 
     __tablename__ = "knowledge_documents"
-    __table_args__ = (Index("ix_knowledge_documents_source_status", "source_id", "status"),)
+    __table_args__ = (
+        Index("ix_knowledge_documents_source_status", "source_id", "status"),
+        Index("ix_knowledge_documents_review_status", "review_status"),
+    )
 
     id: Mapped[uuid.UUID] = uuid_pk()
     source_id: Mapped[int] = mapped_column(
@@ -67,6 +82,12 @@ class KnowledgeDocument(Base):
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     chunk_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     created_by: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    #: ``pending`` / ``approved`` / ``rejected``; only approved documents are searchable.
+    review_status: Mapped[str] = mapped_column(String(16), nullable=False, default=REVIEW_PENDING)
+    reviewed_by: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    reviewed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    #: The reviewer's reason, mainly for a rejection.
+    review_note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     #: Ingestion queue: times a worker has claimed this upload (bounds crash retries).
     attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     #: Ingestion queue: lease a worker renews while parsing; a stale lease means the worker died.

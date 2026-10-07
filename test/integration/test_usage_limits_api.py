@@ -10,7 +10,7 @@ from core.storage.tables.usage_tables import WINDOW_MINUTE
 from services.live_feed_service import LiveFeedService, asyncpg_dsn
 from services.rate_limit_service import Limit, RateLimitService, TimeBuckets
 from .conftest import TEST_DATABASE_URL
-from .test_api import BFF_TOKEN, _admin_headers, client  # noqa: F401  (fixture)
+from .test_api import BFF_TOKEN, _admin_headers, _approve, client  # noqa: F401  (fixture)
 
 FAQ = {"source": "FAQ", "title": "Giờ làm việc", "content": "Văn phòng mở cửa từ 8 giờ sáng các ngày trong tuần"}
 
@@ -23,7 +23,9 @@ def _ask(http, visitor):
 
 def _seed(http):
     admin = _admin_headers(http)
-    assert http.post("/api/v1/admin/knowledge/documents/text", json=FAQ, headers=admin).status_code == 201
+    created = http.post("/api/v1/admin/knowledge/documents/text", json=FAQ, headers=admin)
+    assert created.status_code == 201
+    _approve(http, admin, created.json()["id"])
     return admin
 
 

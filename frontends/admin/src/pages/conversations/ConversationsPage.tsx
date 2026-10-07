@@ -2,6 +2,7 @@ import { Link, useSearchParams } from "react-router";
 import { Badge, EmptyState, ErrorState, Field, LoadingState, PageHeader, Pagination } from "../../components/ui/primitives";
 import { useI18n } from "../../i18n/I18nProvider";
 import { query } from "../../lib/api";
+import { CONVERSATION_STATUS_TONES } from "../../lib/labels";
 import { OUTCOMES, type ConversationSummary, type Page } from "../../lib/types";
 import { useApi } from "../../lib/use-api";
 
@@ -65,12 +66,12 @@ export function ConversationsPage() {
               <thead>
                 <tr>
                   <th scope="col">{t("conversations.visitor")}</th>
-                  <th scope="col">{t("conversations.status")}</th>
-                  <th scope="col" className="table__num">
+                  <th scope="col" className="table__center">{t("conversations.status")}</th>
+                  <th scope="col" className="table__center">
                     {t("conversations.messages")}
                   </th>
-                  <th scope="col">{t("conversations.started")}</th>
-                  <th scope="col">{t("conversations.lastActivity")}</th>
+                  <th scope="col" className="table__center">{t("conversations.started")}</th>
+                  <th scope="col" className="table__center">{t("conversations.lastActivity")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -82,14 +83,14 @@ export function ConversationsPage() {
                       </Link>
                       <div className="small muted">{conversation.channel}</div>
                     </td>
-                    <td>
-                      <Badge tone={conversation.status === "handoff_pending" ? "warning" : "neutral"}>
+                    <td className="table__center">
+                      <Badge tone={CONVERSATION_STATUS_TONES[conversation.status] ?? "neutral"}>
                         {t(`conversationStatus.${conversation.status as (typeof STATUSES)[number]}`)}
                       </Badge>
                     </td>
-                    <td className="table__num">{formatNumber(conversation.message_count)}</td>
-                    <td className="small muted">{formatDateTime(conversation.created_at)}</td>
-                    <td className="small muted">{formatDateTime(conversation.last_activity_at)}</td>
+                    <td className="table__center">{formatNumber(conversation.message_count)}</td>
+                    <td className="small muted table__center">{formatDateTime(conversation.created_at)}</td>
+                    <td className="small muted table__center">{formatDateTime(conversation.last_activity_at)}</td>
                   </tr>
                 ))}
               </tbody>

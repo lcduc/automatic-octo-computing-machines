@@ -22,6 +22,8 @@ MAX_CHUNK_LENGTH = MAX_CHUNK_CHARS
 #: Allowed range of a source's retrieval priority multiplier.
 MIN_PRIORITY = 0.1
 MAX_PRIORITY = 5.0
+#: Longest reason a reviewer can attach to a decision.
+MAX_REVIEW_NOTE_LENGTH = 1000
 
 
 class SourceOut(ApiModel):
@@ -76,6 +78,11 @@ class DocumentOut(ApiModel):
     status: str
     error: Optional[str] = None
     enabled: bool
+    #: ``pending``, ``approved`` or ``rejected``; the assistant answers only from approved documents.
+    review_status: str
+    reviewed_by: Optional[str] = None
+    reviewed_at: Optional[datetime] = None
+    review_note: Optional[str] = None
     chunk_count: int
     metadata: Dict[str, Any]
     #: Chunking strategy and parameters in use (``{}`` = auto).
@@ -104,6 +111,10 @@ class DocumentOut(ApiModel):
             status=document.status,
             error=document.error,
             enabled=document.enabled,
+            review_status=document.review_status,
+            reviewed_by=document.reviewed_by,
+            reviewed_at=document.reviewed_at,
+            review_note=document.review_note,
             chunk_count=document.chunk_count,
             metadata=document.extra_metadata or {},
             chunking=document.chunking or {},
@@ -168,6 +179,21 @@ class DocumentUpdate(_MetadataModel):
     supersedes_id: Optional[uuid.UUID] = None
 
 
+class ReviewDecision(BaseModel):
+    """A reviewer's verdict on a pending document."""
+
+    approve: bool
+    note: Optional[str] = Field(None, max_length=MAX_REVIEW_NOTE_LENGTH)
+
+
+class ReviewCounts(BaseModel):
+    """Documents per review status."""
+
+    pending: int
+    approved: int
+    rejected: int
+
+
 class CitingAnswer(BaseModel):
     """An answer that cited a document."""
 
@@ -190,3 +216,12 @@ class ChunkUpdate(_MetadataModel):
 
     content: Optional[str] = Field(None, min_length=1, max_length=MAX_CHUNK_LENGTH)
     metadata: Optional[Dict[str, Any]] = None
+
+
+class ImportResultOut(BaseModel):
+    """What a knowledge import changed."""
+
+    sources_created: int
+    documents_imported: int
+    documents_skipped: int
+    chunks_imported: int

@@ -51,12 +51,20 @@ export interface Source {
   document_count: number;
 }
 
+export interface KnowledgeImportResult {
+  sources_created: number;
+  documents_imported: number;
+  documents_skipped: number;
+  chunks_imported: number;
+}
+
 export type DocumentStatus = "processing" | "ready" | "failed";
 
-export interface ChunkingSpec {
-  strategy: string;
-  [param: string]: unknown;
-}
+/** Every new document waits for an owner or editor; the assistant answers only from approved ones. */
+export type ReviewStatus = "pending" | "approved" | "rejected";
+export const REVIEW_STATUSES: ReviewStatus[] = ["pending", "approved", "rejected"];
+
+export type ReviewCounts = Record<ReviewStatus, number>;
 
 export interface KnowledgeDocument {
   id: string;
@@ -67,10 +75,12 @@ export interface KnowledgeDocument {
   status: DocumentStatus;
   error: string | null;
   enabled: boolean;
+  review_status: ReviewStatus;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  review_note: string | null;
   chunk_count: number;
   metadata: Metadata;
-  chunking: Partial<ChunkingSpec>;
-  can_rechunk: boolean;
   created_by: string | null;
   created_at: string;
   updated_at: string;
@@ -102,40 +112,6 @@ export interface DocumentDetail extends KnowledgeDocument {
   chunks: Chunk[];
 }
 
-/** A JSON-schema property as produced by Pydantic for the strategy parameters. */
-export interface SchemaProperty {
-  type?: string;
-  title?: string;
-  description?: string;
-  default?: unknown;
-  enum?: unknown[];
-  const?: unknown;
-  minimum?: number;
-  maximum?: number;
-}
-
-export interface ChunkingStrategyInfo {
-  name: string;
-  description: string;
-  params_schema: { properties?: Record<string, SchemaProperty>; required?: string[] };
-}
-
-export interface PreviewChunk {
-  position: number;
-  content: string;
-  metadata: Metadata;
-  char_count: number;
-}
-
-export interface ChunkingPreview {
-  chunk_count: number;
-  min_chars: number;
-  max_chars: number;
-  avg_chars: number;
-  warnings: string[];
-  chunks: PreviewChunk[];
-}
-
 // ---------------------------------------------------------------- conversations
 
 export interface ConversationSummary {
@@ -163,6 +139,7 @@ export interface AdminMessage {
   latency_ms: number | null;
   cached: boolean;
   guard_reason: string | null;
+  answered_by: string | null;
   request_id: string | null;
   created_at: string;
   feedback: { rating: number; comment: string | null } | null;
@@ -184,6 +161,7 @@ export interface FeedbackItem {
   outcome: Outcome | null;
   reviewed_at: string | null;
   reviewed_by: string | null;
+  in_eval_set: boolean;
 }
 
 /** A golden question copied from a real answer, personal data masked (ADM-12). */
@@ -359,19 +337,6 @@ export interface Settings {
   retention_trace_days: number;
   retention_ticket_days: number;
   retention_audit_days: number;
-}
-
-export interface SqlTool {
-  name: string;
-  description: string;
-  required_tier: string;
-  sql_template: string;
-  allowed_columns: string[];
-  masked_columns: string[];
-  row_limit: number;
-  enabled: boolean;
-  updated_by: string | null;
-  updated_at: string;
 }
 
 export interface ModelPrice {

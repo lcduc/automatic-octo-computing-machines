@@ -14,12 +14,13 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 # Third-party imports
 from sqlalchemy import Select, delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import selectinload, undefer
 
 # Local imports
 from .tables.knowledge_tables import (
     DOCUMENT_STATUS_PROCESSING,
     DOCUMENT_STATUS_READY,
+    REVIEW_APPROVED,
     KnowledgeChunk,
     KnowledgeDocument,
     KnowledgeSource,
@@ -132,12 +133,15 @@ class KnowledgeRepository:
         source_id: Optional[int],
         status: Optional[str],
         search: Optional[str],
+        review_status: Optional[str] = None,
     ) -> Select:
         """Apply the admin list filters to a documents query."""
         if source_id is not None:
             statement = statement.where(KnowledgeDocument.source_id == source_id)
         if status:
             statement = statement.where(KnowledgeDocument.status == status)
+        if review_status:
+            statement = statement.where(KnowledgeDocument.review_status == review_status)
         if search:
             pattern = f"%{search}%"
             statement = statement.where(
@@ -155,6 +159,7 @@ class KnowledgeRepository:
         search: Optional[str],
         limit: int,
         offset: int,
+        review_status: Optional[str] = None,
     ) -> Tuple[List[KnowledgeDocument], int]:
         """
         Page of documents (newest first) plus the total matching count.
@@ -162,9 +167,9 @@ class KnowledgeRepository:
         Returns:
             ``(documents, total)``; each document has ``source`` loaded.
         """
-        base = self._document_filter(select(KnowledgeDocument), source_id, status, search)
+        base = self._document_filter(select(KnowledgeDocument), source_id, status, search, review_status)
         total_result = await self._session.execute(
-            self._document_filter(select(func.count(KnowledgeDocument.id)), source_id, status, search)
+            self._document_filter(select(func.count(KnowledgeDocument.id)), source_id, status, search, review_status)
         )
         result = await self._session.execute(
             base.options(selectinload(KnowledgeDocument.source))
@@ -183,6 +188,27 @@ class KnowledgeRepository:
             select(KnowledgeDocument).where(KnowledgeDocument.id == document_id).options(*options)
         )
         return result.scalar_one_or_none()
+
+    async def count_by_review_status(self) -> Dict[str, int]:
+        """Documents per review status (statuses nobody holds are absent)."""
+        result = await self._session.execute(
+            select(KnowledgeDocument.review_status, func.count()).group_by(KnowledgeDocument.review_status)
+        )
+        return {status: int(count) for status, count in result.all()}
+
+    async def list_ready_documents_with_chunks(self) -> List[KnowledgeDocument]:
+        """Every ready, approved document with its source, ordered chunks and stored extracted text, oldest first."""
+        result = await self._session.execute(
+            select(KnowledgeDocument)
+            .where(KnowledgeDocument.status == DOCUMENT_STATUS_READY, KnowledgeDocument.review_status == REVIEW_APPROVED)
+            .options(
+                selectinload(KnowledgeDocument.source),
+                selectinload(KnowledgeDocument.chunks),
+                undefer(KnowledgeDocument.extracted_text),
+            )
+            .order_by(KnowledgeDocument.created_at)
+        )
+        return list(result.scalars().all())
 
     async def find_by_hash(self, source_id: int, content_hash: str) -> Optional[KnowledgeDocument]:
         """An existing document in the same source with identical file content."""
@@ -381,7 +407,7 @@ class KnowledgeRepository:
         """
         Every chunk that should be searchable, ordered by document then position.
 
-        Only ready, enabled documents in enabled sources with an embedding are
+        Only ready, approved, enabled documents in enabled sources with an embedding are
         returned, and none whose validity already ended; the ordering lets the
         index find a chunk's neighbours by adjacency. Tier and effective dates
         are filtered again per query (documents activate on their date without
@@ -408,6 +434,7 @@ class KnowledgeRepository:
             .join(KnowledgeSource, KnowledgeDocument.source_id == KnowledgeSource.id)
             .where(
                 KnowledgeDocument.status == DOCUMENT_STATUS_READY,
+                KnowledgeDocument.review_status == REVIEW_APPROVED,
                 KnowledgeDocument.enabled.is_(True),
                 KnowledgeSource.enabled.is_(True),
                 KnowledgeChunk.embedding.is_not(None),

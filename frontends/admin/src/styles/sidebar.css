@@ -87,10 +87,14 @@
 }
 
 /* Each item carries an accent (gold, blue, amber, red, purple, green) shown when active. */
-.nav-item {
+/* The accent variables are shared with the locked screen, which takes its page's colour. */
+.nav-item,
+.locked-screen {
   --accent: var(--accent-gold);
   --accent-bg: rgb(197 160 89 / 0.18);
   --accent-border: rgb(197 160 89 / 0.45);
+}
+.nav-item {
   display: flex;
   align-items: center;
   gap: var(--space-3);
@@ -284,4 +288,9 @@
     transform: none;
     box-shadow: var(--shadow-xl);
   }
+}
+
+/* Tab the signed-in role cannot open: still listed, dimmed; its page is disabled. */
+.nav-item--locked {
+  opacity: 0.55;
 }

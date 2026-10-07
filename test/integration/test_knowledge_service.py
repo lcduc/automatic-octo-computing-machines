@@ -51,7 +51,8 @@ async def _claim(database):
 async def test_text_document_is_searchable_and_edits_refresh_the_index(kb):
     service, index = kb.service, kb.index
     document = await service.create_text_document(
-        "FAQ", "Giờ làm việc", "Văn phòng mở cửa từ 8 giờ sáng.", {"url": "https://x.test/faq"}, "admin@x.test"
+        "FAQ", "Giờ làm việc", "Văn phòng mở cửa từ 8 giờ sáng.", {"url": "https://x.test/faq"}, "admin@x.test",
+        auto_approve=True,
     )
     assert index.snapshot.chunks[0].source == "FAQ"
     assert index.snapshot.chunks[0].metadata["url"] == "https://x.test/faq"
@@ -71,7 +72,7 @@ async def test_text_document_is_searchable_and_edits_refresh_the_index(kb):
 @pytest.mark.asyncio
 async def test_add_and_delete_chunk_keep_positions_contiguous(kb):
     service, index = kb.service, kb.index
-    document = await service.create_text_document("general", "Doc", "first", {}, None)
+    document = await service.create_text_document("general", "Doc", "first", {}, None, auto_approve=True)
     await service.add_chunk(document.id, "third", {}, position=None)
     await service.add_chunk(document.id, "second", {}, position=1)
     loaded = await service.get_document(document.id)
@@ -100,6 +101,8 @@ async def test_upload_is_queued_then_ingested_by_the_worker(kb):
 
     loaded = await service.get_document(document.id)
     assert loaded.status == "ready" and loaded.chunk_count == 2 and loaded.claimed_at is None
+    assert index.snapshot.is_empty  # ingested, but still waiting for review
+    await service.review_document(document.id, True, "reviewer@x.test")
     assert {c.source for c in index.snapshot.chunks} == {"contracts"}
     # The original is kept for backups until the document is deleted.
     assert kb.uploads.path_for(document.id, "txt").exists()
@@ -265,6 +268,8 @@ async def test_upload_held_for_review_keeps_its_text_and_article_metadata(kb):
     assert loaded.chunks[0].content.startswith("Chương I QUY ĐỊNH CHUNG\nĐiều 1.")
     assert loaded.extraction_method == "docling"
     assert index.snapshot.is_empty  # held back until an admin enables it
+    await service.review_document(document.id, True, "reviewer@x.test")
+    assert index.snapshot.is_empty  # approved, but still switched off
 
     await service.update_document(document.id, {"enabled": True})
     assert {c.metadata["article"] for c in index.snapshot.chunks} == {"Điều 1", "Điều 2"}
@@ -275,6 +280,7 @@ async def test_preview_writes_nothing_and_rechunk_replaces_the_chunks(kb):
     service, index = kb.service, kb.index
     document = await service.upload_file(LAW_TEXT, "luat.txt", "general", None, {}, None)
     await kb.worker.process_next()
+    await service.review_document(document.id, True, "reviewer@x.test")
     auto_chunks = [c.content for c in (await service.get_document(document.id)).chunks]
 
     preview = await service.preview_chunking(document.id, ChunkingSpec("legal_article", {}))

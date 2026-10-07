@@ -47,7 +47,6 @@ export function useDemoChat() {
   const [configError, setConfigError] = useState<string | null>(null);
   const [messages, setMessages] = useState<DemoMessage[]>([]);
   const [conversationId, setConversationId] = useState<string | null>(null);
-  const [sources, setSources] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const abort = useRef<AbortController | null>(null);
@@ -82,7 +81,7 @@ export function useDemoChat() {
 
       const controller = new AbortController();
       abort.current = controller;
-      const body = { message: question, conversation_id: conversationId ?? undefined, sources: sources.length ? sources : undefined };
+      const body = { message: question, conversation_id: conversationId ?? undefined };
       try {
         const response = await post("stream", body, controller.signal);
         if (!response.ok) {
@@ -109,7 +108,7 @@ export function useDemoChat() {
         setBusy(false);
       }
     },
-    [busy, conversationId, sources, replace],
+    [busy, conversationId, replace],
   );
 
   const stop = useCallback(() => abort.current?.abort(), []);
@@ -143,7 +142,7 @@ export function useDemoChat() {
     return response.ok ? null : failure(response);
   }, []);
 
-  return { config, configError, messages, conversationId, sources, setSources, busy, notice, send, stop, reset, rate, submitContact };
+  return { config, configError, messages, conversationId, busy, notice, send, stop, reset, rate, submitContact };
 }
 
 export type DemoChat = ReturnType<typeof useDemoChat>;

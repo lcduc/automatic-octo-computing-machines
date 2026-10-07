@@ -38,10 +38,12 @@ interface DrawerProps {
   title: ReactNode;
   onClose: () => void;
   children: ReactNode;
+  /** Pinned under the scrolling body (e.g. a reply composer). */
+  footer?: ReactNode;
 }
 
 /** Right-hand panel for details (handoffs, audit entries); same keyboard rules as a modal. */
-export function Drawer({ title, onClose, children }: DrawerProps) {
+export function Drawer({ title, onClose, children, footer }: DrawerProps) {
   const { t } = useI18n();
   const ref = useRef<HTMLDivElement>(null);
   const titleId = useId();
@@ -58,6 +60,7 @@ export function Drawer({ title, onClose, children }: DrawerProps) {
           </button>
         </div>
         <div className="drawer__body">{children}</div>
+        {footer && <div className="drawer__footer">{footer}</div>}
       </aside>
     </>
   );

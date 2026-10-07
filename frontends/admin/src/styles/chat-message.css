@@ -302,9 +302,6 @@
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
 }
-.source-list__pick {
-  align-items: flex-start;
-}
 .source-list__meta {
   display: block;
 }
