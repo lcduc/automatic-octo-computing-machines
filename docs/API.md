@@ -237,17 +237,27 @@ weighted in retrieval.
 ### 5.4 Knowledge: documents
 
 `DocumentOut` = `{"id", "title", "source", "original_filename", "file_type", "status": "processing" | "ready" | "failed",
-"error", "enabled", "chunk_count", "metadata", "chunking", "can_rechunk", "created_by", "created_at", "updated_at"}`.
+"error", "enabled", "review_status": "pending" | "approved" | "rejected", "reviewed_by", "reviewed_at", "review_note",
+"chunk_count", "metadata", "chunking", "can_rechunk", "created_by", "created_at", "updated_at"}`.
 `DocumentDetail` adds `"chunks": ChunkOut[]`, where `ChunkOut` = `{"id", "position", "content", "metadata", "edited", "updated_at"}`.
 
 | Method | Path | Role | Details |
 |---|---|---|---|
-| GET | `/knowledge/documents` | viewer | Query: `source`, `status`, `search` (title or file name), `limit`, `offset` → `Page<DocumentOut>` |
+| GET | `/knowledge/documents` | viewer | Query: `source`, `status`, `review_status`, `search` (title or file name), `limit`, `offset` → `Page<DocumentOut>` |
 | POST | `/knowledge/documents/upload` | editor | Multipart, see below → **202** `DocumentOut` with status `processing` |
 | POST | `/knowledge/documents/text` | editor | `{"source", "title", "content" (≤200 000 chars), "metadata"?, "chunking"?}` → 201 `DocumentOut`, embedded at once |
 | GET | `/knowledge/documents/{document_id}` | viewer | → `DocumentDetail` |
 | PATCH | `/knowledge/documents/{document_id}` | editor | `{"title"?, "source"?, "metadata"?, "enabled"?}` → `DocumentDetail`. Metadata changes need no re-embedding. `enabled: false` removes the document from answers at once. |
 | DELETE | `/knowledge/documents/{document_id}` | editor | Deletes the document and its chunks → `{"message"}` |
+| POST | `/knowledge/documents/{document_id}/review` | editor | `{"approve": bool, "note"?}` → `DocumentDetail`. 409 when already reviewed, or when approving a document that has not finished processing. Signed-in owner or editor only: an API key is refused. |
+| GET | `/knowledge/access-tiers` | viewer | → `["anonymous", "user", ...]`: the values a document's `access_tier` may take, lowest first (`anonymous` + `HOST_TIERS`) |
+| GET | `/knowledge/review/counts` | viewer | → `{"pending", "approved", "rejected"}` |
+
+**Review.** Every new document (upload, typed text, import) starts `pending` and the assistant answers
+only from `approved` ones, whoever created it. Only an owner or editor session can approve or reject, so a
+key with `documents:write` can add documents but never publish them. Existing documents were approved by
+the migration. A document must be approved before it can supersede another (`supersedes_id`). The
+`scripts/manage.py` import and `scripts/seed_demo.py` run with shell access and create approved documents.
 
 **Upload form fields**
 
@@ -258,7 +268,7 @@ weighted in retrieval.
 | `title` | no | Defaults to the file name |
 | `metadata` | no | JSON object string (see *Metadata*) |
 | `chunking` | no | JSON string, default `{"strategy": "auto"}` (see 5.6); 422 when invalid |
-| `enabled` | no | `false` holds the document back from answers until an admin switches it on (review first) |
+| `enabled` | no | `false` keeps the document out of answers after approval until an admin switches it on |
 
 Parsing, OCR and embedding run in the ingestion worker. Poll `GET /knowledge/documents/{id}` until
 `status` is `ready` or `failed` (then `error` explains why). Uploading the same file into the same
@@ -312,7 +322,7 @@ a fallback (e.g. no Điều markers found), very short or very long chunks, and 
 | Method | Path | Role | Details |
 |---|---|---|---|
 | GET | `/conversations` | viewer | Query: `outcome`, `status` (`active` \| `handoff_pending` \| `closed`), `since`, `limit`, `offset` → `Page<{"id", "end_user_id", "channel", "status", "message_count", "created_at", "last_activity_at"}>` |
-| GET | `/conversations/{conversation_id}` | viewer | The summary plus `messages`. Each message adds `outcome`, `citations`, `confidence`, `model`, `prompt_tokens`, `completion_tokens`, `latency_ms`, `cached`, `guard_reason`, `request_id` and `feedback` to the visitor's view of it. |
+| GET | `/conversations/{conversation_id}` | viewer | The summary plus `messages`. Each message adds `outcome`, `citations`, `confidence`, `model`, `prompt_tokens`, `completion_tokens`, `latency_ms`, `cached`, `guard_reason`, `answered_by` (the staff member of a staff reply), `request_id` and `feedback` to the visitor's view of it. |
 | GET | `/feedback` | viewer | Query: `rating` (`1` or `-1`), `limit`, `offset` → `Page<{"id", "rating", "comment", "created_at", "message_id", "conversation_id", "question", "answer", "outcome"}>` |
 | GET | `/handoffs` | viewer | Query: `status` (`pending` \| `in_progress` \| `resolved`), `limit`, `offset` → `Page<{"id", "conversation_id", "message_id", "reason", "status", "note", "created_at", "updated_at"}>`. `reason` is `user_request` or `no_knowledge`. |
 | PATCH | `/handoffs/{handoff_id}` | support_agent | `{"status", "note"? (≤2000)}` → the handoff |

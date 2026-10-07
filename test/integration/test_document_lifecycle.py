@@ -8,7 +8,7 @@ from datetime import date, timedelta
 
 import pytest
 
-from .test_api import BFF_TOKEN, _admin_headers, client  # noqa: F401  (fixture)
+from .test_api import BFF_TOKEN, _admin_headers, _approve, client  # noqa: F401  (fixture)
 
 DOCUMENTS = "/api/v1/admin/knowledge/documents"
 CONTENT = "Văn phòng mở cửa từ 8 giờ sáng các ngày trong tuần"
@@ -18,6 +18,7 @@ def _document(http, admin, title):
     body = {"source": "FAQ", "title": title, "content": CONTENT}
     response = http.post(f"{DOCUMENTS}/text", json=body, headers=admin)
     assert response.status_code == 201, response.text
+    _approve(http, admin, response.json()["id"])
     return response.json()["id"]
 
 

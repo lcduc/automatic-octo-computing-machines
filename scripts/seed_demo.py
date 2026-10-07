@@ -96,7 +96,7 @@ class DemoSeeder:
                 document = by_title.get(title)
                 if document is None:
                     await knowledge.create_text_document(
-                        SOURCE_NAME, title, text, {"demo": True}, CREATED_BY, DEMO_CHUNKING
+                        SOURCE_NAME, title, text, {"demo": True}, CREATED_BY, DEMO_CHUNKING, auto_approve=True
                     )
                     logger.info("Created document: %s", title)
                 elif document.chunking != DEMO_CHUNKING.to_json():

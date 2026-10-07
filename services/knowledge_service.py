@@ -22,9 +22,13 @@ from core.storage.tables.knowledge_tables import (
     DOCUMENT_STATUS_FAILED,
     DOCUMENT_STATUS_PROCESSING,
     DOCUMENT_STATUS_READY,
+    REVIEW_APPROVED,
+    REVIEW_PENDING,
+    REVIEW_REJECTED,
     KnowledgeChunk,
     KnowledgeDocument,
     KnowledgeSource,
+    approved_by,
 )
 from core.storage.upload_store import UploadStore
 from core.document_processing.chunking import InvalidChunkingError
@@ -155,7 +159,13 @@ class KnowledgeService:
     # ------------------------------------------------------------------
 
     async def list_documents(
-        self, source_name: Optional[str], status: Optional[str], search: Optional[str], limit: int, offset: int
+        self,
+        source_name: Optional[str],
+        status: Optional[str],
+        search: Optional[str],
+        limit: int,
+        offset: int,
+        review_status: Optional[str] = None,
     ) -> Tuple[List[KnowledgeDocument], int]:
         """Page of documents plus the total count matching the filters."""
         async with self._database.session() as session:
@@ -166,7 +176,46 @@ class KnowledgeService:
                 if source is None:
                     return [], 0
                 source_id = source.id
-            return await repository.list_documents(source_id, status, search, limit, offset)
+            return await repository.list_documents(source_id, status, search, limit, offset, review_status)
+
+    async def review_counts(self) -> Dict[str, int]:
+        """Documents per review status; every status is present, zero when empty."""
+        async with self._database.session() as session:
+            counts = await KnowledgeRepository(session).count_by_review_status()
+        return {status: counts.get(status, 0) for status in (REVIEW_PENDING, REVIEW_APPROVED, REVIEW_REJECTED)}
+
+    async def review_document(
+        self, document_id: uuid.UUID, approve: bool, reviewer: str, note: Optional[str] = None
+    ) -> KnowledgeDocument:
+        """
+        Approve or reject a document waiting for review.
+
+        Approving makes it searchable (once it is also enabled); nobody is exempt,
+        including the person who uploaded it.
+
+        Raises:
+            NotFoundError: Unknown document.
+            ConflictError: The document was already reviewed, or approval was
+                requested before ingestion produced a ready document.
+        """
+        async with self._database.session() as session:
+            repository = KnowledgeRepository(session)
+            document = await repository.lock_document(document_id)
+            if document is None:
+                raise NotFoundError("Document not found")
+            if document.review_status != REVIEW_PENDING:
+                raise ConflictError(f"This document was already {document.review_status}")
+            if approve and document.status != DOCUMENT_STATUS_READY:
+                raise ConflictError("Only a document that finished processing can be approved")
+            document.review_status = REVIEW_APPROVED if approve else REVIEW_REJECTED
+            document.reviewed_by = reviewer
+            document.reviewed_at = datetime.now(ZoneInfo("UTC"))
+            document.review_note = note
+            outcome = document.review_status
+        logger.info("Document %s %s by %s", document_id, outcome, reviewer)
+        if approve:
+            await self._index.refresh()
+        return await self.get_document(document_id)
 
     async def get_document(self, document_id: uuid.UUID) -> KnowledgeDocument:
         """
@@ -272,9 +321,13 @@ class KnowledgeService:
         metadata: Dict[str, Any],
         created_by: Optional[str],
         chunking: ChunkingSpec = ChunkingSpec(),
+        auto_approve: bool = False,
     ) -> KnowledgeDocument:
         """
         Create a document from typed text (e.g. one FAQ entry), embedded synchronously.
+
+        It waits for review like any new document, unless ``auto_approve`` (seed
+        scripts run by an operator) marks it approved at creation.
 
         Raises:
             InvalidRequestError: Empty text, the strategy cannot chunk it, or unknown source.
@@ -296,6 +349,7 @@ class KnowledgeService:
                 extracted_text=text,
                 extraction_method=EXTRACTION_TEXT,
                 created_by=created_by,
+                **(approved_by(created_by) if auto_approve else {}),
             )
             repository.add(document)
             await repository.flush()
@@ -321,8 +375,8 @@ class KnowledgeService:
             NotFoundError: Unknown document or superseded document.
             InvalidRequestError: Unknown source or tier, or an empty validity range.
         """
-        if "access_tier" in changes and changes["access_tier"] not in self._access_tiers():
-            raise InvalidRequestError(f"access_tier must be one of {', '.join(self._access_tiers())}")
+        if "access_tier" in changes and changes["access_tier"] not in self.access_tiers():
+            raise InvalidRequestError(f"access_tier must be one of {', '.join(self.access_tiers())}")
         async with self._database.session() as session:
             repository = KnowledgeRepository(session)
             document = await repository.get_document(document_id)
@@ -346,7 +400,7 @@ class KnowledgeService:
         return await self.get_document(document_id)
 
     @staticmethod
-    def _access_tiers() -> List[str]:
+    def access_tiers() -> List[str]:
         """Tiers a document may require: everyone, or one of the host's tiers."""
         return [TIER_ANONYMOUS, *Config.HostAuth.HOST_TIERS()]
 
@@ -357,10 +411,12 @@ class KnowledgeService:
 
         Raises:
             NotFoundError: Unknown previous document.
-            InvalidRequestError: A document cannot supersede itself.
+            InvalidRequestError: A document cannot supersede itself, or is not approved yet.
         """
         if previous_id == document.id:
             raise InvalidRequestError("A document cannot supersede itself")
+        if document.review_status != REVIEW_APPROVED:
+            raise InvalidRequestError("Approve the document before it supersedes another, or the old version would leave a gap")
         previous = await repository.get_document(previous_id)
         if previous is None:
             raise NotFoundError("Superseded document not found")

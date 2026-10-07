@@ -34,18 +34,25 @@ from api.schemas.knowledge import (
     DocumentDetail,
     DocumentOut,
     DocumentUpdate,
+    ImportResultOut,
+    ReviewCounts,
+    ReviewDecision,
     SourceCreate,
     SourceOut,
     SourceUpdate,
     TextDocumentCreate,
 )
 from config.settings import Config
+from models.knowledge_bundle import KnowledgeBundle
 from services.auth_service import AdminPrincipal
 
 router = APIRouter(prefix="/knowledge", tags=["Admin: knowledge"])
 
 read_access = Depends(require_admin(READ_ROLES, key_scope=SCOPE_ADMIN_READ))
 write_access = require_admin(WRITE_ROLES, key_scope=SCOPE_DOCUMENTS_WRITE)
+#: Reviewing is a person's decision: owner or editor sessions only, never an API key, so an
+#: integration that uploads cannot also approve what it uploaded.
+review_access = require_admin(WRITE_ROLES)
 
 
 # ---------------------------------------------------------------- sources
@@ -88,13 +95,14 @@ async def delete_source(source_id: int, container: AppContainer = Depends(get_co
 async def list_documents(
     source: Optional[str] = Query(None, pattern=SOURCE_NAME_PATTERN),
     status: Optional[str] = Query(None, pattern="^(processing|ready|failed)$"),
+    review_status: Optional[str] = Query(None, pattern="^(pending|approved|rejected)$"),
     search: Optional[str] = Query(None, max_length=200),
     limit: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
     offset: int = Query(0, ge=0),
     container: AppContainer = Depends(get_container),
 ) -> Page[DocumentOut]:
-    """Documents newest first, filterable by source, status and title/filename."""
-    documents, total = await container.knowledge.list_documents(source, status, search, limit, offset)
+    """Documents newest first, filterable by source, status, review status and title/filename."""
+    documents, total = await container.knowledge.list_documents(source, status, search, limit, offset, review_status)
     return Page(items=[DocumentOut.from_document(d) for d in documents], total=total, limit=limit, offset=offset)
 
 
@@ -144,6 +152,30 @@ async def create_text_document(
     return DocumentOut.from_document(document)
 
 
+@router.get("/access-tiers", response_model=List[str], dependencies=[read_access])
+async def list_access_tiers(container: AppContainer = Depends(get_container)) -> List[str]:
+    """Tiers a document may require, lowest first: ``anonymous`` (everyone), then the host's tiers."""
+    return container.knowledge.access_tiers()
+
+
+@router.get("/review/counts", response_model=ReviewCounts, dependencies=[read_access])
+async def review_counts(container: AppContainer = Depends(get_container)) -> ReviewCounts:
+    """How many documents wait for review, were approved and were rejected."""
+    return ReviewCounts(**await container.knowledge.review_counts())
+
+
+@router.post("/documents/{document_id}/review", response_model=DocumentDetail)
+async def review_document(
+    document_id: uuid.UUID,
+    body: ReviewDecision,
+    principal: AdminPrincipal = Depends(review_access),
+    container: AppContainer = Depends(get_container),
+) -> DocumentDetail:
+    """Approve (the assistant may then answer from it) or reject a document waiting for review."""
+    document = await container.knowledge.review_document(document_id, body.approve, principal.email, body.note)
+    return DocumentDetail.from_document(document)
+
+
 @router.get("/documents/{document_id}", response_model=DocumentDetail, dependencies=[read_access])
 async def get_document(document_id: uuid.UUID, container: AppContainer = Depends(get_container)) -> DocumentDetail:
     """A document with all of its chunks."""
@@ -172,6 +204,28 @@ async def delete_document(document_id: uuid.UUID, container: AppContainer = Depe
     """Delete a document and its chunks."""
     await container.knowledge.delete_document(document_id)
     return MessageResponse(message="Document deleted")
+
+
+# ---------------------------------------------------------------- export / import
+
+
+@router.get("/export", response_model=KnowledgeBundle, dependencies=[read_access])
+async def export_knowledge(container: AppContainer = Depends(get_container)) -> KnowledgeBundle:
+    """Every source and ready document with its chunk text (no embeddings), for ``POST /knowledge/import``."""
+    return await container.knowledge_transfer.export_bundle()
+
+
+@router.post("/import", response_model=ImportResultOut, dependencies=[Depends(write_access)])
+async def import_knowledge(body: KnowledgeBundle, container: AppContainer = Depends(get_container)) -> ImportResultOut:
+    """
+    Add the exported documents this server does not have yet and embed their chunks with its own model.
+
+    Documents whose content hash is already in their source are skipped.
+    """
+    result = await container.knowledge_transfer.import_bundle(body)
+    # ceiling: embeds inside the request; move to the ingestion queue if imports time out
+    await container.knowledge.reembed_stale_chunks()
+    return ImportResultOut(**vars(result))
 
 
 # ---------------------------------------------------------------- chunks

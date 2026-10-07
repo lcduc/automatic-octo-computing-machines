@@ -117,6 +117,13 @@ def _admin_headers(client):
     return {"Authorization": f"Bearer {response.json()['access_token']}"}
 
 
+def _approve(client, admin, document_id):
+    """Approve a pending document: new documents are not searchable until an owner or editor does."""
+    response = client.post(f"/api/v1/admin/knowledge/documents/{document_id}/review", json={"approve": True}, headers=admin)
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
 def _chat(client, message, conversation_id=None, user=VISITOR):
     body = {"message": message}
     if conversation_id:
@@ -175,6 +182,7 @@ def test_knowledge_chat_feedback_and_admin_views(client):
         headers=admin,
     )
     assert created.status_code == 201, created.text
+    _approve(client, admin, created.json()["id"])
 
     events = _chat(client, "văn phòng mở cửa mấy giờ")
     assert [e["type"] for e in events][0] == "meta" and events[-1]["type"] == "done"
@@ -404,11 +412,12 @@ def test_support_agent_works_handoffs_but_cannot_change_knowledge_or_read_audit(
 
 def test_models_and_retrieval_settings_apply_live_and_reset_to_defaults(client):
     admin = _admin_headers(client)
-    client.post(
+    created = client.post(
         "/api/v1/admin/knowledge/documents/text",
         json={"source": "FAQ", "title": "Giờ làm việc", "content": "Văn phòng mở cửa từ 8 giờ sáng các ngày trong tuần"},
         headers=admin,
     )
+    _approve(client, admin, created.json()["id"])
     assert _chat(client, "văn phòng mở cửa mấy giờ")[-1]["outcome"] == "answered"
 
     rejected = client.patch("/api/v1/admin/settings", json={"chat_model": "missing-model-9"}, headers=admin)
