@@ -58,13 +58,15 @@ def test_review_feedback_and_build_the_eval_set(client):  # noqa: F811
     case = created.json()
     assert "0912345678" not in case["question"] and "quên mật khẩu" in case["question"]
     assert case["expected_sources"] == ["Sổ tay FAQs"] and case["document_ids"] == ["doc-1"]
-    assert client.post(f"{ADMIN}/messages/{message_id}/eval-case", json={}, headers=admin).status_code == 201
+    # Adding the same question again returns the existing case instead of a duplicate.
+    again = client.post(f"{ADMIN}/messages/{message_id}/eval-case", json={}, headers=admin)
+    assert again.status_code == 201 and again.json()["id"] == case["id"]
 
     exported = client.get(f"{ADMIN}/eval-cases/export", headers=admin).json()
     assert exported[0]["query"] == case["question"] and exported[0]["expected_source"] == "Sổ tay FAQs"
 
     # No link back: deleting the conversation leaves the eval set untouched.
     client.portal.call(_delete_conversation, database, uuid.UUID(conversation_id))
-    assert client.portal.call(_case_count, database) == 2
+    assert client.portal.call(_case_count, database) == 1
     assert client.delete(f"{ADMIN}/eval-cases/{case['id']}", headers=admin).status_code == 200
-    assert client.get(f"{ADMIN}/eval-cases", headers=admin).json()["total"] == 1
+    assert client.get(f"{ADMIN}/eval-cases", headers=admin).json()["total"] == 0
