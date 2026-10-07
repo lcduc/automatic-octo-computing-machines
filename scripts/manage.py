@@ -10,6 +10,8 @@ Usage (from the repository root, with the venv active, or inside the api contain
     python -m scripts.manage send-alert --subject "Backup failed" --body "..."
     python -m scripts.manage sync-sql-tools --file deploy/business_db/demo_tools.json
     python -m scripts.manage check-business-db
+    python -m scripts.manage export-knowledge --file knowledge.json
+    python -m scripts.manage import-knowledge --file knowledge.json
 
 ``create-admin`` prompts for the password (never passed on the command line).
 ``bootstrap-admin`` is what the installer runs: it creates the first owner with
@@ -18,7 +20,9 @@ admin already exists. ``test-alert`` sends one message to the configured alert
 channel and exits non-zero if it cannot; ``send-alert`` sends any message (the ops CLI
 uses it when an unattended backup fails). API keys are for server-to-server
 integrations; the chat widget's server authenticates with its generated
-service token instead.
+service token instead. ``export-knowledge`` / ``import-knowledge`` move sources, documents
+and chunk text between servers (no embeddings: restart the API after an import and it
+embeds the new chunks with its own model).
 """
 
 # Standard library imports
@@ -28,10 +32,12 @@ import getpass
 import json
 import secrets
 import sys
+from pathlib import Path
 from typing import List
 
 # Third-party imports
 from dotenv import load_dotenv
+from pydantic import ValidationError
 
 load_dotenv()
 
@@ -46,7 +52,9 @@ from core.storage.tables.access_tables import ADMIN_ROLES, API_KEY_SCOPES, ROLE_
 from services.auth_service import AuthService  # noqa: E402
 from services.host_identity_service import HostIdentityService  # noqa: E402
 from services.sql_tool_catalog import SqlToolCatalog  # noqa: E402
+from models.knowledge_bundle import KnowledgeBundle  # noqa: E402
 from services.errors import ServiceError  # noqa: E402
+from services.knowledge_transfer_service import KnowledgeTransferService  # noqa: E402
 
 #: Bytes of randomness in a generated one-time admin password (~22 URL-safe characters).
 BOOTSTRAP_PASSWORD_BYTES = 16
@@ -144,6 +152,33 @@ class ManagementCli:
             raise ServiceError("Business database role is not read-only: " + "; ".join(problems))
         print("Business database role is read-only")
 
+    async def export_knowledge(self, path: str) -> None:
+        """Write every source and ready document, with chunk text, to a JSON file."""
+        bundle = await KnowledgeTransferService(self._database).export_bundle()
+        Path(path).write_text(bundle.model_dump_json(indent=2), encoding="utf-8")
+        print(f"Exported {len(bundle.sources)} sources and {len(bundle.documents)} documents to {path}")
+
+    async def import_knowledge(self, path: str) -> None:
+        """
+        Add the documents of an exported bundle that this server does not have yet.
+
+        Run by an operator with shell access, so they arrive approved.
+
+        Raises:
+            ServiceError: Unreadable or invalid bundle, unknown source or access tier.
+        """
+        try:
+            bundle = KnowledgeBundle.model_validate_json(Path(path).read_text(encoding="utf-8"))
+        except (OSError, ValidationError) as exc:
+            raise ServiceError(f"Cannot read bundle {path}: {exc}") from exc
+        result = await KnowledgeTransferService(self._database).import_bundle(bundle, auto_approve=True)
+        print(
+            f"Imported {result.documents_imported} documents ({result.chunks_imported} chunks), "
+            f"skipped {result.documents_skipped} already present, created {result.sources_created} sources."
+        )
+        if result.documents_imported:
+            print("Restart the API so it embeds the new chunks; they are not searchable until then.")
+
     async def run(self, args: argparse.Namespace) -> None:
         """Dispatch the parsed command."""
         if args.command == "test-alert":
@@ -165,6 +200,10 @@ class ManagementCli:
                 await self.sync_sql_tools(args.file)
             elif args.command == "create-api-key":
                 await self.create_api_key(args.name, args.scope or [SCOPE_CHAT])
+            elif args.command == "export-knowledge":
+                await self.export_knowledge(args.file)
+            elif args.command == "import-knowledge":
+                await self.import_knowledge(args.file)
         finally:
             await self._database.close()
 
@@ -189,6 +228,10 @@ def _parser() -> argparse.ArgumentParser:
     tools = commands.add_parser("sync-sql-tools", help="Create or update SQL tool definitions from a JSON file")
     tools.add_argument("--file", required=True)
     commands.add_parser("check-business-db", help="Check the business database role cannot write")
+    export = commands.add_parser("export-knowledge", help="Export sources, documents and chunk text to a JSON file")
+    export.add_argument("--file", required=True)
+    imported = commands.add_parser("import-knowledge", help="Import an exported knowledge file (restart the API afterwards)")
+    imported.add_argument("--file", required=True)
     return parser
 
 

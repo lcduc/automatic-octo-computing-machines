@@ -42,6 +42,7 @@ from services.host_identity_service import HostIdentityService
 from services.ingestion_service import IngestionService
 from services.ingestion_worker import IngestionWorker
 from services.knowledge_service import KnowledgeService
+from services.knowledge_transfer_service import KnowledgeTransferService
 from services.log_service import LogService
 from services.metrics_rollup_service import MetricsRollupService
 from services.live_feed_service import LiveFeedService, asyncpg_dsn
@@ -79,6 +80,7 @@ class AppContainer:
         self.database = Database(Config.Database.DATABASE_URL(), Config.Database.DB_POOL_SIZE())
         self.rate_limiter = RateLimitService(self.database, TimeBuckets(Config.Server.APP_TIMEZONE()))
         self.index = KnowledgeIndex(self.database, self._document_tier_level)
+        self.knowledge_transfer = KnowledgeTransferService(self.database)
         self.settings = SettingsService(self.database)
         self.usage = UsageService(self.database, self.rate_limiter)
         self.metrics = MetricsRollupService(self.database, Config.Server.APP_TIMEZONE())
