@@ -92,6 +92,8 @@ class Message(Base):
     latency_ms: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     request_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
     guard_reason: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    #: E-mail of the staff member who wrote a staff reply; null for bot turns and visitors.
+    answered_by: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = created_at_column()
 
     conversation: Mapped[Conversation] = relationship(back_populates="messages")

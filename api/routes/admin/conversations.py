@@ -79,6 +79,7 @@ async def list_feedback(
 ) -> Page[FeedbackItem]:
     """Visitor ratings newest first, with the question and the rated answer."""
     rows, total = await container.conversations.list_feedback(rating, limit, offset, reviewed)
+    in_eval_set = await container.eval_cases.questions_in_set(question for _, _, question in rows if question)
     items = [
         FeedbackItem(
             id=feedback.id,
@@ -92,6 +93,7 @@ async def list_feedback(
             outcome=message.outcome,
             reviewed_at=feedback.reviewed_at,
             reviewed_by=feedback.reviewed_by,
+            in_eval_set=question in in_eval_set,
         )
         for feedback, message, question in rows
     ]
