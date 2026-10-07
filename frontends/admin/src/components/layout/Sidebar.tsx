@@ -1,12 +1,12 @@
 import {
   BookOpen,
-  CheckCheck,
   ChevronRight,
   Database,
   FileClock,
   Headset,
   KeyRound,
   LayoutDashboard,
+  Lock,
   LogOut,
   MessageSquareQuote,
   MessagesSquare,
@@ -33,7 +33,7 @@ interface NavItem {
   hint: MessageKey;
   icon: LucideIcon;
   accent: Accent;
-  /** Hidden unless the admin has this capability. */
+  /** Shown locked (its page is disabled) unless the admin has this capability. */
   requires?: keyof Capabilities;
   end?: boolean;
 }
@@ -46,35 +46,34 @@ export interface NavGroup {
 /** The console's navigation; the topbar breadcrumb uses the group label as the section name. */
 export const NAV_GROUPS: NavGroup[] = [
   {
-    label: "nav.group.portal",
-    items: [
-      { to: "/chat", label: "nav.chat", hint: "nav.chat.hint", icon: MessageSquareQuote, accent: "gold" },
-      { to: "/widget", label: "nav.widget", hint: "nav.widget.hint", icon: MonitorSmartphone, accent: "gold" },
-      { to: "/handoffs", label: "nav.handoffs", hint: "nav.handoffs.hint", icon: Headset, accent: "blue" },
-    ],
-  },
-  {
     label: "nav.group.operations",
     items: [
       { to: "/", label: "nav.overview", hint: "nav.overview.hint", icon: LayoutDashboard, accent: "green", end: true },
-      { to: "/conversations", label: "nav.conversations", hint: "nav.conversations.hint", icon: MessagesSquare, accent: "blue" },
-      { to: "/feedback", label: "nav.feedback", hint: "nav.feedback.hint", icon: ThumbsUp, accent: "amber" },
+      { to: "/knowledge", label: "nav.knowledge", hint: "nav.knowledge.hint", icon: BookOpen, accent: "blue" },
     ],
   },
   {
-    label: "nav.group.knowledge",
+    label: "nav.group.support",
     items: [
-      { to: "/knowledge", label: "nav.knowledge", hint: "nav.knowledge.hint", icon: BookOpen, accent: "blue" },
-      { to: "/review", label: "nav.review", hint: "nav.review.hint", icon: CheckCheck, accent: "amber" },
+      { to: "/handoffs", label: "nav.handoffs", hint: "nav.handoffs.hint", icon: Headset, accent: "amber" },
+      { to: "/conversations", label: "nav.conversations", hint: "nav.conversations.hint", icon: MessagesSquare, accent: "purple" },
+      { to: "/feedback", label: "nav.feedback", hint: "nav.feedback.hint", icon: ThumbsUp, accent: "gold" },
+    ],
+  },
+  {
+    label: "nav.group.portal",
+    items: [
+      { to: "/chat", label: "nav.chat", hint: "nav.chat.hint", icon: MessageSquareQuote, accent: "green" },
+      { to: "/widget", label: "nav.widget", hint: "nav.widget.hint", icon: MonitorSmartphone, accent: "blue" },
     ],
   },
   {
     label: "nav.group.system",
     items: [
-      { to: "/settings", label: "nav.settings", hint: "nav.settings.hint", icon: Settings, accent: "amber" },
-      { to: "/logs", label: "nav.logs", hint: "nav.logs.hint", icon: ScrollText, accent: "green" },
+      { to: "/settings", label: "nav.settings", hint: "nav.settings.hint", icon: Settings, accent: "amber", requires: "isOwner" },
+      { to: "/logs", label: "nav.logs", hint: "nav.logs.hint", icon: ScrollText, accent: "purple", requires: "isOwner" },
+      { to: "/audit", label: "nav.audit", hint: "nav.audit.hint", icon: FileClock, accent: "gold", requires: "isOwner" },
       { to: "/access", label: "nav.access", hint: "nav.access.hint", icon: ShieldCheck, accent: "red", requires: "isOwner" },
-      { to: "/audit", label: "nav.audit", hint: "nav.audit.hint", icon: FileClock, accent: "purple", requires: "isOwner" },
     ],
   },
 ];
@@ -110,15 +109,16 @@ export function Sidebar({ capabilities, pendingHandoffs, open, onNavigate, onCha
 
       <nav className="sidebar__nav">
         {NAV_GROUPS.map((group) => {
-          const items = group.items.filter((item) => !item.requires || capabilities[item.requires]);
-          if (!items.length) return null;
+          const items = group.items;
           return (
             <div key={group.label}>
               <div className="sidebar__group-label">{t(group.label)}</div>
               <ul className="sidebar__list">
-                {items.map(({ to, label, hint, icon: Icon, accent, end }) => (
+                {items.map(({ to, label, hint, icon: Icon, accent, end, requires }) => {
+                  const locked = requires !== undefined && !capabilities[requires];
+                  return (
                   <li key={to}>
-                    <NavLink to={to} end={end} className={`nav-item nav-item--${accent}`} onClick={onNavigate}>
+                    <NavLink to={to} end={end} className={`nav-item nav-item--${accent}${locked ? " nav-item--locked" : ""}`} onClick={onNavigate}>
                       <Icon size={18} aria-hidden />
                       <span className="nav-item__text">
                         <span className="nav-item__label">{t(label)}</span>
@@ -128,12 +128,15 @@ export function Sidebar({ capabilities, pendingHandoffs, open, onNavigate, onCha
                         <span className="nav-item__badge" aria-label={t("nav.pendingCount", { count: pendingHandoffs })}>
                           {pendingHandoffs}
                         </span>
+                      ) : locked ? (
+                        <Lock size={14} className="nav-item__chevron" aria-label={t("errors.ownerOnly")} />
                       ) : (
                         <ChevronRight size={14} className="nav-item__chevron" aria-hidden />
                       )}
                     </NavLink>
                   </li>
-                ))}
+                  );
+                })}
               </ul>
             </div>
           );

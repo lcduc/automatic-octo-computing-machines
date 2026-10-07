@@ -2,7 +2,7 @@ import { Loader2, UploadCloud } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router";
 import { useI18n } from "../../i18n/I18nProvider";
-import type { ChunkingStrategyInfo, Source } from "../../lib/types";
+import type { Source } from "../../lib/types";
 import { useApi } from "../../lib/use-api";
 import { useToast } from "../ui/Toast";
 import { NewDocumentDialog } from "./NewDocumentDialog";
@@ -14,8 +14,7 @@ export function QuickUpload() {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const sources = useApi<Source[]>(open ? "knowledge/sources" : null);
-  const strategies = useApi<ChunkingStrategyInfo[]>(open ? "knowledge/chunking/strategies" : null);
-  const ready = open && sources.data && strategies.data;
+  const ready = open && sources.data;
 
   return (
     <>
@@ -27,7 +26,6 @@ export function QuickUpload() {
         <NewDocumentDialog
           mode="upload"
           sources={sources.data ?? []}
-          strategies={strategies.data ?? []}
           onClose={() => setOpen(false)}
           onCreated={(document) => {
             setOpen(false);

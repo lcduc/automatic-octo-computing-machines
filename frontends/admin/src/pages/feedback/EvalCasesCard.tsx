@@ -11,8 +11,8 @@ import { useApi } from "../../lib/use-api";
 
 const PAGE_SIZE = 20;
 
-/** The golden eval set built from real answers (ADM-12); export feeds scripts/eval_rag.py. */
-export function EvalCasesCard() {
+/** The golden eval set built from real answers (ADM-12); export feeds scripts/eval_rag.py. `onRemoved` lets the feedback list re-enable "add". */
+export function EvalCasesCard({ onRemoved }: { onRemoved: () => void }) {
   const { t, formatDateTime } = useI18n();
   const { canWrite } = useSession();
   const toast = useToast();
@@ -31,6 +31,7 @@ export function EvalCasesCard() {
     try {
       await adminApi(`eval-cases/${id}`, { method: "DELETE" });
       reload();
+      onRemoved();
     } catch (reason) {
       toast.error((reason as Error).message);
     }

@@ -22,10 +22,12 @@ const document = {
   status: "ready",
   error: null,
   enabled: false,
+  review_status: "pending",
+  reviewed_by: null,
+  reviewed_at: null,
+  review_note: null,
   chunk_count: 1,
   metadata: { url: "https://x.test" },
-  chunking: { strategy: "legal_article", split_at: "article" },
-  can_rechunk: true,
   created_by: "owner@example.test",
   created_at: NOW,
   updated_at: NOW,
@@ -55,8 +57,10 @@ function fixtures(role: Role): Record<string, unknown> {
     handoffs: page([{ id: "h-1", conversation_id: "c-1", message_id: null, reason: "user_request", status: "open", note: null, signed_in: false, contact_email: null, contact_phone: null, has_contact: false, consent_at: null, details: null, assigned_to: null, answer: null, answered_at: null, emailed_at: null, due_at: NOW, closed_at: null, created_at: NOW, updated_at: NOW }]),
     "knowledge/documents": page([document]),
     "knowledge/documents/doc-1": { ...document, chunks: [{ id: "chunk-1", position: 0, content: "Điều 1. Phạm vi", metadata: { article: "Điều 1" }, edited: true, updated_at: NOW }] },
+    "knowledge/access-tiers": ["anonymous", "user", "premium"],
+    "knowledge/review/counts": { pending: 1, approved: 7, rejected: 0 },
+    "knowledge/documents/doc-1/review": { ...document, review_status: "approved", reviewed_by: "owner@example.test", chunks: [] },
     "knowledge/sources": [{ id: 1, name: "general", description: "", priority: 1, enabled: true, document_count: 1 }],
-    "knowledge/chunking/strategies": [{ name: "auto", description: "", params_schema: { properties: { strategy: { const: "auto" } } } }],
     "usage/summary": {
       since: NOW,
       daily: [{ day: "2026-09-29", model: "gpt-5-mini", prompt_tokens: 100, completion_tokens: 20, calls: 1 }],
@@ -177,13 +181,11 @@ describe("every page renders", () => {
     ["/handoffs", "Chuyển nhân viên"],
     ["/logs", "Nhật ký hệ thống"],
     ["/settings", "Cấu hình"],
-    ["/settings?tab=models", "Cấu hình"],
     ["/settings?tab=widget", "Cấu hình"],
     ["/access", "Tài khoản & khoá API"],
     ["/audit", "Nhật ký thao tác"],
     ["/chat", "Thử trò chuyện"],
     ["/widget", "Xem trước khung chat"],
-    ["/review", "Hàng đợi phê duyệt"],
   ])("%s", async (path, heading) => {
     renderAt(path);
     expect(await screen.findByRole("heading", { level: 1, name: heading })).toBeTruthy();
@@ -237,35 +239,75 @@ describe("demo chat", () => {
   });
 });
 
-describe("features waiting for the backend", () => {
-  it.each([
-    ["/knowledge/doc-1", ["Gửi duyệt", "Phê duyệt", "Lịch sử phiên bản"]],
-    ["/review", ["Phê duyệt", "Từ chối"]],
-    ["/access", ["Xem với vai trò này", "Xoá"]],
-    ["/chat", ["Ngắt nguồn tri thức"]],
-  ])("%s shows them disabled", async (path, labels) => {
-    renderAt(path);
-    await screen.findByRole("heading", { level: 1 });
-    for (const label of labels) {
-      const buttons = await screen.findAllByRole("button", { name: new RegExp(`^${label}`) });
-      expect(buttons.every((button) => (button as HTMLButtonElement).disabled)).toBe(true);
-    }
+describe("document review", () => {
+  it("shows the review counts and lets an owner approve a pending document", async () => {
+    renderAt("/knowledge");
+    expect(await screen.findByText("7")).toBeTruthy();
+    fireEvent.click(await screen.findByText("Luật người lao động"));
+    fireEvent.click(await screen.findByRole("button", { name: "Duyệt" }));
+
+    expect(await screen.findByText("Đã duyệt “Luật người lao động”.")).toBeTruthy();
+    const call = vi.mocked(fetch).mock.calls.find(([url]) => url === "/api/v1/admin/knowledge/documents/doc-1/review");
+    expect(call?.[1]?.method).toBe("POST");
+    expect(JSON.parse(String(call?.[1]?.body))).toEqual({ approve: true, note: null });
+  });
+
+  it("asks for an optional reason before rejecting", async () => {
+    renderAt("/knowledge/doc-1");
+    fireEvent.click(await screen.findByRole("button", { name: "Từ chối" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText("Lý do (không bắt buộc)"), { target: { value: "Đã lỗi thời" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Từ chối" }));
+
+    await screen.findByText("Đã từ chối “Luật người lao động”.");
+    const call = vi.mocked(fetch).mock.calls.find(([url]) => url === "/api/v1/admin/knowledge/documents/doc-1/review");
+    expect(JSON.parse(String(call?.[1]?.body))).toEqual({ approve: false, note: "Đã lỗi thời" });
+  });
+
+  it("shows a viewer the waiting document but no way to decide", async () => {
+    installFetch("viewer");
+    renderAt("/knowledge/doc-1");
+    expect(await screen.findByText("Chờ duyệt")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Duyệt" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Từ chối" })).toBeNull();
+  });
+});
+
+describe("access: view as", () => {
+  it("previews a role's permissions read-only", async () => {
+    renderAt("/access");
+    const button = (await screen.findAllByRole("button", { name: /^Xem với vai trò này/ }))[0] as HTMLButtonElement;
+    expect(button.disabled).toBe(false);
+    fireEvent.click(button);
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("Quyền hạn")).toBeTruthy();
+    expect(within(dialog).getByText("Các trang trên thanh bên")).toBeTruthy();
   });
 });
 
 describe("navigation follows the role", () => {
-  it("hides owner pages from a support agent", async () => {
+  it("keeps owner tabs in the menu for a support agent but locks them", async () => {
     installFetch("support_agent");
     renderAt("/");
     const nav = await screen.findByRole("navigation", { name: /Điều hướng/ }).catch(() => screen.getByRole("complementary"));
     expect(within(nav).getByText("Chuyển nhân viên")).toBeTruthy();
-    expect(within(nav).queryByText("Nhật ký thao tác")).toBeNull();
-    expect(within(nav).queryByText("Tài khoản & khoá API")).toBeNull();
+    for (const label of ["Nhật ký thao tác", "Cấu hình", "Tài khoản & khoá API"]) {
+      expect(within(nav).getByText(label).closest("a")?.className).toContain("nav-item--locked");
+    }
+    expect(within(nav).getByText("Chuyển nhân viên").closest("a")?.className).not.toContain("nav-item--locked");
   });
 
   it("refuses owner pages opened directly by a viewer", async () => {
     installFetch("viewer");
     renderAt("/audit");
+    expect(await screen.findByText("Chỉ chủ sở hữu mới xem được trang này.")).toBeTruthy();
+  });
+
+  it("opens a locked tab to a disabled screen when a support agent clicks it", async () => {
+    installFetch("support_agent");
+    renderAt("/");
+    const nav = await screen.findByRole("navigation", { name: /Điều hướng/ }).catch(() => screen.getByRole("complementary"));
+    fireEvent.click(within(nav).getByText("Cấu hình"));
     expect(await screen.findByText("Chỉ chủ sở hữu mới xem được trang này.")).toBeTruthy();
   });
 });

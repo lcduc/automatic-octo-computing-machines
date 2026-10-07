@@ -1,8 +1,7 @@
-import { Database, ExternalLink, Filter, PowerOff, RotateCcw, Send, ShieldCheck, Sparkles, Square } from "lucide-react";
+import { Database, ExternalLink, RotateCcw, Send, ShieldCheck, Sparkles, Square } from "lucide-react";
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { Link } from "react-router";
 import { ConfirmDialog } from "../../components/ui/Modal";
-import { PlannedBadge } from "../../components/ui/Planned";
 import { Callout } from "../../components/ui/primitives";
 import { useI18n } from "../../i18n/I18nProvider";
 import type { Source } from "../../lib/types";
@@ -62,17 +61,10 @@ export function ChatPage() {
           <div className="chat-banner__actions">
             <span className={enabled.length ? "chat-status" : "chat-status chat-status--off"}>
               <span className="chat-status__dot" aria-hidden />
-              {chat.sources.length
-                ? t("chat.statusFiltered", { count: chat.sources.length })
-                : t("chat.statusAll", { count: enabled.length })}
+              {t("chat.statusAll", { count: enabled.length })}
             </span>
-            <button type="button" className="chat-banner__btn" disabled title={t("planned.hint")}>
-              <PowerOff size={12} aria-hidden />
-              {t("chat.ragOff")}
-              <PlannedBadge />
-            </button>
             <button type="button" className="chat-banner__btn" onClick={() => setDrawerOpen(true)}>
-              {chat.sources.length ? <Filter size={12} aria-hidden /> : <Database size={12} aria-hidden />}
+              <Database size={12} aria-hidden />
               {t("chat.sourcesButton", { count: sources.data?.length ?? 0 })}
             </button>
             {chat.conversationId && (
@@ -171,7 +163,7 @@ export function ChatPage() {
         </div>
       </section>
 
-      {drawerOpen && <SourcesDrawer sources={sources} selected={chat.sources} onSelect={chat.setSources} onClose={() => setDrawerOpen(false)} />}
+      {drawerOpen && <SourcesDrawer sources={sources} onClose={() => setDrawerOpen(false)} />}
       {confirmReset && (
         <ConfirmDialog
           title={t("chat.newSession")}

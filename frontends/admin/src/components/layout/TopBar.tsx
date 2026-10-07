@@ -138,8 +138,8 @@ export function TopBar({ onMenu, onChangePassword, pendingHandoffs, failedDocume
               {admin.email.slice(0, 1)}
             </span>
             <span className="user-pill__text">
-              <span className="user-pill__name">{admin.email}</span>
-              <span className="user-pill__role">{t(`role.${admin.role}`)}</span>
+              <span className="user-pill__name">{admin.email} </span>
+              <span className="user-pill__role"> {t(`role.${admin.role}`)}</span>
             </span>
             <ChevronDown size={14} aria-hidden />
           </button>

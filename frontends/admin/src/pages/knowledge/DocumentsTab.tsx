@@ -1,15 +1,16 @@
 import { FilePlus2, PenLine, Search } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
+import { KnowledgeTransferButtons } from "../../components/knowledge/KnowledgeTransferButtons";
 import { NewDocumentDialog } from "../../components/knowledge/NewDocumentDialog";
-import { strategyLabel } from "../../components/knowledge/StrategyPicker";
+import { ReviewStats } from "../../components/knowledge/ReviewStats";
 import { Badge, EmptyState, ErrorState, Field, LoadingState, Pagination, Switch } from "../../components/ui/primitives";
 import { useToast } from "../../components/ui/Toast";
 import { useI18n } from "../../i18n/I18nProvider";
 import { adminApi, query } from "../../lib/api";
-import { DOCUMENT_STATUS_TONES } from "../../lib/labels";
+import { REVIEW_STATUS_TONES } from "../../lib/labels";
 import { useSession } from "../../lib/session";
-import type { ChunkingStrategyInfo, DocumentStatus, KnowledgeDocument, Page, Source } from "../../lib/types";
+import { REVIEW_STATUSES, type DocumentStatus, type KnowledgeDocument, type Page, type ReviewCounts, type Source } from "../../lib/types";
 import { useApi } from "../../lib/use-api";
 
 const PAGE_SIZE = 25;
@@ -17,7 +18,7 @@ const PAGE_SIZE = 25;
 const PROCESSING_POLL_MS = 4000;
 const STATUSES: DocumentStatus[] = ["processing", "ready", "failed"];
 
-export function DocumentsTab({ sources, strategies }: { sources: Source[]; strategies: ChunkingStrategyInfo[] }) {
+export function DocumentsTab({ sources }: { sources: Source[] }) {
   const { t, formatDateTime, formatNumber } = useI18n();
   const { canWrite } = useSession();
   const toast = useToast();
@@ -27,6 +28,7 @@ export function DocumentsTab({ sources, strategies }: { sources: Source[]; strat
   const [dialog, setDialog] = useState<"upload" | "text" | null>(null);
   const source = params.get("source") ?? "";
   const status = params.get("status") ?? "";
+  const reviewStatus = params.get("review") ?? "";
   const offset = Number(params.get("offset") ?? 0);
 
   const setFilter = (key: string, value: string) => {
@@ -37,9 +39,10 @@ export function DocumentsTab({ sources, strategies }: { sources: Source[]; strat
     setParams(next, { replace: true });
   };
 
-  const path = `knowledge/documents${query({ source, status, search: params.get("search"), limit: PAGE_SIZE, offset })}`;
+  const path = `knowledge/documents${query({ source, status, review_status: reviewStatus, search: params.get("search"), limit: PAGE_SIZE, offset })}`;
   const [pollMs, setPollMs] = useState<number | undefined>(undefined);
   const { data, error, loading, reload, setData } = useApi<Page<KnowledgeDocument>>(path, pollMs);
+  const counts = useApi<ReviewCounts>("knowledge/review/counts");
   const hasProcessing = Boolean(data?.items.some((item) => item.status === "processing"));
   if (hasProcessing !== Boolean(pollMs)) setPollMs(hasProcessing ? PROCESSING_POLL_MS : undefined);
 
@@ -60,6 +63,7 @@ export function DocumentsTab({ sources, strategies }: { sources: Source[]; strat
 
   return (
     <div className="stack">
+      <ReviewStats counts={counts.data} />
       <div className="toolbar">
         <Field label={t("documents.source")}>
           <select className="select" value={source} onChange={(event) => setFilter("source", event.target.value)}>
@@ -81,6 +85,16 @@ export function DocumentsTab({ sources, strategies }: { sources: Source[]; strat
             ))}
           </select>
         </Field>
+        <Field label={t("documents.review")}>
+          <select className="select" value={reviewStatus} onChange={(event) => setFilter("review", event.target.value)}>
+            <option value="">{t("common.all")}</option>
+            {REVIEW_STATUSES.map((value) => (
+              <option key={value} value={value}>
+                {t(`reviewStatus.${value}`)}
+              </option>
+            ))}
+          </select>
+        </Field>
         <form className="row" onSubmit={submitSearch} role="search">
           <Field label={t("documents.search")}>
             <input className="input" type="search" value={search} onChange={(event) => setSearch(event.target.value)} />
@@ -89,18 +103,26 @@ export function DocumentsTab({ sources, strategies }: { sources: Source[]; strat
             <Search size={16} aria-hidden />
           </button>
         </form>
-        {canWrite && (
-          <div className="row push-right">
-            <button type="button" className="btn btn--primary" onClick={() => setDialog("upload")}>
-              <FilePlus2 size={16} aria-hidden />
-              {t("documents.upload")}
-            </button>
-            <button type="button" className="btn" onClick={() => setDialog("text")}>
-              <PenLine size={16} aria-hidden />
-              {t("documents.write")}
-            </button>
-          </div>
-        )}
+        <div className="row push-right">
+          {canWrite && (
+            <>
+              <button type="button" className="btn btn--primary" onClick={() => setDialog("upload")}>
+                <FilePlus2 size={16} aria-hidden />
+                {t("documents.upload")}
+              </button>
+              <button type="button" className="btn" onClick={() => setDialog("text")}>
+                <PenLine size={16} aria-hidden />
+                {t("documents.write")}
+              </button>
+            </>
+          )}
+          <KnowledgeTransferButtons
+            onImported={() => {
+              reload();
+              counts.reload();
+            }}
+          />
+        </div>
       </div>
 
       <section className="card">
@@ -112,15 +134,24 @@ export function DocumentsTab({ sources, strategies }: { sources: Source[]; strat
             <table className="table">
               <thead>
                 <tr>
-                  <th scope="col">{t("documents.title")}</th>
-                  <th scope="col">{t("documents.source")}</th>
-                  <th scope="col">{t("documents.status")}</th>
-                  <th scope="col">{t("chunking.strategy")}</th>
-                  <th scope="col" className="table__num">
+                  <th scope="col">
+                    {t("documents.title")}
+                  </th>
+                  <th scope="col" className="table__center">
+                    {t("documents.source")}
+                  </th>
+                  <th scope="col" className="table__center">
+                    {t("documents.review")}
+                  </th>
+                  <th scope="col" className="table__center">
                     {t("documents.chunks")}
                   </th>
-                  <th scope="col">{t("documents.updated")}</th>
-                  <th scope="col">{t("documents.inRag")}</th>
+                  <th scope="col" className="table__center">
+                    {t("documents.updated")}
+                  </th>
+                  <th scope="col" className="table__center">
+                    {t("documents.inRag")}
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -131,16 +162,15 @@ export function DocumentsTab({ sources, strategies }: { sources: Source[]; strat
                         <strong>{document.title}</strong>
                       </Link>
                       {document.original_filename && <div className="small muted">{document.original_filename}</div>}
-                    </td>
-                    <td>{document.source}</td>
-                    <td>
-                      <Badge tone={DOCUMENT_STATUS_TONES[document.status]}>{t(`documentStatus.${document.status}`)}</Badge>
                       {document.error && <div className="small field__error truncate">{document.error}</div>}
                     </td>
-                    <td className="small">{strategyLabel(t, document.chunking.strategy)}</td>
-                    <td className="table__num">{formatNumber(document.chunk_count)}</td>
+                    <td className="table__center">{document.source}</td>
+                    <td className="table__center">
+                      <Badge tone={REVIEW_STATUS_TONES[document.review_status]}>{t(`reviewStatus.${document.review_status}`)}</Badge>
+                    </td>
+                    <td className="table__center">{formatNumber(document.chunk_count)}</td>
                     <td className="small muted">{formatDateTime(document.updated_at)}</td>
-                    <td>
+                    <td className="table__center">
                       <Switch
                         checked={document.enabled}
                         disabled={!canWrite}
@@ -172,10 +202,10 @@ export function DocumentsTab({ sources, strategies }: { sources: Source[]; strat
         <NewDocumentDialog
           mode={dialog}
           sources={sources}
-          strategies={strategies}
           onClose={() => setDialog(null)}
           onCreated={(document) => {
             setDialog(null);
+            counts.reload();
             toast.success(document.status === "processing" ? t("documents.queued", { title: document.title }) : t("documents.created", { title: document.title }));
             if (document.status === "ready") navigate(`/knowledge/${document.id}`);
             else reload();

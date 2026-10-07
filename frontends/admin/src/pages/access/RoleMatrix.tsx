@@ -6,10 +6,10 @@ import { capabilitiesFor, type Capabilities } from "../../lib/permissions";
 import { ROLES } from "../../lib/types";
 
 /** Rows of the matrix: reading is open to every role, the rest follow `capabilitiesFor`. */
-const ROWS: Array<{ label: MessageKey; capability: keyof Capabilities | null }> = [
+export const MATRIX_ROWS: Array<{ label: MessageKey; capability: keyof Capabilities | null }> = [
   { label: "matrix.read", capability: null },
-  { label: "matrix.write", capability: "canWrite" },
   { label: "matrix.handoff", capability: "canHandoff" },
+  { label: "matrix.write", capability: "canWrite" },
   { label: "matrix.owner", capability: "isOwner" },
 ];
 
@@ -24,20 +24,20 @@ export function RoleMatrix() {
             <tr>
               <th scope="col">{t("matrix.permission")}</th>
               {ROLES.map((role) => (
-                <th key={role} scope="col">
+                <th key={role} scope="col" className="table__center">
                   <span className={`role-chip role--${role}`}>{t(`role.${role}`)}</span>
                 </th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {ROWS.map((row) => (
+            {MATRIX_ROWS.map((row) => (
               <tr key={row.label}>
                 <th scope="row">{t(row.label)}</th>
                 {ROLES.map((role) => {
                   const allowed = row.capability === null || capabilitiesFor(role)[row.capability];
                   return (
-                    <td key={role} aria-label={allowed ? t("common.yes") : t("common.no")}>
+                    <td key={role} className="table__center" aria-label={allowed ? t("common.yes") : t("common.no")}>
                       {allowed ? <Check size={16} className="matrix__yes" aria-hidden /> : <Minus size={16} className="muted" aria-hidden />}
                     </td>
                   );

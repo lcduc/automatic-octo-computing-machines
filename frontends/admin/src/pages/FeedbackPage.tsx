@@ -37,6 +37,7 @@ export function FeedbackPage() {
         await adminApi(`messages/${item.message_id}/eval-case`, { method: "POST", body: {} });
         toast.success(t("feedback.addedToEval"));
         setEvalVersion((value) => value + 1);
+        reload();
       }
     } catch (reason) {
       toast.error((reason as Error).message);
@@ -110,9 +111,9 @@ export function FeedbackPage() {
                           <CircleCheck size={14} aria-hidden />
                           {item.reviewed_at ? t("feedback.markUnreviewed") : t("feedback.markReviewed")}
                         </button>
-                        <button type="button" className="btn btn--sm btn--ghost" disabled={busy === item.id || !item.question} onClick={() => void act(item, "eval")}>
+                        <button type="button" className="btn btn--sm btn--ghost" disabled={busy === item.id || !item.question || item.in_eval_set} onClick={() => void act(item, "eval")}>
                           <FlaskConical size={14} aria-hidden />
-                          {t("feedback.addToEval")}
+                          {item.in_eval_set ? t("feedback.inEval") : t("feedback.addToEval")}
                         </button>
                       </td>
                     )}
@@ -124,7 +125,7 @@ export function FeedbackPage() {
         )}
         {data && <Pagination total={data.total} limit={PAGE_SIZE} offset={offset} onChange={(value) => setParams({ rating, reviewed, offset: String(value) })} />}
       </section>
-      <EvalCasesCard key={evalVersion} />
+      <EvalCasesCard key={evalVersion} onRemoved={reload} />
     </>
   );
 }
