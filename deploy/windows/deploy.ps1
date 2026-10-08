@@ -16,6 +16,8 @@ $Node = Join-Path $AppDir 'data\runtime\node'
 $Python = Join-Path $AppDir 'venv\Scripts\python.exe'
 $HealthUrl = 'http://127.0.0.1:8500/health/live'
 $HealthAttempts = 30
+$OwnerRole = 'chatbot'
+$OwnerPasswordFile = Join-Path $AppDir 'datauntime\secrets\pg_owner'
 
 function Invoke-Native([string]$Description, [scriptblock]$Command) {
     Write-Host "==> $Description"
@@ -52,7 +54,11 @@ try {
         Stop-Service $name -ErrorAction SilentlyContinue
     }
 
-    Invoke-Native 'alembic upgrade head' { & $Python -m alembic upgrade head }
+    # The API's role (chatbot_app) cannot change the schema; migrations run as the schema owner.
+    $env:POSTGRES_USER = $OwnerRole
+    $env:POSTGRES_PASSWORD = (Get-Content $OwnerPasswordFile -Raw).Trim()
+    try { Invoke-Native 'alembic upgrade head' { & $Python -m alembic upgrade head } }
+    finally { Remove-Item Env:\POSTGRES_USER, Env:\POSTGRES_PASSWORD }
 
     # `next build` writes the standalone server that chatbot-web runs from, so it needs the service stopped.
     $widget = Join-Path $AppDir 'frontends\widget'
