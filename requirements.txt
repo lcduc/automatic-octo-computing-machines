@@ -15,9 +15,9 @@ alembic==1.20.0
 pgvector==0.5.0
 
 # --- Auth ---
-pyjwt==2.15.0
+pyjwt==2.15.1
 # RS256 verification of host-site tokens (PyJWT's crypto backend).
-cryptography==50.0.0
+cryptography==50.0.2
 
 # --- LLM providers --- (select via LLM_PROVIDER=openai|anthropic|gemini)
 openai==1.57.0
@@ -53,7 +53,7 @@ paddleocr==3.7.0
 streamlit==1.64.0
 
 # --- Runtime / config ---
-python-dotenv==1.2.3
+python-dotenv==1.2.4
 psutil==6.1.0
 tzdata==2026.3
 
