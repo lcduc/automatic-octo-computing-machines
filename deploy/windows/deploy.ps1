@@ -16,6 +16,8 @@ $Node = Join-Path $AppDir 'data\runtime\node'
 $Python = Join-Path $AppDir 'venv\Scripts\python.exe'
 $HealthUrl = 'http://127.0.0.1:8500/health/live'
 $HealthAttempts = 30
+$BuildAttempts = 3
+$BuildRetrySeconds = 5
 $OwnerRole = 'chatbot'
 $OwnerPasswordFile = Join-Path $AppDir 'data\runtime\secrets\pg_owner'
 
@@ -65,7 +67,19 @@ try {
     if (($changed -contains 'frontends/widget/package-lock.json') -or -not (Test-Path "$widget\node_modules")) {
         Invoke-Native 'widget npm ci' { npm ci --prefix $widget }
     }
-    Invoke-Native 'widget build' { npm run build --prefix $widget }
+    # The stopped service's Node process can outlive Stop-Service and keep `.next\standalone` (its working
+    # directory) locked, which makes `next build` fail with EBUSY. End it, then retry the build briefly.
+    Get-CimInstance Win32_Process -Filter "Name = 'node.exe'" |
+        Where-Object { $_.CommandLine -like '*server.js*' -and $_.ExecutablePath -like "$Node*" } |
+        ForEach-Object { Write-Host "==> end leftover node process $($_.ProcessId)"; Stop-Process -Id $_.ProcessId -Force }
+    for ($attempt = 1; ; $attempt++) {
+        try { Invoke-Native 'widget build' { npm run build --prefix $widget }; break }
+        catch {
+            if ($attempt -ge $BuildAttempts) { throw }
+            Write-Host "Widget build failed (attempt $attempt of $BuildAttempts), retrying in $BuildRetrySeconds s"
+            Start-Sleep -Seconds $BuildRetrySeconds
+        }
+    }
     $standalone = Join-Path $widget '.next\standalone'
     Copy-Item (Join-Path $widget '.next\static') (Join-Path $standalone '.next') -Recurse -Force
     if (Test-Path (Join-Path $widget 'public')) {
