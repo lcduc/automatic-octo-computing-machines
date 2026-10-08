@@ -35,7 +35,7 @@ numpy==1.26.4
 scikit-learn==1.5.2
 
 # --- Document processing ---
-docling==2.132.0
+docling==2.133.0
 pypdfium2==4.30.0
 pypdf==6.19.0
 python-docx==1.2.0
