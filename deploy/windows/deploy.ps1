@@ -16,6 +16,7 @@ $Node = Join-Path $AppDir 'data\runtime\node'
 $Python = Join-Path $AppDir 'venv\Scripts\python.exe'
 $HealthUrl = 'http://127.0.0.1:8500/health/live'
 $HealthAttempts = 30
+$StopTimeoutSeconds = 30
 $BuildAttempts = 3
 $BuildRetrySeconds = 5
 $OwnerRole = 'chatbot'
@@ -25,6 +26,28 @@ function Invoke-Native([string]$Description, [scriptblock]$Command) {
     Write-Host "==> $Description"
     & $Command
     if ($LASTEXITCODE -ne 0) { throw "$Description failed (exit $LASTEXITCODE)" }
+}
+
+function Stop-AppService([string]$Name) {
+    <# Stop a service and prove it is down. Stop-Service can return while NSSM's child process lives on,
+       and NSSM restarts that child when it is killed, so a service that did not stop is ended as a tree. #>
+    Write-Host "==> stop $Name"
+    $service = Get-Service $Name
+    $timeout = [TimeSpan]::FromSeconds($StopTimeoutSeconds)
+    if ($service.Status -ne 'Stopped') {
+        try {
+            Stop-Service $Name -Force -ErrorAction Stop
+            $service.WaitForStatus('Stopped', $timeout)
+        }
+        catch { Write-Host "Stop-Service $Name did not finish: $($_.Exception.Message)" }
+    }
+    $service.Refresh()
+    if ($service.Status -ne 'Stopped') {
+        $servicePid = (Get-CimInstance Win32_Service -Filter "Name = '$Name'").ProcessId
+        Write-Host "==> $Name is still $($service.Status); ending its process tree (pid $servicePid)"
+        if ($servicePid) { & taskkill /PID $servicePid /T /F | Out-Host }
+        $service.WaitForStatus('Stopped', $timeout)
+    }
 }
 
 function Get-Git { & git -c "safe.directory=$($AppDir.Replace('\', '/'))" -C $AppDir @args }
@@ -55,10 +78,7 @@ try {
     }
     Invoke-Native 'admin build' { npm run build --prefix $admin }
 
-    foreach ($name in $Services) {
-        Write-Host "==> stop $name"
-        Stop-Service $name -ErrorAction SilentlyContinue
-    }
+    foreach ($name in $Services) { Stop-AppService $name }
 
     # The API's role (chatbot_app) cannot change the schema; migrations run as the schema owner.
     $env:POSTGRES_USER = $OwnerRole
@@ -71,8 +91,9 @@ try {
     if (($changed -contains 'frontends/widget/package-lock.json') -or -not (Test-Path "$widget\node_modules")) {
         Invoke-Native 'widget npm ci' { npm ci --prefix $widget }
     }
-    # The stopped service's Node process can outlive Stop-Service and keep `.next\standalone` (its working
-    # directory) locked, which makes `next build` fail with EBUSY. End it, then retry the build briefly.
+    # A Node process still running the widget keeps `.next\standalone` (its working directory) locked, which
+    # makes `next build` fail with EBUSY. The services are verified stopped above, so anything left is an
+    # orphan: end it, then retry the build briefly.
     Get-CimInstance Win32_Process -Filter "Name = 'node.exe'" |
         Where-Object { $_.CommandLine -like '*server.js*' -and $_.ExecutablePath -like "$Node*" } |
         ForEach-Object { Write-Host "==> end leftover node process $($_.ProcessId)"; Stop-Process -Id $_.ProcessId -Force }
