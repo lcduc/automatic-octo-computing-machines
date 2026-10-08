@@ -17,7 +17,7 @@ $Python = Join-Path $AppDir 'venv\Scripts\python.exe'
 $HealthUrl = 'http://127.0.0.1:8500/health/live'
 $HealthAttempts = 30
 $OwnerRole = 'chatbot'
-$OwnerPasswordFile = Join-Path $AppDir 'datauntime\secrets\pg_owner'
+$OwnerPasswordFile = Join-Path $AppDir 'data\runtime\secrets\pg_owner'
 
 function Invoke-Native([string]$Description, [scriptblock]$Command) {
     Write-Host "==> $Description"
