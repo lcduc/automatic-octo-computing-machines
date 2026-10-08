@@ -41,6 +41,10 @@ Write-Host "Deploying $oldHead -> $newHead ($($changed.Count) files changed)"
 
 try {
     if ($changed -contains 'requirements.txt') {
+        # docling 2.132 moved its code into the docling-slim package, which installs into the same `docling\`
+        # folder the old docling package owned. Upgrading in place lets pip delete the new files when it
+        # removes the old package (every `docling.*` import then fails), so remove docling first.
+        Invoke-Native 'pip uninstall docling' { & $Python -m pip uninstall -y docling }
         Invoke-Native 'pip install' { & $Python -m pip install -r requirements.txt }
     }
 
