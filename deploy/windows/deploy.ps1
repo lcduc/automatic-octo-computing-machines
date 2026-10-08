@@ -23,7 +23,7 @@ function Invoke-Native([string]$Description, [scriptblock]$Command) {
     if ($LASTEXITCODE -ne 0) { throw "$Description failed (exit $LASTEXITCODE)" }
 }
 
-function Get-Git { & git -c "safe.directory=$($AppDir -replace '\','/')" -C $AppDir @args }
+function Get-Git { & git -c "safe.directory=$($AppDir.Replace('\', '/'))" -C $AppDir @args }
 
 Set-Location $AppDir
 $env:PATH = "$Node;$env:PATH"
