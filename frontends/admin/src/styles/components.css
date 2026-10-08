@@ -368,8 +368,8 @@ pre {
   color: var(--status-success-text);
 }
 .badge--warning {
-  background: var(--accent-bg);
-  color: var(--accent);
+  background: var(--status-warning-bg);
+  color: var(--status-warning-text);
 }
 .badge--danger {
   background: var(--status-danger-bg);
@@ -710,8 +710,8 @@ fieldset.field {
   color: var(--status-info-text);
 }
 .callout--warning {
-  background: var(--accent-bg);
-  color: var(--accent);
+  background: var(--status-warning-bg);
+  color: var(--status-warning-text);
 }
 .callout--danger {
   background: var(--status-danger-bg);
