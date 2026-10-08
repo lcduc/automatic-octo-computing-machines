@@ -55,7 +55,7 @@ streamlit==1.64.0
 # --- Runtime / config ---
 python-dotenv==1.2.3
 psutil==6.1.0
-tzdata==2026.3
+tzdata==2026.5
 
 # --- Testing ---
 pytest==9.1.1
