@@ -19,7 +19,14 @@ concurrency:
 jobs:
   deploy:
     name: Deploy to the demo server
-    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    # Only a push to this repository's main may deploy. A pull request from a fork can show up as a CI run
+    # on a branch named "main"; without the event and repository checks it would run its own deploy.ps1
+    # on the server's runner.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: [self-hosted, windows, chatbot-demo]
     environment: production
     timeout-minutes: 30
