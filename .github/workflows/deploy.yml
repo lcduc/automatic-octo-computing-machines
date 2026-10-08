@@ -1,0 +1,33 @@
+name: Deploy
+
+# Updates the Windows demo server after CI passes on main. Runs on a self-hosted runner installed
+# on that server, so no server credentials or open ports are needed. It is triggered only by the
+# CI run of main (never by pull requests or forks).
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+# One deploy at a time; a newer one waits for the running one instead of interrupting a migration.
+concurrency:
+  group: deploy-demo
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy to the demo server
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: [self-hosted, windows, chatbot-demo]
+    environment: production
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          sparse-checkout: deploy/windows
+      - name: Update the server
+        shell: powershell
+        run: ./deploy/windows/deploy.ps1

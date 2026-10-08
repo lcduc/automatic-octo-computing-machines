@@ -301,6 +301,30 @@ merged into the client branches, so a client branch differs only in the widget.
 | Legal hold                           | Conversation page or ticket drawer (owners)                             |
 | Mark feedback reviewed, build eval set | Admin → Đánh giá                                                      |
 
+## Windows demo server: automatic deploys
+
+The Windows demo server (no Docker, NSSM services) updates itself after CI passes on `main`:
+`.github/workflows/deploy.yml` runs `deploy/windows/deploy.ps1` on a self-hosted runner installed
+on that server (outbound connections only, no credentials stored in GitHub).
+
+One-time runner setup, in an elevated PowerShell on the server. Take the token from
+GitHub → Settings → Actions → Runners → New self-hosted runner (it expires after an hour):
+
+```powershell
+$dir = 'C:\TNT\Chatbot_Demoutomatic-octo-computing-machines\datauntimections-runner'
+New-Item -ItemType Directory -Force $dir; Set-Location $dir
+Invoke-WebRequest https://github.com/actions/runner/releases/download/v2.338.0/actions-runner-win-x64-2.338.0.zip -OutFile runner.zip
+Expand-Archive runner.zip .
+.\config.cmd --url https://github.com/lcduc/automatic-octo-computing-machines --token <TOKEN> `
+  --name chatbot-demo-vps --labels chatbot-demo --unattended --runasservice `
+  --windowslogonaccount 'NT AUTHORITY\SYSTEM'
+```
+
+The runner runs as SYSTEM so it can stop and start the `chatbot-*` services. The repository is
+public: keep Settings → Actions → General → "Require approval for all outside collaborators" on,
+and never trigger the deploy workflow from `pull_request`. Run it by hand from the Actions tab
+(*Deploy → Run workflow*) or locally with `deploy\windows\deploy.ps1`.
+
 ## Local development
 
 Natively, without the compose stack: Postgres in Docker, the API, then the admin
