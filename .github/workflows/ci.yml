@@ -183,6 +183,10 @@ jobs:
       # jinaai/jina-reranker-v2-base-multilingual remote code, confirmed by
       # loading the real cached model; also unresolvable against the
       # huggingface_hub pin). Verified 2026-09-21 via commit 845d894.
+      # PYSEC-2026-4174 (custom generation code downloaded before trust
+      # consent) is affected through transformers 5.8.1, so no release fixes it
+      # yet (OSV, 2026-10-08). Not reachable here: the app generates text only
+      # through hosted LLM APIs and uses transformers for embeddings/reranking.
       #
       # accelerate==1.14.0 (PYSEC-2026-3804) and nltk==3.10.3
       # (PYSEC-2026-3740): both `first_patched_version: null` on GitHub's
@@ -207,5 +211,6 @@ jobs:
           --ignore-vuln PYSEC-2026-2289
           --ignore-vuln PYSEC-2026-2290
           --ignore-vuln PYSEC-2026-3929
+          --ignore-vuln PYSEC-2026-4174
           --ignore-vuln PYSEC-2026-3804
           --ignore-vuln PYSEC-2026-3740
