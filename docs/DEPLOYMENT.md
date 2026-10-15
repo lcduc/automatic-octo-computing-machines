@@ -221,6 +221,15 @@ default). Results of private data tools still reach the model, because they are 
   the internal network with a generated token. Chat requests (query embedding,
   reranking) always get a slot; ingestion (bulk embedding, OCR) waits behind them and
   runs one job at a time (`MODEL_SERVER_SLOTS` 3, `MODEL_SERVER_INGESTION_SLOTS` 1).
+  Waiting is bounded: at most `MODEL_SERVER_MAX_WAITING` (32) calls queue per lane,
+  for `MODEL_SERVER_CHAT_WAIT_SECONDS` (10) / `MODEL_SERVER_INGESTION_WAIT_SECONDS` (300);
+  beyond that the model-server answers HTTP 503 with `Retry-After`.
+- **GPU memory caps.** Embedding and reranker run in fp16 on CUDA. torch (query embedding,
+  reranking) is uncapped so no chat call fails on memory (`MODEL_SERVER_TORCH_GPU_FRACTION`,
+  0 = no cap; set it only to reserve a fixed share for another GPU process). PaddlePaddle
+  (OCR) is uncapped too (`MODEL_SERVER_OCR_GPU_MEMORY_MB`, 0 = no cap). OCR page images are
+  scaled down to `OCR_MAX_IMAGE_SIDE` (2048 px) on the longest side. Size the caps
+  against the other GPU residents (e.g. a router SLM) and check `/ready` `gpu.free_mb`.
 - **One API worker.** The in-memory knowledge index lives in that process.
   - `MAX_CONCURRENT_CHATS` (default 16) caps turns generated at once.
   - `RETRIEVAL_MAX_CONCURRENCY` (default 4) caps retrieval at once.
