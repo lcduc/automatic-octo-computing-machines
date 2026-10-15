@@ -21,6 +21,11 @@ except Exception:
 #: swap in, unlike an embedding fallback: rerank scores are computed fresh per turn.
 RERANKER_FALLBACK_MODEL = "cross-encoder/mmarco-mMiniLMv2-L12-H384-v1"
 
+#: Query/passage pairs scored per forward pass (bounds activation memory on the shared GPU).
+RERANK_BATCH_SIZE = 16
+#: Tokens kept per pair; longer passages are truncated.
+RERANK_MAX_TOKENS = 512
+
 
 class Reranker:
     """
@@ -79,10 +84,13 @@ class Reranker:
 
                 self.device = "cuda" if torch.cuda.is_available() else "cpu"
                 self.model = model.to(self.device)
+                if self.device == "cuda":
+                    # fp16 halves the weights on GPU; CPU keeps fp32.
+                    self.model = self.model.half()
                 self.tokenizer = tokenizer
                 self.model.eval()
 
-            def predict(self, pairs, batch_size: int = 32):
+            def predict(self, pairs, batch_size: int = RERANK_BATCH_SIZE):
                 """Predict scores for query-document pairs, batched for throughput."""
                 import torch
                 import numpy as np
@@ -102,7 +110,7 @@ class Reranker:
                         documents,
                         return_tensors="pt",
                         truncation=True,
-                        max_length=512,
+                        max_length=RERANK_MAX_TOKENS,
                         padding=True,
                     ).to(self.device)
 
@@ -110,7 +118,7 @@ class Reranker:
                     with torch.no_grad():
                         outputs = self.model(**inputs)
                         # Get the score (logits) for the positive class
-                        batch_scores = torch.sigmoid(outputs.logits.squeeze(-1))
+                        batch_scores = torch.sigmoid(outputs.logits.squeeze(-1).float())
                         scores.extend(batch_scores.cpu().tolist())
 
                 return np.array(scores)

@@ -64,11 +64,14 @@ class EmbeddingService:
             # any other model (even one of the same dimension) would return garbage.
             for device in ("cuda", "cpu") if gpu_available else ("cpu",):
                 try:
+                    # fp16 halves the weights on GPU; CPU keeps fp32 (half is slow and lossy there).
+                    precision = {"model_kwargs": {"torch_dtype": torch.float16}} if device == "cuda" else {}
                     self.embedder = SentenceTransformer(
                         model_name,
                         device=device,
                         cache_folder=cache_folder,
                         prompts=MODEL_PROMPTS.get(model_name),
+                        **precision,
                     )
                     logger.info("Embedding model '%s' loaded on %s", model_name, device)
                     break

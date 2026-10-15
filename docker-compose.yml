@@ -93,6 +93,8 @@ services:
     command: ["python", "model_server.py"]
     environment:
       MODEL_SERVER_TOKEN: ${MODEL_SERVER_TOKEN:?run the installer to generate secrets}
+      # Less VRAM fragmentation for the torch models (embedding, reranker).
+      PYTORCH_CUDA_ALLOC_CONF: expandable_segments:True
     volumes:
       # Read-only: the query adapter (data/query_adapter.npy), if one was built.
       - ./data:/app/data:ro
