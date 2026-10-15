@@ -393,6 +393,14 @@ class OCRConfig:
         return env_int("OCR_CONCURRENT_PAGES", 2)
 
     @staticmethod
+    def OCR_MAX_IMAGE_SIDE() -> int:
+        """
+        Longest side, in pixels, of a page image sent to OCR. Visual tokens (and so
+        GPU activation memory) grow with resolution, so oversized pages are scaled down.
+        """
+        return max(256, env_int("OCR_MAX_IMAGE_SIDE", 2048))
+
+    @staticmethod
     def OCR_MAX_CONCURRENT_FILES() -> int:
         """Files processed (parsed/OCR'd) in parallel across the process."""
         return env_int("OCR_MAX_CONCURRENT_FILES", 1)

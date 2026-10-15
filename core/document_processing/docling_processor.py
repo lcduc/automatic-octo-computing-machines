@@ -169,6 +169,15 @@ class DoclingProcessor:
             logger.exception("Failed to inspect PDF text layer for %s; assuming OCR is needed", pdf_path)
             return True
 
+    @classmethod
+    def _render_scale(cls, width_pt: float, height_pt: float) -> float:
+        """
+        Render scale for a page of the given size in points: ``_OCR_RENDER_SCALE``,
+        reduced so the longest side stays within ``OCR_MAX_IMAGE_SIDE`` pixels.
+        """
+        longest = max(width_pt, height_pt, 1.0)
+        return min(cls._OCR_RENDER_SCALE, Config.OCR.OCR_MAX_IMAGE_SIDE() / longest)
+
     def _render_page_to_temp_image(self, pdf_doc, page_num: int) -> Path:
         """
         Render one PDF page to a temporary PNG file for OCR.
@@ -181,7 +190,8 @@ class DoclingProcessor:
             Path to the rendered image. Caller is responsible for deleting it.
         """
         page = pdf_doc[page_num]
-        matrix = fitz.Matrix(self._OCR_RENDER_SCALE, self._OCR_RENDER_SCALE)
+        scale = self._render_scale(page.rect.width, page.rect.height)
+        matrix = fitz.Matrix(scale, scale)
         pixmap = page.get_pixmap(matrix=matrix)
 
         temp_dir = Path(tempfile.gettempdir()) / "ocr_pages"

@@ -22,6 +22,16 @@ def test_cpu_budget_is_split_across_concurrent_pages(monkeypatch, budget, pages,
     assert cpu_threads_per_page() == expected
 
 
+@pytest.mark.parametrize(
+    ("width_pt", "height_pt", "expected_longest_px"),
+    [(595, 842, 1684), (2384, 3370, 2048), (3370, 2384, 2048), (10, 10, 20)],  # A4 stays at 2x; A1 is capped
+)
+def test_ocr_page_images_never_exceed_the_longest_side_cap(monkeypatch, width_pt, height_pt, expected_longest_px):
+    monkeypatch.setenv("OCR_MAX_IMAGE_SIDE", "2048")
+    scale = DoclingProcessor._render_scale(width_pt, height_pt)
+    assert round(max(width_pt, height_pt) * scale) == expected_longest_px
+
+
 def test_pp_ocr_pipeline_is_built_with_the_thread_cap(monkeypatch):
     captured = {}
 
