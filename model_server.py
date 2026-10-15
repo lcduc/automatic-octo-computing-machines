@@ -38,7 +38,13 @@ def main() -> None:
     if not ModelServerConfig.MODEL_SERVER_TOKEN():
         logger.critical("MODEL_SERVER_TOKEN is not set; every request would be refused")
         raise SystemExit(1)
-    scheduler = PriorityScheduler(ModelServerConfig.MODEL_SERVER_SLOTS(), ModelServerConfig.MODEL_SERVER_INGESTION_SLOTS())
+    scheduler = PriorityScheduler(
+        ModelServerConfig.MODEL_SERVER_SLOTS(),
+        ModelServerConfig.MODEL_SERVER_INGESTION_SLOTS(),
+        ModelServerConfig.MODEL_SERVER_MAX_WAITING(),
+        ModelServerConfig.MODEL_SERVER_CHAT_WAIT_SECONDS(),
+        ModelServerConfig.MODEL_SERVER_INGESTION_WAIT_SECONDS(),
+    )
     app = create_model_server_app(ModelHost(), scheduler, ModelServerConfig.MODEL_SERVER_TOKEN())
     uvicorn.run(app, host="0.0.0.0", port=ModelServerConfig.MODEL_SERVER_PORT(), workers=1, log_config=None)
 

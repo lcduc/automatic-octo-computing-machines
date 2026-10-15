@@ -7,7 +7,7 @@ the model-server over the internal network.
 """
 
 # Local imports
-from .env import env_int, env_str
+from .env import env_float, env_int, env_str
 
 
 class ModelServerConfig:
@@ -37,6 +37,41 @@ class ModelServerConfig:
     def MODEL_SERVER_INGESTION_SLOTS() -> int:
         """Of those, how many may be ingestion work (OCR, bulk embedding); 1 = one OCR page at a time."""
         return max(1, env_int("MODEL_SERVER_INGESTION_SLOTS", 1))
+
+    @staticmethod
+    def MODEL_SERVER_MAX_WAITING() -> int:
+        """Calls that may queue per lane for a slot; the next one is refused with HTTP 503."""
+        return max(1, env_int("MODEL_SERVER_MAX_WAITING", 32))
+
+    @staticmethod
+    def MODEL_SERVER_CHAT_WAIT_SECONDS() -> float:
+        """Longest a chat-path call waits for a slot (below its client timeout) before HTTP 503."""
+        return max(0.1, env_float("MODEL_SERVER_CHAT_WAIT_SECONDS", 10.0))
+
+    @staticmethod
+    def MODEL_SERVER_INGESTION_WAIT_SECONDS() -> float:
+        """Longest an ingestion call waits for a slot (it yields to chat) before HTTP 503."""
+        return max(0.1, env_float("MODEL_SERVER_INGESTION_WAIT_SECONDS", 300.0))
+
+    @staticmethod
+    def MODEL_SERVER_TORCH_GPU_FRACTION() -> float:
+        """
+        Share of GPU 0's memory torch (embedding, reranker) may use; 0 = no cap (default).
+
+        Uncapped on purpose: a cap turns a memory spike into an OOM that fails chat
+        queries, so it is only for boxes that must leave a fixed share to another process.
+        """
+        return min(1.0, max(0.0, env_float("MODEL_SERVER_TORCH_GPU_FRACTION", 0.0)))
+
+    @staticmethod
+    def MODEL_SERVER_OCR_GPU_MEMORY_MB() -> int:
+        """
+        Hard cap on PaddlePaddle's (OCR) GPU memory in MiB; 0 = no cap (default).
+
+        Uncapped on purpose: past a hard cap a page fails to OCR and comes back empty.
+        Set it only to reserve a fixed share for another GPU process.
+        """
+        return max(0, env_int("MODEL_SERVER_OCR_GPU_MEMORY_MB", 0))
 
     @staticmethod
     def MODEL_SERVER_TIMEOUT_SECONDS() -> int:

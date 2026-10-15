@@ -21,9 +21,12 @@ from pydantic import BaseModel, Field
 
 # Local imports
 from .model_host import ModelHost
-from .scheduler import Lane, PriorityScheduler
+from .scheduler import Lane, PriorityScheduler, SchedulerBusyError
 
 logger = logging.getLogger(__name__)
+
+#: Seconds a refused client is told to wait before retrying.
+BUSY_RETRY_AFTER_SECONDS = 5
 
 MAX_EMBED_TEXTS = 512
 MAX_RERANK_TEXTS = 200
@@ -83,6 +86,15 @@ def create_model_server_app(host: ModelHost, scheduler: PriorityScheduler, token
 
     app = FastAPI(title="Model server", docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
 
+    async def run_in_lane(lane: Lane, function, *args):
+        """Run a model call in ``lane``; a full or too slow queue answers 503 (retry later)."""
+        try:
+            return await scheduler.run(lane, function, *args)
+        except SchedulerBusyError as exc:
+            raise HTTPException(
+                status.HTTP_503_SERVICE_UNAVAILABLE, str(exc), headers={"Retry-After": str(BUSY_RETRY_AFTER_SECONDS)}
+            ) from exc
+
     def authorized(x_service_token: str = Header("", alias="X-Service-Token")) -> None:
         if not token or not hmac.compare_digest(x_service_token.encode(), token.encode()):
             raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid service token")
@@ -105,14 +117,14 @@ def create_model_server_app(host: ModelHost, scheduler: PriorityScheduler, token
         """Embed queries (chat lane) or passages (ingestion lane)."""
         texts = [text[:MAX_TEXT_CHARS] for text in body.texts]
         query = body.kind == "query"
-        vectors = await scheduler.run(Lane.CHAT if query else Lane.INGESTION, host.embed, texts, query)
+        vectors = await run_in_lane(Lane.CHAT if query else Lane.INGESTION, host.embed, texts, query)
         return EmbedResponse(model=host.embedding.model_name, vectors=vectors)
 
     @app.post("/rerank", response_model=RerankResponse, dependencies=[Depends(authorized)])
     async def rerank(body: RerankRequest) -> RerankResponse:
         """Cross-encoder scores (chat lane)."""
         texts = [text[:MAX_TEXT_CHARS] for text in body.texts]
-        return RerankResponse(scores=await scheduler.run(Lane.CHAT, host.rerank, body.query, texts))
+        return RerankResponse(scores=await run_in_lane(Lane.CHAT, host.rerank, body.query, texts))
 
     @app.post("/ocr", response_model=OcrResponse, dependencies=[Depends(authorized)])
     async def ocr(request: Request) -> OcrResponse:
@@ -126,7 +138,7 @@ def create_model_server_app(host: ModelHost, scheduler: PriorityScheduler, token
         try:
             with os.fdopen(descriptor, "wb") as handle:
                 handle.write(image)
-            text = await scheduler.run(Lane.INGESTION, host.ocr.extract_text, path)
+            text = await run_in_lane(Lane.INGESTION, host.ocr.extract_text, path)
         finally:
             os.unlink(path)
         return OcrResponse(engine=host.ocr.name, text=text or "")

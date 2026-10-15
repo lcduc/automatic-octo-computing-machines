@@ -4,9 +4,11 @@ Loads the GPU models once and keeps them resident for the model-server (RES-01).
 
 # Standard library imports
 import logging
+import os
 from typing import Any, Dict, List, Optional
 
 # Local imports
+from config.model_server_settings import ModelServerConfig
 from config.settings import Config
 from core.document_processing.ocr_base import OCREngine
 from core.retrieval.embeddings import EmbeddingService
@@ -24,9 +26,32 @@ class ModelHost:
         self.reranker = None
         self.ocr: Optional[OCREngine] = None
 
+    @staticmethod
+    def apply_gpu_limits() -> None:
+        """
+        Cap GPU memory per framework so the models cannot starve a neighbour (the router SLM).
+
+        Paddle reads ``FLAGS_gpu_memory_limit_mb`` when it is first imported, so this
+        must run before any model loads. Torch's cap is a fraction of GPU 0.
+        """
+        ocr_limit_mb = ModelServerConfig.MODEL_SERVER_OCR_GPU_MEMORY_MB()
+        if ocr_limit_mb:
+            os.environ.setdefault("FLAGS_gpu_memory_limit_mb", str(ocr_limit_mb))
+        fraction = ModelServerConfig.MODEL_SERVER_TORCH_GPU_FRACTION()
+        try:
+            import torch
+
+            if fraction and torch.cuda.is_available():
+                torch.cuda.set_per_process_memory_fraction(fraction, 0)
+                logger.info("GPU caps: torch %.0f%% of GPU 0, paddle %s MiB", fraction * 100, ocr_limit_mb or "unlimited")
+        except Exception:
+            logger.exception("Cannot cap torch GPU memory")
+
     def load(self) -> None:
         """Load every enabled model (blocking; minutes on first boot without baked weights)."""
         from core.retrieval.embeddings import get_embedding_service
+
+        self.apply_gpu_limits()
 
         self.embedding = get_embedding_service()
         self.embedding.get_embedder()

@@ -14,11 +14,16 @@ from starlette.testclient import TestClient
 from config.settings import Config
 from core.document_processing.remote_ocr_engine import RemoteOCREngine
 from core.infrastructure.model_server.app import create_model_server_app
-from core.infrastructure.model_server.scheduler import Lane, PriorityScheduler
+from core.infrastructure.model_server.scheduler import Lane, PriorityScheduler, SchedulerBusyError
 from core.infrastructure.model_server_client import ModelServerClient, ModelServerError
 from core.retrieval.remote_models import RemoteEmbeddingService, RemoteReranker
 
 TOKEN = "m" * 48
+
+
+def _scheduler(slots=2, max_waiting=8, chat_wait=5.0, ingestion_wait=5.0):
+    """A scheduler with one ingestion slot and test-sized waits."""
+    return PriorityScheduler(slots, 1, max_waiting, chat_wait, ingestion_wait)
 
 
 class FakeEmbedding:
@@ -66,7 +71,7 @@ class FakeHost:
 @pytest.fixture
 def server():
     host = FakeHost()
-    app = create_model_server_app(host, PriorityScheduler(slots=3, ingestion_limit=1), TOKEN)
+    app = create_model_server_app(host, _scheduler(slots=3), TOKEN)
     with TestClient(app) as test_client:
         test_client.host = host
         yield test_client
@@ -120,7 +125,7 @@ def test_a_mismatched_embedding_model_is_refused_at_start_up(server, monkeypatch
 
 @pytest.mark.asyncio
 async def test_chat_work_overtakes_queued_ingestion_and_ingestion_runs_one_at_a_time():
-    scheduler = PriorityScheduler(slots=2, ingestion_limit=1)
+    scheduler = _scheduler()
     order, release = [], threading.Event()
 
     def job(name, block=False):
@@ -141,4 +146,52 @@ async def test_chat_work_overtakes_queued_ingestion_and_ingestion_runs_one_at_a_
     await asyncio.gather(first_page, second_page)
     assert order == ["ocr-1", "query", "ocr-2"]
     with pytest.raises(ValueError):
-        PriorityScheduler(slots=2, ingestion_limit=2)
+        PriorityScheduler(2, 2, 8, 5.0, 5.0)
+
+
+@pytest.mark.asyncio
+async def test_a_full_queue_and_a_slow_wait_are_refused_instead_of_piling_up():
+    scheduler = _scheduler(slots=2, max_waiting=1, chat_wait=0.1)
+    release = threading.Event()
+
+    def block():
+        release.wait(5)
+
+    running = [asyncio.create_task(scheduler.run(Lane.CHAT, block)) for _ in range(2)]  # both slots busy
+    await asyncio.sleep(0.05)
+    queued = asyncio.create_task(scheduler.run(Lane.CHAT, block))
+    await asyncio.sleep(0.02)
+    with pytest.raises(SchedulerBusyError, match="queue is full"):
+        await scheduler.run(Lane.CHAT, block)
+    with pytest.raises(SchedulerBusyError, match="within"):
+        await queued  # waited chat_wait seconds without a slot
+    assert scheduler.stats()["chat_waiting"] == 0
+
+    release.set()
+    await asyncio.gather(*running)
+    assert await scheduler.run(Lane.CHAT, lambda: "ok") == "ok"  # recovered, nothing leaked
+
+
+@pytest.mark.asyncio
+async def test_a_chat_call_that_gives_up_frees_the_ingestion_it_was_holding_back():
+    scheduler = _scheduler(slots=2, chat_wait=0.1)
+    release = threading.Event()
+    blockers = [asyncio.create_task(scheduler.run(Lane.CHAT, release.wait, 5)) for _ in range(2)]
+    await asyncio.sleep(0.05)
+    ingestion = asyncio.create_task(scheduler.run(Lane.INGESTION, lambda: "page"))
+    with pytest.raises(SchedulerBusyError):
+        await scheduler.run(Lane.CHAT, lambda: None)  # chat waiter blocks ingestion, then times out
+    release.set()
+    await asyncio.gather(*blockers)
+    assert await asyncio.wait_for(ingestion, 2) == "page"
+
+
+def test_the_model_server_answers_503_with_retry_after_when_busy():
+    class BusyScheduler:
+        async def run(self, lane, function, *args):
+            raise SchedulerBusyError("chat queue is full")
+
+    host = FakeHost()
+    with TestClient(create_model_server_app(host, BusyScheduler(), TOKEN)) as busy:
+        response = busy.post("/rerank", json={"query": "q", "texts": ["a"]}, headers={"X-Service-Token": TOKEN})
+    assert response.status_code == 503 and response.headers["Retry-After"] == "5"
