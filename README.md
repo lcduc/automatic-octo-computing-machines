@@ -8,10 +8,12 @@ A knowledge-grounded Vietnamese chatbot product:
   live token usage, logs, settings (incl. live model and retrieval tuning),
   accounts and an append-only audit log.
 - **FastAPI backend**: hybrid retrieval over PostgreSQL + pgvector, grounded answers
-  streamed from OpenAI, Anthropic or Gemini.
+  streamed from OpenAI (what the installer sets up), Anthropic or Gemini. Moderation,
+  tool calling and voice transcription always use OpenAI, so they need an OpenAI key.
 
-Everything runs on one VPS with `docker compose up -d` (see
-[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)).
+Everything runs on one GPU box. It is installed with `deploy/install.sh` and run with the
+`chatbot` ops CLI (see [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)); a plain
+`docker compose up -d` refuses to start without the secrets the installer generates.
 
 ## How a question is answered
 
