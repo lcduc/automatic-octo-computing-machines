@@ -55,7 +55,10 @@ class Reranker:
                     # Windows, even when passed the same
                     # low_cpu_mem_usage=False that avoids the crash when
                     # calling `from_pretrained` directly. Verified against
-                    # transformers 4.53.3 / torch 2.13.0+cu126.
+                    # transformers 4.53.3 and 5.20.2 / torch 2.13.0+cu126.
+                    # The jinaai remote code no longer loads on transformers 5
+                    # (it imports a removed helper), so a jinaai model falls
+                    # back to RERANKER_FALLBACK_MODEL.
                     trust_remote_code = candidate.startswith("jinaai/")
                     tokenizer = AutoTokenizer.from_pretrained(
                         candidate, trust_remote_code=trust_remote_code, cache_dir=cache_dir

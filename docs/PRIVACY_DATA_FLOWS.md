@@ -15,6 +15,7 @@ is for the client's lawyer to assess. The questions to settle are listed at the 
 | Vendor (builds and operates the chatbot) | Processes data on the client's behalf; administers the server under contract |
 | OpenAI (LLM provider, organisation chosen per client) | Sub-processor outside Vietnam (cross-border transfer) |
 | Backup target, alert channel, SMTP provider (chosen per client) | Sub-processors, as configured at install |
+| Datalab (hosted OCR, only when `OCR_PROVIDER=datalab`) | Sub-processor outside Vietnam (cross-border transfer); off by default |
 
 ## What is collected
 
@@ -46,6 +47,7 @@ Visitor browser ──HTTPS──> chat.<domain> (widget + server-side layer, on
                               │──> model server (same server): embeddings, reranking, OCR
                               │──> client business database (read-only role, private tools only)
                               └──HTTPS──> OpenAI API (outside Vietnam)
+Ingestion worker ──HTTPS──> Datalab OCR API (outside Vietnam; only with OCR_PROVIDER=datalab)
 Staff browser ──HTTPS──> admin.<domain> (separate domain, never embeddable)
 Server ──> backup target (S3 over HTTPS, SFTP, or a mounted path; chosen by the client)
 Server ──> alert channel (Telegram / Slack / e-mail): operational messages only
@@ -53,6 +55,8 @@ Server ──> SMTP: ticket answers e-mailed to the address the visitor gave
 ```
 
 - **Stays on the client server:** documents, embeddings, OCR, reranking, the database and logs.
+  The one exception is hosted OCR: with `OCR_PROVIDER=datalab`, page images of scanned
+  documents are uploaded to Datalab for text recognition. It is off by default.
 - **Sent to OpenAI:**
   - masked chat text and recent history;
   - retrieved document passages;

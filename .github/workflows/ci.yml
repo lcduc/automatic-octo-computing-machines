@@ -55,16 +55,18 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
-          cache-dependency-path: requirements.txt
+          cache-dependency-path: |
+            requirements.txt
+            requirements-torch.txt
 
       # torch is deliberately absent from requirements.txt (it needs a
-      # hardware-specific index URL — see the comment block at the top of that
-      # file), so it is installed separately here exactly as the Dockerfile
-      # does. torchaudio is skipped: nothing in the import graph loads it.
+      # hardware-specific index URL — see requirements-torch.txt), so it is
+      # installed separately here at the same pinned versions as the Dockerfile.
+      # torchaudio is skipped: nothing in the import graph loads it.
       # paddlepaddle is skipped too — the OCR engines import paddle lazily, so
       # the test suite never touches it.
       - name: Install CPU torch
-        run: pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+        run: pip install -r requirements-torch.txt --index-url https://download.pytorch.org/whl/cpu
 
       - name: Install dependencies
         run: pip install -r requirements.txt
@@ -176,18 +178,6 @@ jobs:
       # not just this mirror. Re-check periodically; a real fix should be
       # taken, not re-ignored.
       #
-      # transformers==4.53.3 (PYSEC-2025-{211,212,213,214,215,216,217,218},
-      # PYSEC-2026-{2288,2289,2290,3929}): all fixed only in transformers>=5,
-      # which is a known-incompatible bump — see the NOTE above the
-      # transformers pin in requirements.txt (breaks the
-      # jinaai/jina-reranker-v2-base-multilingual remote code, confirmed by
-      # loading the real cached model; also unresolvable against the
-      # huggingface_hub pin). Verified 2026-09-21 via commit 845d894.
-      # PYSEC-2026-4174 (custom generation code downloaded before trust
-      # consent) is affected through transformers 5.8.1, so no release fixes it
-      # yet (OSV, 2026-10-08). Not reachable here: the app generates text only
-      # through hosted LLM APIs and uses transformers for embeddings/reranking.
-      #
       # accelerate==1.14.0 (PYSEC-2026-3804) and nltk==3.10.3
       # (PYSEC-2026-3740): both `first_patched_version: null` on GitHub's
       # advisory API as of 2026-09-21 -- no fixed release exists yet for
@@ -196,21 +186,28 @@ jobs:
       # (this app only loads pinned, trusted HF models), and nltk's is in
       # TransitionParser/AveragedPerceptron/PerceptronTagger/maxent model
       # loading (utils/text_utils.py only calls nltk.download/sent_tokenize).
+      #
+      # pillow 12.3.0 (CVE-2026-112{395,397,400,404,895,896,897,899}, published
+      # 2026-10-19): fixed only in pillow 13.0.0 (no 12.x backport on GitHub's
+      # advisory API), which nothing here can install yet: docling,
+      # docling-core, docling-ibm-models and streamlit, latest releases
+      # included, all require pillow<13 (checked 2026-10-21). They are image
+      # decoder bugs (TIFF, GIF, EPS, PDF page tree, morph). Files reach Pillow
+      # only through uploads by signed-in staff (owner/editor or a
+      # documents-write key; .pdf/.docx/.xlsx/text only), parsed in the
+      # memory-capped ingestion worker; EPS needs Ghostscript, which the image
+      # does not install. Drop these and pin pillow>=13 once docling and
+      # streamlit allow it.
       - name: Audit pinned dependencies
         run: >-
           pip-audit --requirement requirements.txt --strict
-          --ignore-vuln PYSEC-2025-211
-          --ignore-vuln PYSEC-2025-212
-          --ignore-vuln PYSEC-2025-213
-          --ignore-vuln PYSEC-2025-214
-          --ignore-vuln PYSEC-2025-215
-          --ignore-vuln PYSEC-2025-216
-          --ignore-vuln PYSEC-2025-217
-          --ignore-vuln PYSEC-2025-218
-          --ignore-vuln PYSEC-2026-2288
-          --ignore-vuln PYSEC-2026-2289
-          --ignore-vuln PYSEC-2026-2290
-          --ignore-vuln PYSEC-2026-3929
-          --ignore-vuln PYSEC-2026-4174
           --ignore-vuln PYSEC-2026-3804
           --ignore-vuln PYSEC-2026-3740
+          --ignore-vuln CVE-2026-112395
+          --ignore-vuln CVE-2026-112397
+          --ignore-vuln CVE-2026-112400
+          --ignore-vuln CVE-2026-112404
+          --ignore-vuln CVE-2026-112895
+          --ignore-vuln CVE-2026-112896
+          --ignore-vuln CVE-2026-112897
+          --ignore-vuln CVE-2026-112899

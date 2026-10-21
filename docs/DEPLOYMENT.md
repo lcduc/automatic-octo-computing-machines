@@ -18,11 +18,15 @@ Without `--answers` it asks six questions on the terminal, plus the OpenAI key.
 | `caddy`            | HTTPS entry point (automatic Let's Encrypt), ports 80/443 | edge                    |
 | `web`              | Next.js: chat widget, `embed.js`, BFF routes              | edge                    |
 | `admin`            | Admin web (static SPA), served on the admin domain        | edge                    |
-| `api`              | FastAPI: RAG pipeline, admin API (GPU)                    | edge, internal          |
+| `api`              | FastAPI: RAG pipeline, admin API (no GPU; uses `model-server`) | edge, internal     |
 | `ingestion-worker` | Parses, OCRs and embeds uploaded files (same image)       | internal, egress        |
-| `model-server`     | The only GPU user: embedding, reranker, OCR (resident)    | internal only, no port  |
+| `model-server`     | Resident models: embedding + reranker on the GPU, OCR on CPU¹ | internal only, no port |
 | `migrate`          | One-shot `alembic upgrade head` as the schema owner       | internal                |
 | `postgres`         | PostgreSQL 17 + pgvector: all data and embeddings         | internal only, no port  |
+
+¹ The image installs the CPU build of PaddlePaddle, so OCR runs PP-OCRv6 on the CPU.
+GPU OCR (PaddleOCR-VL) needs an image built with the `paddlepaddle-gpu` line in the
+`Dockerfile`; see [Hardware budget](#hardware-budget-12-gb-vram-8-cores--16-threads-16-gb-ram).
 
 `internal` is a Docker network with no route to the internet. Only Caddy
 publishes ports. On the chat domain Caddy proxies to `web`; on the admin domain
@@ -226,8 +230,10 @@ default). Results of private data tools still reach the model, because they are 
   beyond that the model-server answers HTTP 503 with `Retry-After`.
 - **GPU memory caps.** Embedding and reranker run in fp16 on CUDA. torch (query embedding,
   reranking) is uncapped so no chat call fails on memory (`MODEL_SERVER_TORCH_GPU_FRACTION`,
-  0 = no cap; set it only to reserve a fixed share for another GPU process). PaddlePaddle
-  (OCR) is uncapped too (`MODEL_SERVER_OCR_GPU_MEMORY_MB`, 0 = no cap). OCR page images are
+  0 = no cap; set it only to reserve a fixed share for another GPU process). OCR runs on
+  the CPU in the shipped image (CPU PaddlePaddle build). An image built with the
+  `paddlepaddle-gpu` line in the `Dockerfile` moves OCR to PaddleOCR-VL on the GPU,
+  uncapped unless `MODEL_SERVER_OCR_GPU_MEMORY_MB` is set. OCR page images are
   scaled down to `OCR_MAX_IMAGE_SIDE` (2048 px) on the longest side. Size the caps
   against the other GPU residents (e.g. a router SLM) and check `/ready` `gpu.free_mb`.
 - **One API worker.** The in-memory knowledge index lives in that process.
@@ -326,7 +332,7 @@ docker run -d --name chatbot-pg -e POSTGRES_USER=chatbot -e POSTGRES_PASSWORD=de
 
 ```bash
 python -m venv venv && source venv/bin/activate      # Windows: venv\Scripts\Activate.ps1
-pip install torch torchvision --index-url https://download.pytorch.org/whl/cu126   # no GPU: .../whl/cpu
+pip install -r requirements-torch.txt --index-url https://download.pytorch.org/whl/cu126   # no GPU: .../whl/cpu
 pip install -r requirements.txt
 cp .env.example .env
 alembic upgrade head
