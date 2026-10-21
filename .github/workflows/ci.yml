@@ -186,8 +186,28 @@ jobs:
       # (this app only loads pinned, trusted HF models), and nltk's is in
       # TransitionParser/AveragedPerceptron/PerceptronTagger/maxent model
       # loading (utils/text_utils.py only calls nltk.download/sent_tokenize).
+      #
+      # pillow 12.3.0 (CVE-2026-112{395,397,400,404,895,896,897,899}, published
+      # 2026-10-19): fixed only in pillow 13.0.0 (no 12.x backport on GitHub's
+      # advisory API), which nothing here can install yet: docling,
+      # docling-core, docling-ibm-models and streamlit, latest releases
+      # included, all require pillow<13 (checked 2026-10-21). They are image
+      # decoder bugs (TIFF, GIF, EPS, PDF page tree, morph). Files reach Pillow
+      # only through uploads by signed-in staff (owner/editor or a
+      # documents-write key; .pdf/.docx/.xlsx/text only), parsed in the
+      # memory-capped ingestion worker; EPS needs Ghostscript, which the image
+      # does not install. Drop these and pin pillow>=13 once docling and
+      # streamlit allow it.
       - name: Audit pinned dependencies
         run: >-
           pip-audit --requirement requirements.txt --strict
           --ignore-vuln PYSEC-2026-3804
           --ignore-vuln PYSEC-2026-3740
+          --ignore-vuln CVE-2026-112395
+          --ignore-vuln CVE-2026-112397
+          --ignore-vuln CVE-2026-112400
+          --ignore-vuln CVE-2026-112404
+          --ignore-vuln CVE-2026-112895
+          --ignore-vuln CVE-2026-112896
+          --ignore-vuln CVE-2026-112897
+          --ignore-vuln CVE-2026-112899
