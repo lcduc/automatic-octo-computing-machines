@@ -17,12 +17,12 @@
   RUN python -m venv /opt/venv
   
   # Python deps
-  COPY requirements.txt .
+  COPY requirements-torch.txt requirements.txt ./
   # Torch wheel index: CUDA 12.6 by default so the embedding model and the
   # reranker run on the VPS GPU; build with --build-arg TORCH_INDEX=cpu on a
-  # machine without an NVIDIA GPU.
+  # machine without an NVIDIA GPU. Versions are pinned in requirements-torch.txt.
   ARG TORCH_INDEX=cu126
-  RUN pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/${TORCH_INDEX}
+  RUN pip install --no-cache-dir -r requirements-torch.txt --index-url https://download.pytorch.org/whl/${TORCH_INDEX}
   # PaddlePaddle backs the OCR engines (core/document_processing/ocr). Pinned
   # to 3.2.0, NOT the latest 3.3.x: paddlepaddle 3.3.0's oneDNN/PIR CPU
   # executor is broken for text detection (upstream bug, PaddlePaddle/Paddle

@@ -326,7 +326,7 @@ docker run -d --name chatbot-pg -e POSTGRES_USER=chatbot -e POSTGRES_PASSWORD=de
 
 ```bash
 python -m venv venv && source venv/bin/activate      # Windows: venv\Scripts\Activate.ps1
-pip install torch torchvision --index-url https://download.pytorch.org/whl/cu126   # no GPU: .../whl/cpu
+pip install -r requirements-torch.txt --index-url https://download.pytorch.org/whl/cu126   # no GPU: .../whl/cpu
 pip install -r requirements.txt
 cp .env.example .env
 alembic upgrade head

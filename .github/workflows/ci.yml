@@ -55,16 +55,18 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
-          cache-dependency-path: requirements.txt
+          cache-dependency-path: |
+            requirements.txt
+            requirements-torch.txt
 
       # torch is deliberately absent from requirements.txt (it needs a
-      # hardware-specific index URL — see the comment block at the top of that
-      # file), so it is installed separately here exactly as the Dockerfile
-      # does. torchaudio is skipped: nothing in the import graph loads it.
+      # hardware-specific index URL — see requirements-torch.txt), so it is
+      # installed separately here at the same pinned versions as the Dockerfile.
+      # torchaudio is skipped: nothing in the import graph loads it.
       # paddlepaddle is skipped too — the OCR engines import paddle lazily, so
       # the test suite never touches it.
       - name: Install CPU torch
-        run: pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+        run: pip install -r requirements-torch.txt --index-url https://download.pytorch.org/whl/cpu
 
       - name: Install dependencies
         run: pip install -r requirements.txt

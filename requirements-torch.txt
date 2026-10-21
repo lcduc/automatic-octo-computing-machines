@@ -1,0 +1,6 @@
+# torch + torchvision, kept out of requirements.txt because each machine needs its own wheel index.
+# Install these first, then requirements.txt:
+#   pip install -r requirements-torch.txt --index-url https://download.pytorch.org/whl/cu126   # no GPU: .../whl/cpu
+# Used by the Dockerfile, CI and docs/DEPLOYMENT.md. Bump both together, by hand (Dependabot ignores them).
+torch==2.13.0
+torchvision==0.28.0
