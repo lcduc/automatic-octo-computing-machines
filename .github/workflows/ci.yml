@@ -178,18 +178,6 @@ jobs:
       # not just this mirror. Re-check periodically; a real fix should be
       # taken, not re-ignored.
       #
-      # transformers==4.53.3 (PYSEC-2025-{211,212,213,214,215,216,217,218},
-      # PYSEC-2026-{2288,2289,2290,3929}): all fixed only in transformers>=5,
-      # which is a known-incompatible bump — see the NOTE above the
-      # transformers pin in requirements.txt (breaks the
-      # jinaai/jina-reranker-v2-base-multilingual remote code, confirmed by
-      # loading the real cached model; also unresolvable against the
-      # huggingface_hub pin). Verified 2026-09-21 via commit 845d894.
-      # PYSEC-2026-4174 (custom generation code downloaded before trust
-      # consent) is affected through transformers 5.8.1, so no release fixes it
-      # yet (OSV, 2026-10-08). Not reachable here: the app generates text only
-      # through hosted LLM APIs and uses transformers for embeddings/reranking.
-      #
       # accelerate==1.14.0 (PYSEC-2026-3804) and nltk==3.10.3
       # (PYSEC-2026-3740): both `first_patched_version: null` on GitHub's
       # advisory API as of 2026-09-21 -- no fixed release exists yet for
@@ -201,18 +189,5 @@ jobs:
       - name: Audit pinned dependencies
         run: >-
           pip-audit --requirement requirements.txt --strict
-          --ignore-vuln PYSEC-2025-211
-          --ignore-vuln PYSEC-2025-212
-          --ignore-vuln PYSEC-2025-213
-          --ignore-vuln PYSEC-2025-214
-          --ignore-vuln PYSEC-2025-215
-          --ignore-vuln PYSEC-2025-216
-          --ignore-vuln PYSEC-2025-217
-          --ignore-vuln PYSEC-2025-218
-          --ignore-vuln PYSEC-2026-2288
-          --ignore-vuln PYSEC-2026-2289
-          --ignore-vuln PYSEC-2026-2290
-          --ignore-vuln PYSEC-2026-3929
-          --ignore-vuln PYSEC-2026-4174
           --ignore-vuln PYSEC-2026-3804
           --ignore-vuln PYSEC-2026-3740

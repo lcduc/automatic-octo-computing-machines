@@ -65,7 +65,7 @@ class EmbeddingService:
             for device in ("cuda", "cpu") if gpu_available else ("cpu",):
                 try:
                     # fp16 halves the weights on GPU; CPU keeps fp32 (half is slow and lossy there).
-                    precision = {"model_kwargs": {"torch_dtype": torch.float16}} if device == "cuda" else {}
+                    precision = {"model_kwargs": {"dtype": torch.float16}} if device == "cuda" else {}
                     self.embedder = SentenceTransformer(
                         model_name,
                         device=device,
