@@ -17,6 +17,10 @@ from core.guardrails.pii_redactor import PiiRedactor
         ("thẻ 4111 1111 1111 1111 hết hạn", "thẻ [CARD_NUMBER] hết hạn"),
         ("STK 0123456789 Vietcombank", "STK [BANK_ACCOUNT] Vietcombank"),
         ("mã số thuế 0101234567", "mã số thuế [TAX_CODE]"),
+        ("hộ chiếu số C1234567 hết hạn", "hộ chiếu số [PASSPORT] hết hạn"),
+        ("Passport: N12345678", "Passport: [PASSPORT]"),
+        ("ngày sinh 05/03/1998, quê Nghệ An", "ngày sinh [BIRTH_DATE], quê Nghệ An"),
+        ("sinh ngày 5-3-98", "sinh ngày [BIRTH_DATE]"),
     ],
 )
 def test_redacts_vietnamese_personal_data(text, expected):
@@ -30,6 +34,7 @@ def test_redacts_vietnamese_personal_data(text, expected):
         "Lương từ 300000000 đến 500000000 mỗi năm",
         "Hồ sơ nộp trước ngày 15/10/2026, mã tin 123456",
         "Số 4111 1111 1111 1112 không phải thẻ hợp lệ",
+        "Làm hộ chiếu mất bao lâu, mẫu C1 ở đâu?",
     ],
 )
 def test_leaves_ordinary_numbers_untouched(text):

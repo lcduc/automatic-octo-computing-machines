@@ -3,7 +3,8 @@ Rule-based redaction of personal data common in Vietnamese user messages.
 
 Recognizes e-mail addresses, Vietnamese phone numbers, citizen ID numbers
 (12-digit CCCD always; 9-digit CMND only next to an ID keyword), payment card
-numbers (Luhn-validated) and bank account / tax codes next to their keywords.
+numbers (Luhn-validated), and passport numbers, dates of birth and bank account /
+tax codes next to their keywords. Names and addresses are not recognized.
 Keyword-gated patterns avoid masking ordinary numbers such as salaries.
 """
 
@@ -19,6 +20,8 @@ TAG_ID = "[ID_NUMBER]"
 TAG_CARD = "[CARD_NUMBER]"
 TAG_BANK_ACCOUNT = "[BANK_ACCOUNT]"
 TAG_TAX_CODE = "[TAX_CODE]"
+TAG_PASSPORT = "[PASSPORT]"
+TAG_BIRTH_DATE = "[BIRTH_DATE]"
 
 #: Payment card numbers have 13-19 digits.
 MIN_CARD_DIGITS = 13
@@ -88,6 +91,19 @@ class PiiRedactor:
         _Rule(
             TAG_BANK_ACCOUNT,
             re.compile(r"(?i)(?:stk|số tài khoản|tài khoản(?: ngân hàng)?)\D{0,15}(\d{6,16})(?!\d)"),
+            group=1,
+        ),
+        _Rule(
+            TAG_PASSPORT,
+            re.compile(r"(?i)\b(?:hộ chiếu|ho chieu|passport|số hc)\W{0,15}(?:số\W{0,5})?([a-z]\d{7,8})(?![a-z\d])"),
+            group=1,
+        ),
+        _Rule(
+            TAG_BIRTH_DATE,
+            re.compile(
+                r"(?i)\b(?:ngày sinh|sinh ngày|ngay sinh|sinh ngay|date of birth|dob|born on)\W{0,10}"
+                r"(\d{1,2}[/.-]\d{1,2}[/.-]\d{2,4})(?!\d)"
+            ),
             group=1,
         ),
         _Rule(TAG_PHONE, re.compile(r"(?<![\d+])(?:\+84|84|0)(?:[\s.-]?\d){8,10}(?!\d)")),
