@@ -11,12 +11,14 @@ import numpy as np
 import pytest
 from starlette.testclient import TestClient
 
+from api.schemas.admin import ModelServerLoad
 from config.settings import Config
 from core.document_processing.remote_ocr_engine import RemoteOCREngine
 from core.infrastructure.model_server.app import create_model_server_app
 from core.infrastructure.model_server.scheduler import Lane, PriorityScheduler, SchedulerBusyError
 from core.infrastructure.model_server_client import ModelServerClient, ModelServerError
 from core.retrieval.remote_models import RemoteEmbeddingService, RemoteReranker
+from services.readiness_service import ReadinessService
 
 TOKEN = "m" * 48
 
@@ -115,6 +117,17 @@ def test_remote_adapters_match_the_in_process_interfaces(server, tmp_path):
 
     ready = client.ready()
     assert ready["status"] == "ok" and ready["gpu"]["free_mb"] == 9000
+
+
+@pytest.mark.asyncio
+async def test_admin_status_reports_model_server_queues_and_vram_or_none_when_unreachable(server):
+    status = await ReadinessService(database=None, model_server=_client_for(server)).model_server_status()
+    load = ModelServerLoad.from_ready(status)
+    assert (load.chat_waiting, load.ingestion_waiting, load.gpu_free_mb, load.gpu_total_mb) == (0, 0, 9000, 12288)
+
+    unreachable = ReadinessService(database=None, model_server=_client_for(server, token="wrong"))
+    assert ModelServerLoad.from_ready(await unreachable.model_server_status()) is None
+    assert ModelServerLoad.from_ready(await ReadinessService(database=None).model_server_status()) is None
 
 
 def test_a_mismatched_embedding_model_is_refused_at_start_up(server, monkeypatch):

@@ -42,14 +42,20 @@ class ReadinessService:
             checks["llm"] = await self._llm_reachable(llm)
         return checks
 
-    async def _model_server_ready(self) -> bool:
-        """The model-server answers and has its models loaded."""
+    async def model_server_status(self) -> Optional[Dict[str, Any]]:
+        """The model-server's ``/ready`` payload (models, VRAM, queues), or ``None`` when absent or unreachable."""
+        if self._model_server is None:
+            return None
         try:
-            status = await asyncio.to_thread(self._model_server.ready)
+            return await asyncio.to_thread(self._model_server.ready)
         except Exception:
             logger.exception("Model-server readiness check failed")
-            return False
-        return status.get("status") == "ok"
+            return None
+
+    async def _model_server_ready(self) -> bool:
+        """The model-server answers and has its models loaded."""
+        status = await self.model_server_status()
+        return status is not None and status.get("status") == "ok"
 
     async def _llm_reachable(self, llm) -> bool:
         """The provider's API is reachable (cached)."""

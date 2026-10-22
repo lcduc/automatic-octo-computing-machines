@@ -441,6 +441,24 @@ class IngestionQueueStatus(BaseModel):
     )
 
 
+class ModelServerLoad(BaseModel):
+    """The model-server's GPU memory and scheduler queues at this moment."""
+
+    running: int = Field(description="Model calls executing now")
+    chat_waiting: int = Field(description="Chat calls queued for the GPU; staying above 0 means chats are slowed down")
+    ingestion_waiting: int = Field(description="Ingestion calls queued behind chat")
+    gpu_free_mb: Optional[int] = Field(None, description="Free VRAM on GPU 0 (None without CUDA)")
+    gpu_total_mb: Optional[int] = Field(None, description="Total VRAM on GPU 0 (None without CUDA)")
+
+    @classmethod
+    def from_ready(cls, status: Optional[Dict[str, Any]]) -> Optional["ModelServerLoad"]:
+        """Build from the model-server's ``/ready`` payload; ``None`` stays ``None``."""
+        if status is None:
+            return None
+        gpu = status.get("gpu") or {}
+        return cls(**status["load"], gpu_free_mb=gpu.get("free_mb"), gpu_total_mb=gpu.get("total_mb"))
+
+
 class SystemStatus(BaseModel):
     """Runtime health and configuration overview."""
 
@@ -457,6 +475,9 @@ class SystemStatus(BaseModel):
     cache: Dict[str, Any]
     fallback_mode: str
     ingestion_queue: IngestionQueueStatus
+    model_server: Optional[ModelServerLoad] = Field(
+        None, description="None when models run in-process or the model-server is unreachable"
+    )
 
 
 # ---------------------------------------------------------------- audit

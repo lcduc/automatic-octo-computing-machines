@@ -298,6 +298,14 @@ export interface SystemStatus {
   cache: Record<string, string | number>;
   fallback_mode: "deny" | "handoff";
   ingestion_queue: { pending: number; in_progress: number; oldest_pending_seconds: number | null };
+  /** Null when models run in-process or the model-server is unreachable. */
+  model_server?: {
+    running: number;
+    chat_waiting: number;
+    ingestion_waiting: number;
+    gpu_free_mb: number | null;
+    gpu_total_mb: number | null;
+  } | null;
 }
 
 // ---------------------------------------------------------------- configuration

@@ -153,6 +153,24 @@ export function OverviewPage() {
               <dd className="mono">{system.data.embedding_model}</dd>
               <dt>{t("overview.reranker")}</dt>
               <dd>{system.data.reranker_loaded ? t("common.on") : t("common.off")}</dd>
+              {system.data.model_server && (
+                <>
+                  <dt>{t("overview.gpu")}</dt>
+                  <dd>
+                    {system.data.model_server.gpu_free_mb !== null && system.data.model_server.gpu_total_mb !== null
+                      ? t("overview.gpuMemory", {
+                          free: formatNumber(system.data.model_server.gpu_free_mb),
+                          total: formatNumber(system.data.model_server.gpu_total_mb),
+                        })
+                      : t("overview.gpuNone")}
+                    {" · "}
+                    {t("overview.gpuQueue", {
+                      chat: system.data.model_server.chat_waiting,
+                      ingestion: system.data.model_server.ingestion_waiting,
+                    })}
+                  </dd>
+                </>
+              )}
               <dt>{t("overview.fallback")}</dt>
               <dd>{t(`settings.fallback.${system.data.fallback_mode}`)}</dd>
               <dt>{t("overview.cache")}</dt>
