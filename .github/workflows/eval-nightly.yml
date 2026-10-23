@@ -13,9 +13,17 @@ on:
 
 jobs:
   retrieval:
-    name: Recall and MRR against the baselines
+    name: Recall and MRR against the baseline (${{ matrix.golden-set }})
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    # The CPU re-ranker costs ~20 s per question, so one job ran ~44 of its 45 minutes and was
+    # cancelled most nights. One job per golden set runs them side by side: the largest set
+    # (51 questions) took 18 min of eval plus ~3 min of setup on 2026-10-20.
+    timeout-minutes: 40
+    strategy:
+      # Every set reports even when another regresses.
+      fail-fast: false
+      matrix:
+        golden-set: [golden_colloquial_dev, golden_colloquial_holdout, golden_queries]
     services:
       postgres:
         image: pgvector/pgvector:pg17
@@ -61,11 +69,5 @@ jobs:
       - name: Seed the demo knowledge base
         run: python -m scripts.seed_demo documents
 
-      - name: Retrieval eval (colloquial dev set)
-        run: python -m scripts.eval_rag --check --golden-set scripts/demo_data/golden_colloquial_dev.json
-
-      - name: Retrieval eval (colloquial held-out set)
-        run: python -m scripts.eval_rag --check --golden-set scripts/demo_data/golden_colloquial_holdout.json
-
-      - name: Retrieval eval (original golden set)
-        run: python -m scripts.eval_rag --check --golden-set scripts/demo_data/golden_queries.json
+      - name: Retrieval eval (${{ matrix.golden-set }})
+        run: python -m scripts.eval_rag --check --golden-set scripts/demo_data/${{ matrix.golden-set }}.json
