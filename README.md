@@ -1,6 +1,6 @@
 # RAG Chatbot
 
-A knowledge-grounded Vietnamese chatbot product:
+A knowledge-grounded chatbot product, Vietnamese-first (it answers in the user's language):
 
 - **Chat widget** embeddable on any website with one `<script>` tag.
 - **Admin web** (`frontends/admin`, its own domain) for the client's staff:
@@ -37,6 +37,45 @@ Everything runs on one GPU box. It is installed with `deploy/install.sh` and run
      effective date, …).
    - The answer streams to the visitor with citations.
    - It is cached, and its tokens are metered per visitor and per day.
+
+## Measured results
+
+Measured on 2026-10-23 at commit `a82183a`, on an RTX 3060 12 GB, with the default models
+(`intfloat/multilingual-e5-small`, `BAAI/bge-reranker-v2-m3`) and the demo knowledge base from
+`python -m scripts.seed_demo documents` (10 documents, 66 chunks).
+
+**Retrieval:** 81 answerable questions from the three golden sets in `scripts/demo_data/`, ranked by
+document, `RETRIEVAL_TOP_K=10`.
+
+| Configuration | Recall@1 | Recall@5 | MRR@10 |
+| --- | --- | --- | --- |
+| Dense only (`SEMANTIC_WEIGHT=1.0`, no re-ranker) | 70.4% | 96.3% | 0.81 |
+| BM25 only (`SEMANTIC_WEIGHT=0.0`, no re-ranker) | 71.6% | 97.5% | 0.82 |
+| Dense + BM25 (`SEMANTIC_WEIGHT=0.7`, the default, no re-ranker) | 70.4% | 96.3% | 0.81 |
+| Dense + BM25 + cross-encoder re-ranker (the default) | 97.5% | 100% | 0.99 |
+
+The re-ranker carries the gain: at weight 0.7, BM25 fusion changed 1 of 116 rankings. The corpus is
+small, so Recall@5 is near its ceiling; telling the fusion settings apart needs a larger benchmark.
+
+**Routing:** 189 labelled Vietnamese messages across 6 routes (`router_eval.json` plus the three
+golden sets). Accuracy is 84.7% (macro-F1 0.88), and no real question was taken by a shortcut
+(0 of 122). Most misses are off-topic messages passed on to retrieval (28 of 40), which then
+refuses most of them. Classification takes 6.2 ms median and 9.3 ms p95 per message (timed
+separately; the eval script doesn't time).
+
+**Tests:** all 417 pass with `TEST_DATABASE_URL` pointing at a pgvector Postgres 17; line coverage
+is 81% (`pytest-cov` over `api`, `config`, `core`, `services`, `middleware`, `models`, `utils`).
+
+To reproduce, seed a fresh database (settings changed in the admin web override these environment
+defaults), then run once per golden set and configuration:
+
+```bash
+RETRIEVAL_TOP_K=10 SEMANTIC_WEIGHT=1.0 RERANKING_ENABLED=false python -m scripts.eval_rag --golden-set scripts/demo_data/golden_queries.json --out logs/rag_dense_only.json
+python -m scripts.eval_router --golden-set scripts/demo_data/golden_colloquial_dev.json --golden-set scripts/demo_data/golden_colloquial_holdout.json --golden-set scripts/demo_data/golden_queries.json
+```
+
+`eval_rag` prints Recall@k at `RETRIEVAL_TOP_K` and MRR; Recall@1 and Recall@5 come from the
+per-question `rank` in its `--out` report.
 
 ## Knowledge from multiple sources
 
