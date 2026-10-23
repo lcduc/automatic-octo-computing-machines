@@ -4,7 +4,9 @@ Provides GPU/CPU fallback and the query/passage prompts a model was trained with
 """
 
 # Standard library imports
+import functools
 import logging
+import threading
 
 # Third-party imports
 try:
@@ -18,9 +20,12 @@ logger = logging.getLogger(__name__)
 # Lazy loading to avoid network issues during import
 embedder = None
 _embedding_service_instance = None
+_embedding_service_lock = threading.Lock()
 
 #: Chunks embedded per forward pass during ingestion (fits comfortably in 12GB VRAM).
 PASSAGE_BATCH_SIZE = 32
+#: Single-query embeddings kept in memory (least recently used evicted), so repeated questions skip the model.
+QUERY_CACHE_SIZE = 1000
 
 #: E5 is trained with these prefixes; its model card reports a quality drop without them.
 E5_PROMPTS = {"query": "query: ", "document": "passage: "}
@@ -41,47 +46,52 @@ class EmbeddingService:
     def __init__(self):
         # Lazy initialization to avoid loading models until needed
         self.embedder = None
-        self._embedding_cache = {}  # Simple in-memory cache
-        self._cache_enabled = True
-        self._cache_hits = 0
-        self._cache_misses = 0
+        # Request threads share this service: one load at a time, and a cache that
+        # stays coherent under concurrent use (functools.lru_cache is thread-safe).
+        self._load_lock = threading.Lock()
+        self._encode_single_query = functools.lru_cache(maxsize=QUERY_CACHE_SIZE)(self._encode_uncached_query)
 
     def get_embedder(self):
         """
         Get the embedder instance with automatic GPU/CPU fallback.
-        Loads the best available model with device optimization.
+        Loads the best available model with device optimization, once per service.
         """
         if self.embedder is None:
-            from config.settings import Config
-
-            gpu_available = bool(torch) and torch.cuda.is_available()
-            logger.info("GPU availability for embeddings: %s", gpu_available)
-
-            model_name = Config.LLM.EMBEDDING_MODEL()
-            cache_folder = Config.Paths.MODELS_DIR()
-
-            # No fallback model: stored vectors live in EMBEDDING_MODEL's space, and
-            # any other model (even one of the same dimension) would return garbage.
-            for device in ("cuda", "cpu") if gpu_available else ("cpu",):
-                try:
-                    # fp16 halves the weights on GPU; CPU keeps fp32 (half is slow and lossy there).
-                    precision = {"model_kwargs": {"dtype": torch.float16}} if device == "cuda" else {}
-                    self.embedder = SentenceTransformer(
-                        model_name,
-                        device=device,
-                        cache_folder=cache_folder,
-                        prompts=MODEL_PROMPTS.get(model_name),
-                        **precision,
-                    )
-                    logger.info("Embedding model '%s' loaded on %s", model_name, device)
-                    break
-                except Exception:
-                    logger.exception("Failed to load embedding model '%s' on %s", model_name, device)
-
-            if self.embedder is None:
-                raise RuntimeError(f"Failed to load embedding model '{model_name}'")
-
+            with self._load_lock:
+                if self.embedder is None:
+                    self.embedder = self._load_embedder()
         return self.embedder
+
+    @staticmethod
+    def _load_embedder():
+        """Load ``EMBEDDING_MODEL`` on the GPU when there is one, else on the CPU."""
+        from config.settings import Config
+
+        gpu_available = bool(torch) and torch.cuda.is_available()
+        logger.info("GPU availability for embeddings: %s", gpu_available)
+
+        model_name = Config.LLM.EMBEDDING_MODEL()
+        cache_folder = Config.Paths.MODELS_DIR()
+
+        # No fallback model: stored vectors live in EMBEDDING_MODEL's space, and
+        # any other model (even one of the same dimension) would return garbage.
+        for device in ("cuda", "cpu") if gpu_available else ("cpu",):
+            try:
+                # fp16 halves the weights on GPU; CPU keeps fp32 (half is slow and lossy there).
+                precision = {"model_kwargs": {"dtype": torch.float16}} if device == "cuda" else {}
+                model = SentenceTransformer(
+                    model_name,
+                    device=device,
+                    cache_folder=cache_folder,
+                    prompts=MODEL_PROMPTS.get(model_name),
+                    **precision,
+                )
+                logger.info("Embedding model '%s' loaded on %s", model_name, device)
+                return model
+            except Exception:
+                logger.exception("Failed to load embedding model '%s' on %s", model_name, device)
+
+        raise RuntimeError(f"Failed to load embedding model '{model_name}'")
 
     def _encode_query(self, texts, convert_to_numpy=True):
         """
@@ -98,28 +108,17 @@ class EmbeddingService:
         # the encoder below both see the same shape.
         if isinstance(texts, str):
             texts = [texts]
+        if len(texts) == 1:
+            return self._encode_single_query(texts[0], convert_to_numpy)
+        return self.get_embedder().encode_query(texts, convert_to_numpy=convert_to_numpy)
 
-        if self._cache_enabled and len(texts) == 1:
-            text = texts[0]
-            cache_key = f"{text}_{convert_to_numpy}"
-            if cache_key in self._embedding_cache:
-                self._cache_hits += 1
-                return self._embedding_cache[cache_key]
-            self._cache_misses += 1
+    def _encode_uncached_query(self, text: str, convert_to_numpy: bool):
+        """Encode one query; reached through the LRU cache built in ``__init__``."""
+        return self.get_embedder().encode_query([text], convert_to_numpy=convert_to_numpy)
 
-        embedder = self.get_embedder()
-        embeddings = embedder.encode_query(texts, convert_to_numpy=convert_to_numpy)
-
-        # Cache single text results
-        if self._cache_enabled and len(texts) == 1:
-            self._embedding_cache[cache_key] = embeddings
-            # Limit cache size to prevent memory issues
-            if len(self._embedding_cache) > 1000:
-                # Remove oldest entries (simple FIFO)
-                oldest_key = next(iter(self._embedding_cache))
-                del self._embedding_cache[oldest_key]
-
-        return embeddings
+    def query_cache_info(self) -> functools._CacheInfo:
+        """Hits, misses and size of the single-query embedding cache."""
+        return self._encode_single_query.cache_info()
 
     @property
     def model_name(self) -> str:
@@ -276,9 +275,12 @@ class EmbeddingService:
 
 # Global functions for backward compatibility and convenience
 def get_embedding_service():
+    """The process-wide embedding service: one model in memory, however many threads ask at once."""
     global _embedding_service_instance
     if _embedding_service_instance is None:
-        _embedding_service_instance = EmbeddingService()
+        with _embedding_service_lock:
+            if _embedding_service_instance is None:
+                _embedding_service_instance = EmbeddingService()
     return _embedding_service_instance
 
 def reset_embedding_service():

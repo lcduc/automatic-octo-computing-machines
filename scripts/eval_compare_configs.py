@@ -1,42 +1,53 @@
-#!/usr/bin/env python3
 """
-eval_compare_configs.py
+Retrieval config comparison: one golden set through several retrieval configurations in one process.
 
-Compares retrieval quality between a vector-only baseline and the full
-hybrid + cross-encoder rerank + query-adapter configuration, on the same
-golden query set, using the same ``RetrievalEvaluator`` as eval_rag.py.
+Runs against the live knowledge base, scored by the same ``RetrievalEvaluator`` and
+``build_report`` as ``scripts/eval_rag.py`` (document-level recall@k and MRR over the
+answerable questions). The configurations, each against the one before:
 
-No LLM calls are made — this only exercises embeddings + BM25 + reranking,
-so it costs nothing and runs in seconds against an already-built vector store
-and an already-fitted query adapter (see scripts/build_query_adapter.py).
+- ``dense_only``: embedding search alone (fusion weight 1.0), no re-ranker;
+- ``hybrid``: embedding + BM25 fusion at the live weight, no re-ranker;
+- ``hybrid_rerank``: that plus the cross-encoder re-ranker (needs ``RERANKING_ENABLED``);
+- ``hybrid_rerank_adapter``: that plus the query adapter, when ``QUERY_ADAPTER_PATH`` holds one.
 
-Usage:
-  python scripts/eval_compare_configs.py
-  python scripts/eval_compare_configs.py --golden-set data/eval/golden_queries.json --out data/logs/config_comparison.json
+No LLM calls are made. Needs the database and the in-process models: leave ``MODEL_SERVER_URL``
+empty, because a model-server applies its own query adapter. Usage (from the repository root,
+with the venv active)::
+
+    python -m scripts.eval_compare_configs
+    python -m scripts.eval_compare_configs --golden-set scripts/demo_data/golden_colloquial_holdout.json --k 10 --out logs/config_comparison.json
 """
+
+# Standard library imports
 import argparse
+import asyncio
 import json
 import logging
-import os
 import sys
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# Third-party imports
+from dotenv import load_dotenv
 
-from config.settings import Config
-from core.retrieval.embeddings import EmbeddingService
-from core.retrieval.retriever import ContextRetriever
-from core.storage import get_vector_store_provider
-from scripts.eval_rag import DEFAULT_GOLDEN_SET_PATH, RetrievalEvaluator, load_golden_set
+load_dotenv()
+
+# Local imports
+from config.settings import Config  # noqa: E402
+from core.retrieval.embeddings import EmbeddingService  # noqa: E402
+from core.retrieval.knowledge_index import KnowledgeSnapshot  # noqa: E402
+from core.retrieval.retriever import ContextRetriever  # noqa: E402
+from scripts.eval_rag import (  # noqa: E402
+    ANONYMOUS_ACCESS_LEVEL, DEFAULT_GOLDEN_SET_PATH, RetrievalEvaluator, build_report, load_golden_set,
+)
 
 logger = logging.getLogger(__name__)
 
-#: Path guaranteed not to exist, used to force a no-op adapter load.
-_ADAPTER_DISABLED_SENTINEL_PATH = "data/vectors/__disabled_for_eval__.npy"
-
-_COMPARISON_METRICS = ("recall_at_k", "precision_at_k", "mrr")
+#: Report fields compared between configurations.
+COMPARISON_METRICS = ("recall_at_k", "mrr")
+#: Fusion weight that leaves BM25 out of the ranking entirely.
+DENSE_ONLY_WEIGHT = 1.0
 
 
 @dataclass(frozen=True)
@@ -46,50 +57,79 @@ class RetrievalRunConfig:
     name: str
     semantic_weight: float
     reranking_enabled: bool
-    query_adapter_path: Optional[str]  # None disables the adapter for this run
+    query_adapter_path: Optional[str] = None  # None runs without the adapter
+
+
+def comparison_configs(
+    semantic_weight: float, reranker_available: bool, adapter_path: Optional[str]
+) -> List[RetrievalRunConfig]:
+    """
+    The configurations to compare, each adding one component to the one before.
+
+    Args:
+        semantic_weight: The live embedding-vs-BM25 fusion weight.
+        reranker_available: Whether the app loaded a re-ranker; without one the re-ranked configs are skipped.
+        adapter_path: A fitted query adapter file, or ``None`` when there is none.
+    """
+    configs = [
+        RetrievalRunConfig("dense_only", DENSE_ONLY_WEIGHT, reranking_enabled=False),
+        RetrievalRunConfig("hybrid", semantic_weight, reranking_enabled=False),
+    ]
+    if reranker_available:
+        configs.append(RetrievalRunConfig("hybrid_rerank", semantic_weight, reranking_enabled=True))
+        if adapter_path:
+            configs.append(RetrievalRunConfig(
+                "hybrid_rerank_adapter", semantic_weight, reranking_enabled=True, query_adapter_path=adapter_path,
+            ))
+    return configs
 
 
 class ConfigComparisonRunner:
-    """Runs the same golden query set under several retrieval configs and diffs the results."""
+    """Runs the same golden set under several retrieval configs over one loaded snapshot and models."""
 
-    def __init__(self, k: int):
+    def __init__(self, snapshot: KnowledgeSnapshot, embedding: EmbeddingService, reranker: Any,
+                 top_k: int, access_level: int):
         """
         Args:
-            k: Chunks requested per query, shared across every config so the
-                comparison isolates fusion/rerank/adapter behaviour only.
+            snapshot: Corpus to search, shared by every configuration.
+            embedding: The in-process embedding service (it holds the process-wide query adapter).
+            reranker: The app's re-ranker, or ``None`` when reranking is off.
+            top_k: Matches per question, shared so the comparison isolates fusion, re-ranking and adapter.
+            access_level: Caller access level; higher-tier documents are skipped.
         """
-        self._k = k
+        self._snapshot = snapshot
+        self._embedding = embedding
+        self._reranker = reranker
+        self._top_k = top_k
+        self._access_level = access_level
 
-    def run(self, config: RetrievalRunConfig, golden_set, embeddings, documents) -> Dict[str, Any]:
+    async def run(self, config: RetrievalRunConfig, golden_set: List[Dict[str, Optional[str]]]) -> Dict[str, Any]:
         """
-        Evaluate one configuration end to end.
+        Evaluate one configuration.
 
-        The reranker toggle and the query adapter are process-wide state
-        (``Config.RAG.RERANKING_ENABLED`` is read fresh per ``ContextRetriever``
-        construction; the adapter matrix lives on the ``EmbeddingService``
-        class). Both are reset here before building a fresh retriever so each
-        run reflects exactly the config it was given, regardless of which
-        config ran before it in this process.
+        The query adapter is process-wide state the app loads at start-up, so it is
+        cleared first and reloaded only for a configuration that asks for it.
 
         Returns:
-            The evaluator's report dict, tagged with the config that produced it.
+            ``build_report``'s report, tagged with the config that produced it.
         """
-        os.environ["RERANKING_ENABLED"] = "true" if config.reranking_enabled else "false"
-
         EmbeddingService.clear_query_adapter()
-        os.environ["QUERY_ADAPTER_PATH"] = (
-            config.query_adapter_path if config.query_adapter_path else _ADAPTER_DISABLED_SENTINEL_PATH
+        if config.query_adapter_path and not self._embedding.load_query_adapter(config.query_adapter_path):
+            raise SystemExit(f"Could not load the query adapter from {config.query_adapter_path}")
+        reranked = ContextRetriever(self._embedding, self._reranker) if config.reranking_enabled else None
+        evaluator = RetrievalEvaluator(
+            self._snapshot, reranked, ContextRetriever(self._embedding, None),
+            self._top_k, config.semantic_weight, self._access_level,
         )
-
-        retriever = ContextRetriever()
-        evaluator = RetrievalEvaluator(retriever, k=self._k, semantic_weight=config.semantic_weight)
-        report = evaluator.evaluate_all(golden_set, embeddings, documents)
-        report["config"] = {
-            "name": config.name,
-            "semantic_weight": config.semantic_weight,
-            "reranking_enabled": config.reranking_enabled,
-            "query_adapter_enabled": config.query_adapter_path is not None,
-        }
+        logger.info("Evaluating %d questions with %s", len(golden_set), config.name)
+        results = [
+            await asyncio.to_thread(evaluator.evaluate, item["query"], item["expected_document"], item.get("kind"))
+            for item in golden_set
+        ]
+        report = build_report(
+            results, self._top_k, Config.RAG.SIMILARITY_THRESHOLD(), Config.RAG.SEMANTIC_THRESHOLD(), reranked is not None,
+        )
+        report["config"] = asdict(config)
         return report
 
     @staticmethod
@@ -113,82 +153,85 @@ class ConfigComparisonRunner:
                 "absolute_delta": candidate[metric] - baseline[metric],
                 "relative_improvement_pct": relative_improvement(baseline[metric], candidate[metric]),
             }
-            for metric in _COMPARISON_METRICS
+            for metric in COMPARISON_METRICS
         }
 
 
-def print_comparison(vector_only: Dict[str, Any], summary: Dict[str, Any]) -> None:
-    """Print a human-readable side-by-side comparison table."""
-    print(f"\nConfig comparison -- {vector_only['total_queries']} queries, k={vector_only['k']}\n")
-    header = f"  {'metric':<14}{'vector-only':>14}{'hybrid+rerank+adapter':>24}{'relative gain':>16}"
+async def compare(golden_set: List[Dict[str, Optional[str]]], k: Optional[int], access_level: int) -> Dict[str, Any]:
+    """Start the app services once, run every configuration, and diff each against ``dense_only``."""
+    from api.container import AppContainer
+
+    container = AppContainer()
+    await container.start()
+    try:
+        if not isinstance(container.embedding, EmbeddingService):
+            raise SystemExit("Comparing configs needs the in-process models: unset MODEL_SERVER_URL.")
+        snapshot = container.index.snapshot
+        if snapshot.is_empty:
+            raise SystemExit("The knowledge base is empty; add documents first (e.g. python -m scripts.seed_demo documents).")
+        policy = container.settings.chat_policy()
+        top_k = k or policy.retrieval_top_k
+        adapter_path = Config.RAG.QUERY_ADAPTER_PATH()
+        if not Path(adapter_path).is_file():
+            logger.info("No query adapter at %s; skipping the adapter configuration", adapter_path)
+            adapter_path = None
+        if container.reranker is None:
+            logger.warning("No re-ranker loaded (RERANKING_ENABLED off or load failed); skipping re-ranked configurations")
+
+        runner = ConfigComparisonRunner(snapshot, container.embedding, container.reranker, top_k, access_level)
+        configs = comparison_configs(policy.semantic_weight, container.reranker is not None, adapter_path)
+        reports = {config.name: await runner.run(config, golden_set) for config in configs}
+    finally:
+        await container.stop()
+
+    baseline = reports["dense_only"]
+    return {
+        "top_k": top_k,
+        "answerable": baseline["answerable"],
+        "reports": reports,
+        "vs_dense_only": {
+            name: ConfigComparisonRunner.summarize(baseline, report) for name, report in reports.items() if name != "dense_only"
+        },
+    }
+
+
+def print_comparison(comparison: Dict[str, Any]) -> None:
+    """Print one row per configuration with its recall, MRR and gain over ``dense_only``."""
+    print(f"\nConfig comparison: {comparison['answerable']} answerable questions, k={comparison['top_k']}\n")
+    header = f"  {'config':<24}{'weight':>8}{'Recall@k':>11}{'MRR':>8}{'MRR vs dense':>15}"
     print(header)
     print("  " + "-" * (len(header) - 2))
-
-    labels = {"recall_at_k": "Recall@k", "precision_at_k": "Precision@k", "mrr": "MRR"}
-    for metric, label in labels.items():
-        stats = summary[metric]
-        gain = stats["relative_improvement_pct"]
-        gain_str = f"{gain:+.1f}%" if gain is not None else "n/a"
-        is_ratio = metric != "mrr"
-        base_str = f"{stats['baseline']:.1%}" if is_ratio else f"{stats['baseline']:.3f}"
-        cand_str = f"{stats['candidate']:.1%}" if is_ratio else f"{stats['candidate']:.3f}"
-        print(f"  {label:<14}{base_str:>14}{cand_str:>24}{gain_str:>16}")
+    for name, report in comparison["reports"].items():
+        gain = comparison["vs_dense_only"].get(name, {}).get("mrr", {}).get("relative_improvement_pct")
+        gain_text = "" if name == "dense_only" else (f"{gain:+.1f}%" if gain is not None else "n/a")
+        print(f"  {name:<24}{report['config']['semantic_weight']:>8.2f}{report['recall_at_k']:>11.1%}"
+              f"{report['mrr']:>8.3f}{gain_text:>15}")
     print()
 
 
-def main() -> None:
-    """Load the vector store and golden set, run both configs, print and optionally save the comparison."""
+def main(argv: Optional[List[str]] = None) -> int:
+    """CLI entry point; returns the exit code."""
     if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
-        # Diacritic-heavy Vietnamese queries/sources otherwise crash a
-        # cp1252 Windows console with UnicodeEncodeError.
+        # Vietnamese titles otherwise crash a cp1252 Windows console with UnicodeEncodeError.
         sys.stdout.reconfigure(encoding="utf-8")
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--golden-set", type=Path, default=DEFAULT_GOLDEN_SET_PATH, help="Golden set JSON file")
+    parser.add_argument("--k", type=int, default=None, help="Matches per question (default: the live retrieval_top_k)")
+    parser.add_argument("--access-level", type=int, default=ANONYMOUS_ACCESS_LEVEL,
+                        help="Ask as this access level (default: anonymous visitor)")
+    parser.add_argument("--out", type=Path, default=None, help="Also save the full JSON comparison here")
+    args = parser.parse_args(argv)
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--golden-set", default=DEFAULT_GOLDEN_SET_PATH, help="Path to the golden query JSON file"
-    )
-    parser.add_argument(
-        "--k", type=int, default=None, help="Override Config.RAG.RETRIEVAL_TOP_K for this run"
-    )
-    parser.add_argument("--out", default=None, help="Optional path to save the full JSON comparison report")
-    args = parser.parse_args()
-
-    golden_set = load_golden_set(args.golden_set)
-
-    provider = get_vector_store_provider()
-    data = provider.get_data()
-    if data is None:
-        raise SystemExit("Vector store could not be loaded -- is data/vectors populated?")
-    _, embeddings, documents = data
-    if not documents:
-        raise SystemExit("Vector store is empty -- rebuild it first (POST /cleanup/vectors/rebuild).")
-
-    k = args.k or Config.RAG.RETRIEVAL_TOP_K()
-
-    vector_only_config = RetrievalRunConfig(
-        name="vector_only", semantic_weight=1.0, reranking_enabled=False, query_adapter_path=None
-    )
-    full_config = RetrievalRunConfig(
-        name="hybrid_rerank_adapter",
-        semantic_weight=Config.RAG.SEMANTIC_WEIGHT(),
-        reranking_enabled=True,
-        query_adapter_path=Config.RAG.QUERY_ADAPTER_PATH(),
-    )
-
-    runner = ConfigComparisonRunner(k=k)
-    vector_only_report = runner.run(vector_only_config, golden_set, embeddings, documents)
-    full_report = runner.run(full_config, golden_set, embeddings, documents)
-    summary = ConfigComparisonRunner.summarize(vector_only_report, full_report)
-
-    print_comparison(vector_only_report, summary)
-
+    comparison = asyncio.run(compare(load_golden_set(args.golden_set), args.k, args.access_level))
+    print_comparison(comparison)
     if args.out:
-        Path(args.out).parent.mkdir(parents=True, exist_ok=True)
-        combined = {"vector_only": vector_only_report, "full": full_report, "summary": summary}
-        with open(args.out, "w", encoding="utf-8") as f:
-            json.dump(combined, f, ensure_ascii=False, indent=2)
-        print(f"Full comparison report saved to {args.out}")
+        args.out.parent.mkdir(parents=True, exist_ok=True)
+        with open(args.out, "w", encoding="utf-8") as file:
+            json.dump(comparison, file, ensure_ascii=False, indent=2)
+        print(f"Full comparison saved to {args.out}")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
