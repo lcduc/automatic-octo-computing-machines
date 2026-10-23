@@ -7,9 +7,13 @@ using the exact same tool registry the live chatbot registers (see
 ``ChatbotService.__init__`` in core/agent/chatbot.py) and a real LLM provider
 call per query (``Config.LLM.ACTIVE_LIGHT_MODEL()``).
 
+Exits 1 when any classification fell back to RAG without an LLM answer (a
+failed or unauthorised provider call), because those would otherwise score as
+correct "rag" predictions.
+
 Usage:
   python scripts/eval_intent_router.py
-  python scripts/eval_intent_router.py --golden-set data/eval/golden_intents.json --out data/logs/intent_eval_report.json
+  python scripts/eval_intent_router.py --golden-set scripts/demo_data/golden_intents.json --out logs/intent_eval_report.json
 """
 import argparse
 import asyncio
@@ -30,7 +34,7 @@ from models.intent import IntentType
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_GOLDEN_SET_PATH = "data/eval/golden_intents.json"
+DEFAULT_GOLDEN_SET_PATH = Path(__file__).parent / "demo_data" / "golden_intents.json"
 
 
 class IntentRoutingEvaluator:
@@ -46,12 +50,14 @@ class IntentRoutingEvaluator:
 
     async def evaluate_one(self, query: str, expected_intent: str) -> Dict[str, Any]:
         """Classify one query and score it against its expected intent."""
-        predicted = await self._router.classify(query)
+        predicted, usage = await self._router.classify(query)
         return {
             "query": query,
             "expected_intent": expected_intent,
             "predicted_intent": predicted.value,
             "correct": predicted.value == expected_intent,
+            # No usage: the router defaulted to RAG without an LLM answer.
+            "llm_answered": usage is not None,
         }
 
     async def evaluate_all(self, golden_set: List[Dict[str, str]]) -> Dict[str, Any]:
@@ -84,6 +90,7 @@ class IntentRoutingEvaluator:
         return {
             "total_queries": total,
             "accuracy": correct / total if total else 0.0,
+            "unanswered_by_llm": sum(1 for r in per_query if not r["llm_answered"]),
             "by_class": {
                 intent: {**stats, "accuracy": stats["correct"] / stats["total"]}
                 for intent, stats in sorted(by_class.items())
@@ -94,7 +101,7 @@ class IntentRoutingEvaluator:
         }
 
 
-def load_golden_set(path: str) -> List[Dict[str, str]]:
+def load_golden_set(path: Path) -> List[Dict[str, str]]:
     """Load the (query, expected_intent) golden set from a JSON file."""
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
@@ -104,6 +111,11 @@ def print_report(report: Dict[str, Any]) -> None:
     """Print a human-readable summary of the intent-routing evaluation."""
     print(f"\nIntent routing eval -- {report['total_queries']} queries")
     print(f"  Overall accuracy: {report['accuracy']:.1%}")
+    if report["unanswered_by_llm"]:
+        print(
+            f"  WARNING: {report['unanswered_by_llm']} classifications got no LLM answer and defaulted "
+            "to rag; check the provider key and the logs. The accuracy above is not trustworthy."
+        )
 
     print("\n  By expected class:")
     for intent, stats in report["by_class"].items():
@@ -136,14 +148,14 @@ async def _run(args: argparse.Namespace) -> Dict[str, Any]:
     return await evaluator.evaluate_all(golden_set)
 
 
-def main() -> None:
-    """Load the golden set, run real classification calls, print and optionally save the report."""
+def main() -> int:
+    """Load the golden set, run real classification calls, print and optionally save the report; returns the exit code."""
     if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
         sys.stdout.reconfigure(encoding="utf-8")
 
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--golden-set", default=DEFAULT_GOLDEN_SET_PATH, help="Path to the golden intent JSON file"
+        "--golden-set", type=Path, default=DEFAULT_GOLDEN_SET_PATH, help="Path to the golden intent JSON file"
     )
     parser.add_argument("--out", default=None, help="Optional path to save the full JSON report")
     args = parser.parse_args()
@@ -156,7 +168,8 @@ def main() -> None:
         with open(args.out, "w", encoding="utf-8") as f:
             json.dump(report, f, ensure_ascii=False, indent=2)
         print(f"Full report saved to {args.out}")
+    return 1 if report["unanswered_by_llm"] else 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
