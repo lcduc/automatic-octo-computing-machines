@@ -74,6 +74,16 @@ def test_small_talk_shortcuts_only_apply_to_short_messages(routes_file):
     assert router.classify("gia vang hom nay " + "x" * 80).intent == RouteIntent.OFF_TOPIC
 
 
+def test_a_message_typed_without_accents_matches_accented_examples_except_handoff_requests(tmp_path):
+    # AxisEmbeddings only knows the unaccented texts, so an accented example alone matches nothing.
+    path = tmp_path / "routes.json"
+    accented = {**ROUTES, "off_topic": ["giá vàng hôm nay"], "handoff_request": ["cho tôi gặp nhân viên"]}
+    path.write_text(json.dumps({"routes": accented}, ensure_ascii=False), encoding="utf-8")
+    router = _router(path)
+    assert router.classify("gia vang hom nay").intent == RouteIntent.OFF_TOPIC
+    assert router.classify("cho toi gap nhan vien").intent == RouteIntent.RAG_QUESTION
+
+
 def test_off_topic_lead_compares_the_two_example_sets(routes_file):
     router = _router(routes_file, blends={"khong ro": {"off_topic": 1.0, "rag_question": 0.5}})
     assert router.classify("khong ro").looks_off_topic
@@ -144,6 +154,18 @@ async def test_confident_routes_answer_without_any_llm_call(intent, outcome, tex
     assert (result.outcome, result.text) == (outcome, text)
     assert (result.handoff_reason.value if result.handoff_reason else None) == reason
     assert llm.stream_calls == [] and llm.complete_calls == []
+
+
+@pytest.mark.asyncio
+async def test_the_router_reads_chat_shorthands_written_out():
+    class RecordingRouter(StubRouter):
+        def classify(self, text):
+            self.seen = text
+            return super().classify(text)
+
+    router = RecordingRouter(RouteIntent.OFF_TOPIC)
+    await _ask(_pipeline(FakeLLM(), router), "giá vàng hôm nay bnh v")
+    assert router.seen == "giá vàng hôm nay bao nhiêu vậy"
 
 
 @pytest.mark.asyncio
