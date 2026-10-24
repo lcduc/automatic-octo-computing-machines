@@ -1,0 +1,2 @@
+# Load generator for scripts/loadtest (own venv: scripts/loadtest/venv); never installed into the app venv.
+locust==2.47.0
