@@ -166,7 +166,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     cases = json.loads(args.eval_set.read_text(encoding="utf-8"))
     for path in args.golden_set:
         cases += golden_to_router_cases(json.loads(path.read_text(encoding="utf-8")))
-    report = RouterEvaluator(EmbeddingRouter(get_embedding_service())).evaluate(cases)
+    embedding = get_embedding_service()
+    # As the app does before building the router: a fitted query adapter changes the route vectors too.
+    embedding.load_query_adapter(Config.RAG.QUERY_ADAPTER_PATH())
+    report = RouterEvaluator(EmbeddingRouter(embedding)).evaluate(cases)
     print_report(report)
     if args.out is not None:
         args.out.parent.mkdir(parents=True, exist_ok=True)
