@@ -30,6 +30,10 @@ logger = logging.getLogger(__name__)
 
 #: Shortest admin JWT secret or service token accepted in production (bytes of entropy ≈ chars/2 for hex).
 MIN_JWT_SECRET_LENGTH = 32
+#: ``LLM_PROVIDER`` value of the deterministic load-test provider (``core/agent/stub_client.py``).
+STUB_PROVIDER = "stub"
+#: Model name the stub reports for both the main and the light model.
+STUB_MODEL = "stub"
 
 
 class PathConfig:
@@ -62,13 +66,19 @@ class LLMConfig:
 
     @staticmethod
     def LLM_PROVIDER() -> str:
-        """Which chat-completion backend to use: ``openai``, ``anthropic`` or ``gemini``."""
+        """
+        Which chat-completion backend to use: ``openai``, ``anthropic`` or ``gemini``.
+
+        ``stub`` selects canned tokens for load tests; production refuses to start with it.
+        """
         return env_str("LLM_PROVIDER", "openai")
 
     @staticmethod
     def ACTIVE_MODEL() -> str:
         """Main answer-generation model for whichever provider is active."""
         provider = LLMConfig.LLM_PROVIDER().strip().lower()
+        if provider == STUB_PROVIDER:
+            return STUB_MODEL
         if provider == "anthropic":
             return LLMConfig.ANTHROPIC_MODEL()
         if provider == "gemini":
@@ -79,6 +89,8 @@ class LLMConfig:
     def ACTIVE_LIGHT_MODEL() -> str:
         """Cheap/fast model (query rewriting, intent classification) for the active provider."""
         provider = LLMConfig.LLM_PROVIDER().strip().lower()
+        if provider == STUB_PROVIDER:
+            return STUB_MODEL
         if provider == "anthropic":
             return LLMConfig.ANTHROPIC_LIGHT_MODEL()
         if provider == "gemini":
@@ -236,6 +248,21 @@ class LLMConfig:
     def TURN_TIMEOUT_SECONDS() -> int:
         """Hard deadline for one whole chat turn (retrieval + all LLM calls)."""
         return env_int("TURN_TIMEOUT_SECONDS", 90)
+
+    @staticmethod
+    def STUB_LLM_TTFT_MS() -> int:
+        """``LLM_PROVIDER=stub``: milliseconds before the first streamed token."""
+        return env_int("STUB_LLM_TTFT_MS", 400)
+
+    @staticmethod
+    def STUB_LLM_TOKEN_DELAY_MS() -> int:
+        """``LLM_PROVIDER=stub``: milliseconds between later tokens."""
+        return env_int("STUB_LLM_TOKEN_DELAY_MS", 25)
+
+    @staticmethod
+    def STUB_LLM_TOKENS() -> int:
+        """``LLM_PROVIDER=stub``: tokens per streamed answer."""
+        return env_int("STUB_LLM_TOKENS", 60)
 
 
 class FileConfig:
@@ -537,7 +564,9 @@ class Config:
             issues.append("POSTGRES_PASSWORD is empty")
         if "*" in SecurityConfig.CORS_ORIGINS():
             issues.append("CORS_ORIGINS must list explicit origins, not '*'")
-        if not LLMConfig.ACTIVE_API_KEY():
+        if LLMConfig.LLM_PROVIDER().strip().lower() == STUB_PROVIDER:
+            issues.append("LLM_PROVIDER=stub answers with canned load-test tokens; never use it for real visitors")
+        elif not LLMConfig.ACTIVE_API_KEY():
             issues.append(f"No API key set for LLM_PROVIDER={LLMConfig.LLM_PROVIDER()!r}")
         if ChatConfig.FALLBACK_MODE() not in {"deny", "handoff"}:
             issues.append("FALLBACK_MODE must be 'deny' or 'handoff'")
