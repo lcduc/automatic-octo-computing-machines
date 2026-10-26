@@ -25,7 +25,7 @@ anthropic==0.121.0
 google-genai==2.31.0
 
 # --- Retrieval / embeddings ---
-sentence-transformers==5.6.1
+sentence-transformers==5.7.0
 transformers==5.20.2
 accelerate==1.14.0
 huggingface_hub[hf_xet]==1.33.0
