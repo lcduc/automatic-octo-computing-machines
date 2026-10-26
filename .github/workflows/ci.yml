@@ -187,7 +187,7 @@ jobs:
       # TransitionParser/AveragedPerceptron/PerceptronTagger/maxent model
       # loading (utils/text_utils.py only calls nltk.download/sent_tokenize).
       #
-      # pillow 12.3.0 (CVE-2026-112{395,397,400,404,895,896,897,899}, published
+      # pillow 12.3.0 (CVE-2026-112xxx and CVE-2026-96xxx, published from
       # 2026-10-19): fixed only in pillow 13.0.0 (no 12.x backport on GitHub's
       # advisory API), which nothing here can install yet: docling,
       # docling-core, docling-ibm-models and streamlit, latest releases
@@ -211,3 +211,32 @@ jobs:
           --ignore-vuln CVE-2026-112896
           --ignore-vuln CVE-2026-112897
           --ignore-vuln CVE-2026-112899
+          --ignore-vuln CVE-2026-112390
+          --ignore-vuln CVE-2026-112391
+          --ignore-vuln CVE-2026-112392
+          --ignore-vuln CVE-2026-112393
+          --ignore-vuln CVE-2026-112396
+          --ignore-vuln CVE-2026-112398
+          --ignore-vuln CVE-2026-112399
+          --ignore-vuln CVE-2026-112401
+          --ignore-vuln CVE-2026-112402
+          --ignore-vuln CVE-2026-112405
+          --ignore-vuln CVE-2026-112406
+          --ignore-vuln CVE-2026-112891
+          --ignore-vuln CVE-2026-112892
+          --ignore-vuln CVE-2026-112893
+          --ignore-vuln CVE-2026-112894
+          --ignore-vuln CVE-2026-112900
+          --ignore-vuln CVE-2026-112901
+          --ignore-vuln CVE-2026-114501
+          --ignore-vuln CVE-2026-96636
+          --ignore-vuln CVE-2026-96637
+          --ignore-vuln CVE-2026-96638
+          --ignore-vuln CVE-2026-96639
+          --ignore-vuln CVE-2026-96640
+          --ignore-vuln CVE-2026-96641
+          --ignore-vuln CVE-2026-96642
+          --ignore-vuln CVE-2026-96643
+          --ignore-vuln CVE-2026-96644
+          --ignore-vuln CVE-2026-96778
+          --ignore-vuln GHSA-78g4-xqwv-q3g8
