@@ -16,6 +16,26 @@ UNACCENTED_VIETNAMESE_WORDS = frozenset({
 })
 #: Unaccented-Vietnamese words a message needs before it counts as Vietnamese typed without accents.
 UNACCENTED_MIN_HITS = 3
+#: Chat shorthands with one clear meaning -> their full form. Ambiguous ones are left out on purpose:
+#: "bn" (bao nhiêu / bạn), "đk" (được / điều kiện / đăng ký), "bh" (bây giờ / bảo hiểm), "hs" (hồ sơ /
+#: học sinh), "tt", "tl", "ts", "đt", "s", and single-letter pronouns ("a", "e", "c", "b", "t").
+CHAT_SHORTHANDS = {
+    "ko": "không", "k": "không", "hok": "không", "dc": "được", "đc": "được", "j": "gì", "v": "vậy", "z": "vậy",
+    "r": "rồi", "rùi": "rồi", "vs": "với", "ntn": "như thế nào", "bnh": "bao nhiêu", "mn": "mọi người",
+    "sđt": "số điện thoại", "sdt": "số điện thoại", "cty": "công ty", "vn": "Việt Nam", "bít": "biết", "bik": "biết",
+    "ng": "người", "mk": "mình", "mik": "mình", "chx": "chưa", "trc": "trước", "nhìu": "nhiều", "cg": "cũng",
+    "thui": "thôi", "lm": "làm", "wá": "quá", "qá": "quá",
+}
+#: Shorthands that mean something else right after a number ("500 k" is 500 nghìn).
+SHORTHANDS_KEPT_AFTER_NUMBERS = frozenset({"k"})
+#: A whole word, and not part of a dotted or hyphenated token: "v.v." (etc.) and "J-1" stay as they are,
+#: while a shorthand ending a sentence ("... ko.") is still written out.
+_SHORTHAND_PATTERN = re.compile(
+    r"(?<!\w)(?<!\w[.\-])("
+    + "|".join(re.escape(short) for short in sorted(CHAT_SHORTHANDS, key=len, reverse=True))
+    + r")(?!\w)(?![.\-]\w)",
+    re.IGNORECASE,
+)
 
 
 class TextUtils:
@@ -312,6 +332,27 @@ class TextUtils:
             return False
         tokens = re.findall(r"[a-z]+", text.lower())
         return sum(token in UNACCENTED_VIETNAMESE_WORDS for token in tokens) >= UNACCENTED_MIN_HITS
+
+    @staticmethod
+    def expand_chat_abbreviations(text: str) -> str:
+        """
+        Chat shorthands written out ("có dc ko" -> "có được không"); see :data:`CHAT_SHORTHANDS`.
+
+        A message typed without accents gets the full forms without accents ("co dc ko" -> "co duoc khong"),
+        so it still reads as unaccented Vietnamese to :meth:`looks_like_unaccented_vietnamese`.
+        """
+        if not text:
+            return ""
+        unaccented = TextUtils.strip_vietnamese_accents(text) == text
+
+        def full_form(match: re.Match) -> str:
+            short = match.group(1).lower()
+            if short in SHORTHANDS_KEPT_AFTER_NUMBERS and text[: match.start()].rstrip()[-1:].isdigit():
+                return match.group(1)
+            form = CHAT_SHORTHANDS[short]
+            return TextUtils.strip_vietnamese_accents(form) if unaccented else form
+
+        return _SHORTHAND_PATTERN.sub(full_form, text)
 
     @staticmethod
     def tokenize_for_search(text: str) -> List[str]:

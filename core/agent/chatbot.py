@@ -58,6 +58,7 @@ from models.turn_trace import (
     ROUTE_TOOL,
     ROUTE_TOPIC,
 )
+from utils.text_utils import TextUtils
 from .answer_marker import NoAnswerFilter
 from .base_llm_provider import BaseLLMProvider
 from .confidence import ConfidenceScorer
@@ -209,10 +210,13 @@ class ChatbotService:
             yield self._human_request(policy)
             return
 
+        # Routing and search read chat shorthands written out ("có dc ko" -> "có được không"); the
+        # answer prompt keeps the visitor's own words.
+        search_text = TextUtils.expand_chat_abbreviations(request.query)
         decision: Optional[RouteDecision] = None
         if self._router is not None:
             with trace.step("router"):
-                decision = await asyncio.to_thread(self._router.classify, request.query)
+                decision = await asyncio.to_thread(self._router.classify, search_text)
             early = self._route_reply(decision, request, history)
             if early is not None:
                 yield early
@@ -247,10 +251,10 @@ class ChatbotService:
 
         trace.route = ROUTE_RAG
         with trace.step("rewrite"):
-            search_query, rewrite_usage = await self._rewriter.rewrite(request.query, history, light_model)
+            search_query, rewrite_usage = await self._rewriter.rewrite(search_text, history, light_model)
         if rewrite_usage is not None:
             yield TurnUsage(PURPOSE_REWRITE, rewrite_usage)
-        rewritten = search_query if search_query != request.query else None
+        rewritten = search_query if search_query != search_text else None
 
         with trace.step("retrieval"):
             results = await self._retrieve(search_query, request.sources, policy, deadline, request.context, trace)
@@ -259,7 +263,7 @@ class ChatbotService:
                 # A bad rewrite (e.g. the light model replied instead of rewriting) must not
                 # hide knowledge the user's own words would find.
                 logger.info("Rewritten query matched nothing; retrying retrieval with the original query")
-                results = await self._retrieve(request.query, request.sources, policy, deadline, request.context, trace)
+                results = await self._retrieve(search_text, request.sources, policy, deadline, request.context, trace)
                 matched = [item for item in results if item.matched]
                 if matched:
                     rewritten = None
