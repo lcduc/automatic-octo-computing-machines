@@ -130,6 +130,7 @@ frontends/admin/          admin web shared by every deployment (Vite + React)
 app.py                  internal Streamlit demo of the chat API
 docs/DEPLOYMENT.md      VPS deployment, embedding, backups, operations
 docs/API.md             API reference (public chat + admin); docs/openapi.json is its schema
+docs/PERFORMANCE.md     load test of the chat pipeline (scripts/loadtest/): latency, ceiling, VRAM
 ```
 
 ## Development

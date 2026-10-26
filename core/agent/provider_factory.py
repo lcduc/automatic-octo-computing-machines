@@ -10,11 +10,12 @@ This is the one place in the codebase that knows about every concrete
 import logging
 
 # Local imports
-from config.settings import Config
+from config.settings import STUB_PROVIDER, Config
 from .anthropic_client import AnthropicClientProvider
 from .base_llm_provider import BaseLLMProvider
 from .gemini_client import GeminiClientProvider
 from .openai_client import OpenAIClientProvider
+from .stub_client import StubClientProvider
 
 logger = logging.getLogger(__name__)
 
@@ -29,10 +30,14 @@ class LLMProviderFactory:
 
         Returns:
             An :class:`AnthropicClientProvider`, :class:`GeminiClientProvider`,
-            or :class:`OpenAIClientProvider`, depending on ``LLM_PROVIDER``.
+            or :class:`OpenAIClientProvider`, depending on ``LLM_PROVIDER``
+            (:class:`StubClientProvider` for ``stub``, load tests only).
             Unrecognized values fall back to OpenAI with a logged warning.
         """
         provider = Config.LLM.LLM_PROVIDER().strip().lower()
+        if provider == STUB_PROVIDER:
+            logger.warning("LLM_PROVIDER=stub: every answer is canned load-test tokens")
+            return StubClientProvider()
         if provider == "anthropic":
             return AnthropicClientProvider()
         if provider == "gemini":
