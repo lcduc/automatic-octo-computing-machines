@@ -17,6 +17,10 @@ updates:
         update-types:
           - patch
     ignore:
+      # Major bumps (openai 1->3, transformers 4->5, ...) are API-breaking and
+      # get closed unmerged; do them by hand when wanted.
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
       # These four are version-locked to each other and to a hardware-specific
       # wheel index; a lone Dependabot bump would break the pairing the
       # requirements-torch.txt/Dockerfile comments warn about. Upgrade them together,
