@@ -1,5 +1,9 @@
 """Unit tests for the in-process embedding service (a fake model, no weights)."""
 
+import sys
+import threading
+import time
+
 import numpy as np
 import pytest
 
@@ -69,3 +73,62 @@ def test_a_model_that_fails_to_load_raises_instead_of_falling_back_to_another(mo
     with pytest.raises(RuntimeError, match="multilingual-e5-small"):
         EmbeddingService().get_embedder()
     assert attempted == ["intfloat/multilingual-e5-small"]
+
+
+#: Long enough that every thread reaches the model load before the first one finishes it.
+SLOW_LOAD_SECONDS = 0.2
+#: Threads racing on the same service.
+RACING_THREADS = 8
+
+
+def _run_concurrently(target, *, threads: int = RACING_THREADS) -> list:
+    """Start ``threads`` threads on ``target(index)`` at the same moment; return what they raised."""
+    barrier = threading.Barrier(threads)
+    errors = []
+
+    def run(index):
+        barrier.wait()
+        try:
+            target(index)
+        except Exception as error:  # collected for the assertion, not swallowed
+            errors.append(error)
+
+    workers = [threading.Thread(target=run, args=(index,)) for index in range(threads)]
+    for worker in workers:
+        worker.start()
+    for worker in workers:
+        worker.join()
+    return errors
+
+
+def test_concurrent_first_queries_load_the_model_once(fake_model, monkeypatch):
+    class SlowModel(RecordingModel):
+        def __init__(self, *args, **kwargs):
+            time.sleep(SLOW_LOAD_SECONDS)
+            super().__init__(*args, **kwargs)
+
+    monkeypatch.setattr(embeddings, "SentenceTransformer", SlowModel)
+    monkeypatch.setenv("EMBEDDING_MODEL", "intfloat/multilingual-e5-small")
+    service = EmbeddingService()
+
+    errors = _run_concurrently(lambda _index: service.embed_query("giờ làm việc"))
+
+    assert errors == []
+    assert len(fake_model.loaded) == 1
+
+
+def test_concurrent_queries_keep_the_cache_bounded_without_errors(fake_model, monkeypatch):
+    monkeypatch.setattr(embeddings, "QUERY_CACHE_SIZE", 50)
+    monkeypatch.setenv("EMBEDDING_MODEL", "intfloat/multilingual-e5-small")
+    service = EmbeddingService()
+    switch_interval = sys.getswitchinterval()
+    sys.setswitchinterval(1e-6)  # switch threads often, so racing evictions interleave
+    try:
+        errors = _run_concurrently(
+            lambda index: [service.embed_query(f"câu hỏi {index}-{n}") for n in range(300)]
+        )
+    finally:
+        sys.setswitchinterval(switch_interval)
+
+    assert errors == []
+    assert service.query_cache_info().currsize <= 50
