@@ -25,8 +25,9 @@ def compute_query_adapter(
     assert query_embeddings.shape == positive_embeddings.shape
 
     n, d = query_embeddings.shape
-    q = query_embeddings
-    p = positive_embeddings
+    # The live embedder runs in fp16 on GPU; numpy's solver rejects float16, and QᵀQ needs the precision anyway.
+    q = query_embeddings.astype(np.float64)
+    p = positive_embeddings.astype(np.float64)
 
     # Solve (Q^T Q + λI) A = Q^T P  => A = (Q^T Q + λI)^{-1} Q^T P
     qtq = q.T @ q
@@ -34,7 +35,7 @@ def compute_query_adapter(
     lhs = qtq + reg
     rhs = q.T @ p
     A = np.linalg.solve(lhs, rhs)
-    return A
+    return A.astype(np.float32)
 
 
 def save_query_adapter(adapter: np.ndarray, path: str) -> None:
