@@ -1,0 +1,272 @@
+{
+  "dropped": {
+    "near_duplicate": 6,
+    "golden_overlap": 45,
+    "round_trip": 46,
+    "over_cap": 9
+  },
+  "golden_overlaps": [
+    {
+      "synthetic": "Xin trung tâm cho biết người lao động Việt Nam có những con đường hợp pháp nào để sang Đức làm việc?",
+      "golden": "Em mới tốt nghiệp cấp 3, muốn sang Đức làm việc thì có những con đường nào?",
+      "cosine": 0.935
+    },
+    {
+      "synthetic": "Hoc nghe o Duc co nhung nganh nao de nguoi Viet dang ky vay?",
+      "golden": "ngoai dieu duong ra nganh nao pho bien cho nguoi Viet hoc nghe o Duc vay",
+      "cosine": 0.94
+    },
+    {
+      "synthetic": "Em có bằng cao đẳng rồi, tiếng Đức cần đạt trình độ nào thì mới xin được việc ở Đức ạ?",
+      "golden": "Đi Đức làm việc cần tiếng Đức trình độ nào?",
+      "cosine": 0.94
+    },
+    {
+      "synthetic": "Để nhập cảnh và hành nghề điều dưỡng chính thức tại Đức, người lao động cần đạt trình độ tiếng Đức nào ở từng giai đoạn?",
+      "golden": "Đi Đức làm việc cần tiếng Đức trình độ nào?",
+      "cosine": 0.938
+    },
+    {
+      "synthetic": "Mình đang tìm việc chăm sóc người cao tuổi, ngành này ở Đức có nhiều cơ hội không nhỉ?",
+      "golden": "Mình 35 tuổi và là nữ, đi học nghề điều dưỡng bên Đức có còn cơ hội không?",
+      "cosine": 0.941
+    },
+    {
+      "synthetic": "Mình 40 tuổi, chưa có bằng cấp thì có đủ điều kiện tham gia chương trình tìm việc ở Đức không vậy?",
+      "golden": "Mình 31 tuổi, có bằng trung cấp nấu ăn, dùng Thẻ cơ hội sang Đức tìm việc có hợp không?",
+      "cosine": 0.932
+    },
+    {
+      "synthetic": "Người vừa tốt nghiệp THPT nhưng chưa học nghề thì nên chọn hướng nào để sang Đức làm việc?",
+      "golden": "Em mới tốt nghiệp cấp 3, muốn sang Đức làm việc thì có những con đường nào?",
+      "cosine": 0.947
+    },
+    {
+      "synthetic": "Em có bằng điều dưỡng rồi, muốn sang Đức đi làm thì nên theo chương trình nào vậy ạ?",
+      "golden": "Mình 35 tuổi và là nữ, đi học nghề điều dưỡng bên Đức có còn cơ hội không?",
+      "cosine": 0.932
+    },
+    {
+      "synthetic": "Tôi ngoài 35 tuổi, chưa có bằng nghề thì cơ hội sang Đức có hạn chế và nên làm gì tiếp?",
+      "golden": "Mình 35 tuổi và là nữ, đi học nghề điều dưỡng bên Đức có còn cơ hội không?",
+      "cosine": 0.948
+    },
+    {
+      "synthetic": "Em ở xa, đến hỏi tư vấn có mất phí gì không ạ?",
+      "golden": "Tư vấn ở trung tâm có mất phí không?",
+      "cosine": 0.933
+    },
+    {
+      "synthetic": "Mình có thể ghé sáng thứ Bảy không, và trung tâm tiếp khách đến mấy giờ vậy?",
+      "golden": "Trung tâm làm việc đến mấy giờ chiều và sáng thứ Bảy có mở cửa không ạ?",
+      "cosine": 0.933
+    },
+    {
+      "synthetic": "Em ở Cẩm Xuyên thì tháng nào cũng có buổi tư vấn vào thứ Ba tuần thứ hai phải không ạ?",
+      "golden": "Mình ở Cẩm Xuyên, muốn đến gặp tư vấn trực tiếp thì lịch tuần nào trong tháng vậy bạn?",
+      "cosine": 0.958
+    },
+    {
+      "synthetic": "Người 32 tuổi có thể đăng ký học nghề tại Đức hay không?",
+      "golden": "Tôi 32 tuổi còn đi học nghề ở Đức được không?",
+      "cosine": 0.968
+    },
+    {
+      "synthetic": "Em 35 tuổi, muốn học nghề điều dưỡng ở Đức thì tuổi của em có phải là trở ngại lớn không ạ?",
+      "golden": "Mình 35 tuổi và là nữ, đi học nghề điều dưỡng bên Đức có còn cơ hội không?",
+      "cosine": 0.956
+    },
+    {
+      "synthetic": "Thông thường cần khoảng bao lâu để đặt mục tiêu đạt trình độ B1 tiếng Đức?",
+      "golden": "Học tiếng Đức từ đầu đến B1 mất bao lâu?",
+      "cosine": 0.953
+    },
+    {
+      "synthetic": "Em đang tính tự học tiếng Đức, học đến trình độ B1 thì thường tốn khoảng bao nhiêu tiền ạ?",
+      "golden": "Học tiếng Đức từ đầu đến B1 mất bao lâu?",
+      "cosine": 0.933
+    },
+    {
+      "synthetic": "Em đang lo tiền sinh hoạt, học nghề kép ở Đức có được doanh nghiệp trả lương hằng tháng không ạ?",
+      "golden": "Tiền học nghề em nhận hằng tháng ở Đức có phải tính theo lương tối thiểu theo giờ không?",
+      "cosine": 0.933
+    },
+    {
+      "synthetic": "Khi làm việc tại Đức, người lao động bắt buộc phải tham gia những loại bảo hiểm nào ạ?",
+      "golden": "Ở Đức phải đóng những loại bảo hiểm nào?",
+      "cosine": 0.943
+    },
+    {
+      "synthetic": "Em đi làm ở Đức thì có phải tự đóng bảo hiểm y tế với bảo hiểm hưu trí không ạ?",
+      "golden": "Đóng bảo hiểm hưu trí mấy năm thì xin được ở lại Đức lâu dài, có cần tiếng Đức không?",
+      "cosine": 0.932
+    },
+    {
+      "synthetic": "Em độc thân thì thường được xếp vào nhóm thuế nào vậy ạ?",
+      "golden": "Mình độc thân thì thuộc nhóm thuế nào, có phải đi khai thuế cuối năm không?",
+      "cosine": 0.95
+    },
+    {
+      "synthetic": "Khoản tiền học nghề kép được tính theo từng năm đào tạo hay giữ nguyên trong suốt khóa học?",
+      "golden": "Học nghề kép có phải đóng tiền không?",
+      "cosine": 0.932
+    },
+    {
+      "synthetic": "Em định sang Đức làm công nhân, mức lương tối thiểu theo giờ có được điều chỉnh thường xuyên không ạ?",
+      "golden": "Tiền học nghề em nhận hằng tháng ở Đức có phải tính theo lương tối thiểu theo giờ không?",
+      "cosine": 0.936
+    },
+    {
+      "synthetic": "Nếu cháu sang Đức học nghề thì tiền được nhận có tính theo lương tối thiểu theo giờ không ạ?",
+      "golden": "Tiền học nghề em nhận hằng tháng ở Đức có phải tính theo lương tối thiểu theo giờ không?",
+      "cosine": 0.963
+    },
+    {
+      "synthetic": "Em đang tìm hiểu chuyện sang Đức làm việc, tài liệu này có đề cập đến quyền lợi của người lao động không ạ?",
+      "golden": "Người lao động ở Đức có những quyền lợi gì?",
+      "cosine": 0.931
+    },
+    {
+      "synthetic": "Người lao động tại Đức được tham gia những loại bảo hiểm nào theo quy định?",
+      "golden": "Ở Đức phải đóng những loại bảo hiểm nào?",
+      "cosine": 0.947
+    },
+    {
+      "synthetic": "Thời gian thử việc tại Đức thường có thể kéo dài tối đa bao nhiêu tháng?",
+      "golden": "Thời gian thử việc ở Đức kéo dài bao lâu?",
+      "cosine": 0.986
+    },
+    {
+      "synthetic": "Em đi làm ở Đức mà bị ốm thì cần báo cho chủ lao động ngay lúc nào ạ?",
+      "golden": "Em đang bị ốm không đi làm được thì phải báo với công ty bên Đức như thế nào?",
+      "cosine": 0.96
+    },
+    {
+      "synthetic": "Mình xem phần này thì có biết cần đạt trình độ tiếng Đức nào để đi làm ở Đức không ạ?",
+      "golden": "Đi Đức làm việc cần tiếng Đức trình độ nào?",
+      "cosine": 0.945
+    },
+    {
+      "synthetic": "Để hành nghề điều dưỡng tại Đức, người lao động thường cần đạt trình độ tiếng Đức nào?",
+      "golden": "Đi Đức làm việc cần tiếng Đức trình độ nào?",
+      "cosine": 0.938
+    },
+    {
+      "synthetic": "Những loại chứng chỉ tiếng Đức nào thường được phía Đức chấp nhận khi người lao động sang làm việc?",
+      "golden": "Chứng chỉ tiếng Đức nào được chấp nhận?",
+      "cosine": 0.947
+    },
+    {
+      "synthetic": "Em có chứng chỉ ÖSD nhưng không rõ nơi cấp có được công nhận không, Đại sứ quán có thể từ chối không ạ?",
+      "golden": "Em có chứng chỉ B1 nhưng không rõ nơi cấp có chính thức không, Đại sứ quán có nhận không ạ?",
+      "cosine": 0.941
+    },
+    {
+      "synthetic": "Nếu bắt đầu học tiếng Đức từ con số 0 và học toàn thời gian, tôi thường cần bao lâu để đạt trình độ B1?",
+      "golden": "Học tiếng Đức từ đầu đến B1 mất bao lâu?",
+      "cosine": 0.957
+    },
+    {
+      "synthetic": "Em đang làm chăm sóc người cao tuổi, sang Đức thì nghề của em có nhiều cơ hội tìm việc hơn không ạ?",
+      "golden": "Mình 35 tuổi và là nữ, đi học nghề điều dưỡng bên Đức có còn cơ hội không?",
+      "cosine": 0.938
+    },
+    {
+      "synthetic": "Mình có loại thẻ dành cho người tốt nghiệp đại học thì có thể được ở lại lâu dài sớm hơn diện thông thường không, cần biết tiếng Đức không vậy?",
+      "golden": "Mình tốt nghiệp đại học IT, muốn ở lại Đức lâu dài thì có loại thẻ nào nhanh hơn không?",
+      "cosine": 0.954
+    },
+    {
+      "synthetic": "Mình đi làm ở Đức thì có cần đóng bảo hiểm hưu trí liên tục mới xin được giấy phép định cư không vậy?",
+      "golden": "Đóng bảo hiểm hưu trí mấy năm thì xin được ở lại Đức lâu dài, có cần tiếng Đức không?",
+      "cosine": 0.945
+    },
+    {
+      "synthetic": "Bằng cấp của em chưa được công nhận thì cơ hội xin việc ở Đức có bị ảnh hưởng nhiều không ạ?",
+      "golden": "Em tốt nghiệp cao đẳng kỹ thuật ở Việt Nam, sang Đức muốn đi làm đúng ngành thì bằng này phải được công nhận hả anh?",
+      "cosine": 0.93
+    },
+    {
+      "synthetic": "Thông thường, người lao động cần làm việc và đóng bảo hiểm hưu trí trong bao lâu trước khi có thể ở lại Đức lâu dài?",
+      "golden": "Đóng bảo hiểm hưu trí mấy năm thì xin được ở lại Đức lâu dài, có cần tiếng Đức không?",
+      "cosine": 0.956
+    },
+    {
+      "synthetic": "Người muốn ở lại Đức lâu dài cần đáp ứng yêu cầu tiếng Đức tối thiểu hay không?",
+      "golden": "Đóng bảo hiểm hưu trí mấy năm thì xin được ở lại Đức lâu dài, có cần tiếng Đức không?",
+      "cosine": 0.933
+    },
+    {
+      "synthetic": "Em học nghề kép xong thì có được xin ở lại Đức làm đúng nghề mình đã học không ạ?",
+      "golden": "Học nghề xong có được ở lại Đức làm việc không?",
+      "cosine": 0.944
+    },
+    {
+      "synthetic": "Xin cho biết tiền thuê một phòng ở ghép tại Đức thường được ước tính trong khoảng bao nhiêu mỗi tháng?",
+      "golden": "Tiền thuê phòng ở Đức khoảng bao nhiêu một tháng?",
+      "cosine": 0.95
+    },
+    {
+      "synthetic": "Dien thoai va internet moi thang het khoang bn tien vay?",
+      "golden": "tien dien thoai internet o duc moi thang khoang bao nhieu",
+      "cosine": 0.937
+    },
+    {
+      "synthetic": "Để mở tài khoản ngân hàng tại Đức, tôi cần chuẩn bị và xuất trình những giấy tờ nào?",
+      "golden": "Mở tài khoản ngân hàng ở Đức cần giấy tờ gì?",
+      "cosine": 0.962
+    },
+    {
+      "synthetic": "Nếu chưa có giấy đăng ký cư trú thì việc mở tài khoản ngân hàng tại Đức có khó khăn không?",
+      "golden": "Mở tài khoản ngân hàng ở Đức cần giấy tờ gì?",
+      "cosine": 0.938
+    },
+    {
+      "synthetic": "Em chưa có bằng đại học, vậy hồ sơ đi Đức có bắt buộc phải nộp bằng nghề không ạ?",
+      "golden": "Tôi 32 tuổi còn đi học nghề ở Đức được không?",
+      "cosine": 0.937
+    },
+    {
+      "synthetic": "Đối với chương trình học nghề kép, thông thường cần bao lâu từ khi bắt đầu học tiếng Đức đến khi có thể bay sang Đức?",
+      "golden": "Từ lúc bắt đầu học tiếng tới lúc bay sang Đức theo diện học nghề thường mất khoảng bao lâu hả chị?",
+      "cosine": 0.944
+    }
+  ],
+  "raw": 396,
+  "max_cosine_to_golden": {
+    "mean": 0.905,
+    "p95": 0.944,
+    "max": 0.986
+  },
+  "round_trip_failures_by_style": {
+    "unaccented": 35,
+    "formal": 3,
+    "colloquial": 8
+  },
+  "kept": 290,
+  "kept_by_style": {
+    "formal": 111,
+    "colloquial": 93,
+    "unaccented": 86
+  },
+  "train": 226,
+  "val": 64,
+  "chunks_with_questions": 65,
+  "chunks_without_questions": [
+    "8cb60b90-ef98-4d2d-94cd-e6ac9dae5399"
+  ],
+  "kept_per_chunk": {
+    "2": 1,
+    "3": 7,
+    "4": 18,
+    "5": 39
+  },
+  "settings": {
+    "near_duplicate_cosine": 0.95,
+    "golden_overlap_cosine": 0.93,
+    "round_trip_top_n": 3,
+    "max_kept_per_chunk": 5,
+    "reranker": "BAAI/bge-reranker-v2-m3",
+    "embedding_model": "intfloat/multilingual-e5-small"
+  }
+}

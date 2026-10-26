@@ -47,7 +47,7 @@ Implication: concurrency is trivial; Postgres handles all counters and pub/sub. 
 
 - [ ] CAP-01 Measure real $T_{\text{in}}$/$T_{\text{out}}$ per call type from traces after first week; update cost estimate
 - [ ] CAP-02 Verify provider TPM/RPM tier covers 5× $\lambda_{\text{LLM}}$
-- [ ] CAP-03 Load test (Locust/k6) at 3–5× peak on staging; record p95 latency and ceiling
+- [~] CAP-03 Load test (Locust/k6) at 3–5× peak on staging; record p95 latency and ceiling — Locust + stub LLM on a dev box (RTX 3060), not staging: knee ≈ 10 concurrent turns / 4.7 turns/s, bottleneck = GPU reranking; see [PERFORMANCE.md](PERFORMANCE.md)
 
 ### 0.2 Resource budgets (estimates — verify with `docker stats` / `nvidia-smi`)
 
@@ -56,7 +56,7 @@ VRAM (12 GB): OCR ~2 GB · embed ~2.3 GB · rerank ~1.1 GB (fp16) + activations.
 
 - [x] RES-01 All GPU models loaded once, in model-server only, kept resident. No other service loads models — model-server loads them once at start-up; api and worker hold no models
 - [x] RES-02 model-server priority queue: chat path (query embed, rerank) before ingestion (bulk embed, OCR). OCR concurrency = 1 — two-lane scheduler in the model-server; ingestion lane limited to 1
-- [ ] RES-03 Measure peak VRAM + RAM under chat load while OCR job runs; document numbers here
+- [~] RES-03 Measure peak VRAM + RAM under chat load while OCR job runs; document numbers here — chat load only, no OCR job yet: API ≈ 3.4 GB VRAM flat to 50 users (1.3 GB weights, ~1.6 GB allocator cache from fp32 reranker loading), RSS 1.74 GB; see [PERFORMANCE.md](PERFORMANCE.md#memory-res-03)
 - [x] RES-04 Do NOT add Redis, ClickHouse, Elasticsearch, Langfuse v3, second vector DB, or Kubernetes
 - [~] RES-05 GPU-less client VM: only model-server changes (CPU mode with smaller models, or external embedding API). API/worker/BFF unchanged — model-server falls back to CPU without CUDA (same models); no smaller-model preset, untested on a GPU-less VM
 

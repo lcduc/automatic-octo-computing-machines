@@ -22,6 +22,7 @@ import numpy as np
 
 # Local imports
 from config.settings import Config
+from utils.text_utils import TextUtils
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +52,18 @@ DEFAULT_THRESHOLDS: Dict[RouteIntent, float] = {
 }
 #: Routes that only act on short messages.
 SHORT_ONLY = frozenset({RouteIntent.GREETING, RouteIntent.THANKS, RouteIntent.AMBIGUOUS})
+#: Routes whose examples are also matched with their accents stripped, for messages typed without them
+#: (``scripts/eval_robustness``: off topic caught 0 -> 19 of 40 then). Handoff requests are left out: the
+#: guard's accent-free patterns already catch them, and their stripped examples pulled long unaccented
+#: questions into a handoff.
+ACCENT_FREE_ROUTES = frozenset(route for route in RouteIntent if route != RouteIntent.HANDOFF_REQUEST)
+
+
+def with_accent_free_forms(route: RouteIntent, examples: List[str]) -> List[str]:
+    """``examples``, followed by their accent-free forms when ``route`` is in :data:`ACCENT_FREE_ROUTES`."""
+    if route not in ACCENT_FREE_ROUTES:
+        return examples
+    return list(dict.fromkeys(examples + [TextUtils.strip_vietnamese_accents(example) for example in examples]))
 
 
 @dataclass(frozen=True)
@@ -164,7 +177,7 @@ class EmbeddingRouter:
             names, owners, vectors = [], [], []
             for index, (name, examples) in enumerate(routes.items()):
                 names.append(name)
-                for example in examples:
+                for example in with_accent_free_forms(RouteIntent(name), examples):
                     owners.append(index)
                     vectors.append(np.asarray(self._embedding.embed_query(example), dtype=np.float32).reshape(-1))
             self._names, self._owners = names, np.asarray(owners)
