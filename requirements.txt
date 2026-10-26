@@ -22,7 +22,7 @@ cryptography==50.0.0
 # --- LLM providers --- (select via LLM_PROVIDER=openai|anthropic|gemini)
 openai==1.57.0
 anthropic==0.121.0
-google-genai==2.31.0
+google-genai==2.33.0
 
 # --- Retrieval / embeddings ---
 sentence-transformers==5.6.1
