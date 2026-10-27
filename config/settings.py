@@ -113,6 +113,15 @@ class LLMConfig:
         return os.getenv("OPENAI_API_KEY") or None
 
     @staticmethod
+    def OPENAI_BASE_URL() -> Optional[str]:
+        """
+        Endpoint of an OpenAI-compatible server (vLLM, Ollama, ...); ``None`` means api.openai.com.
+
+        With it set the key may stay empty, since local servers usually ignore it.
+        """
+        return os.getenv("OPENAI_BASE_URL") or None
+
+    @staticmethod
     def OPENAI_MODEL() -> str:
         """Chat completion model used for answer generation."""
         return env_str("OPENAI_MODEL", "gpt-5-mini")
@@ -566,7 +575,9 @@ class Config:
             issues.append("CORS_ORIGINS must list explicit origins, not '*'")
         if LLMConfig.LLM_PROVIDER().strip().lower() == STUB_PROVIDER:
             issues.append("LLM_PROVIDER=stub answers with canned load-test tokens; never use it for real visitors")
-        elif not LLMConfig.ACTIVE_API_KEY():
+        elif not LLMConfig.ACTIVE_API_KEY() and not (
+            LLMConfig.LLM_PROVIDER().strip().lower() == "openai" and LLMConfig.OPENAI_BASE_URL()
+        ):
             issues.append(f"No API key set for LLM_PROVIDER={LLMConfig.LLM_PROVIDER()!r}")
         if ChatConfig.FALLBACK_MODE() not in {"deny", "handoff"}:
             issues.append("FALLBACK_MODE must be 'deny' or 'handoff'")

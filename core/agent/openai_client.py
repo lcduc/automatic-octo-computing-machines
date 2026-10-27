@@ -26,6 +26,9 @@ logger = logging.getLogger(__name__)
 # Model families that still take ``max_tokens`` + ``temperature``; everything else is newer.
 LEGACY_PARAMETER_MODEL_PREFIXES = ("gpt-3.5", "gpt-4")
 
+#: Placeholder key sent to an OpenAI-compatible server that needs none.
+LOCAL_SERVER_API_KEY = "not-needed"
+
 
 class OpenAIClientProvider(BaseLLMProvider):
     """
@@ -45,20 +48,32 @@ class OpenAIClientProvider(BaseLLMProvider):
     #: Free moderation model used by the input guard.
     MODERATION_MODEL = "omni-moderation-latest"
 
-    def __init__(self, api_key: Optional[str] = None):
+    def __init__(self, api_key: Optional[str] = None, base_url: Optional[str] = None):
         """
         Args:
             api_key: Override for the configured key, mainly for tests.
+            base_url: Override for ``OPENAI_BASE_URL``, mainly for tests.
         """
         self._api_key = api_key if api_key is not None else Config.LLM.OPENAI_API_KEY()
+        self._base_url = base_url if base_url is not None else Config.LLM.OPENAI_BASE_URL()
         self._sync_client: Optional[OpenAI] = None
         self._async_client: Optional[AsyncOpenAI] = None
         self._lock = threading.Lock()
 
     @property
     def is_configured(self) -> bool:
-        """True when an API key is present."""
-        return bool(self._api_key)
+        """True when an API key or a custom endpoint is present."""
+        return bool(self._api_key or self._base_url)
+
+    def _client_kwargs(self) -> Dict[str, Any]:
+        """Constructor arguments shared by the sync and async clients."""
+        return {
+            # The SDK refuses an empty key; local servers accept any value.
+            "api_key": self._api_key or LOCAL_SERVER_API_KEY,
+            "base_url": self._base_url,
+            "timeout": Config.LLM.OPENAI_TIMEOUT(),
+            "max_retries": self.MAX_RETRIES,
+        }
 
     @property
     def sync_client(self) -> OpenAI:
@@ -66,11 +81,7 @@ class OpenAIClientProvider(BaseLLMProvider):
         if self._sync_client is None:
             with self._lock:
                 if self._sync_client is None:
-                    self._sync_client = OpenAI(
-                        api_key=self._api_key,
-                        timeout=Config.LLM.OPENAI_TIMEOUT(),
-                        max_retries=self.MAX_RETRIES,
-                    )
+                    self._sync_client = OpenAI(**self._client_kwargs())
         return self._sync_client
 
     @property
@@ -79,11 +90,7 @@ class OpenAIClientProvider(BaseLLMProvider):
         if self._async_client is None:
             with self._lock:
                 if self._async_client is None:
-                    self._async_client = AsyncOpenAI(
-                        api_key=self._api_key,
-                        timeout=Config.LLM.OPENAI_TIMEOUT(),
-                        max_retries=self.MAX_RETRIES,
-                    )
+                    self._async_client = AsyncOpenAI(**self._client_kwargs())
         return self._async_client
 
     def check_availability(self) -> bool:
