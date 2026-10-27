@@ -10,7 +10,7 @@ aiofiles==24.1.0
 
 # --- Database (PostgreSQL + pgvector) ---
 sqlalchemy[asyncio]==2.0.54
-asyncpg==0.31.0
+asyncpg==0.32.0
 alembic==1.20.1
 pgvector==0.5.1
 
