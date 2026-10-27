@@ -227,7 +227,7 @@ class AppContainer:
         """
         if isinstance(self.llm, OpenAIClientProvider):
             return self.llm
-        if Config.LLM.OPENAI_API_KEY():
+        if Config.LLM.OPENAI_API_KEY() or Config.LLM.OPENAI_BASE_URL():
             return OpenAIClientProvider()
         return None
 
