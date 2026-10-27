@@ -11,13 +11,13 @@ aiofiles==24.1.0
 # --- Database (PostgreSQL + pgvector) ---
 sqlalchemy[asyncio]==2.0.54
 asyncpg==0.31.0
-alembic==1.20.0
-pgvector==0.5.0
+alembic==1.20.1
+pgvector==0.5.1
 
 # --- Auth ---
-pyjwt==2.15.0
+pyjwt==2.15.1
 # RS256 verification of host-site tokens (PyJWT's crypto backend).
-cryptography==50.0.0
+cryptography==50.0.2
 
 # --- LLM providers --- (select via LLM_PROVIDER=openai|anthropic|gemini)
 openai==1.57.0
@@ -42,7 +42,7 @@ python-docx==1.2.0
 openpyxl==3.1.5
 requests==2.34.2
 chardet<6.0.0
-nltk==3.10.3
+nltk==3.10.4
 pandas==3.0.6
 PyMuPDF==1.28.2
 
@@ -53,8 +53,8 @@ paddleocr==3.7.0
 streamlit==1.64.0
 
 # --- Runtime / config ---
-python-dotenv==1.2.3
-psutil==6.1.0
+python-dotenv==1.2.4
+psutil==6.1.1
 tzdata==2026.3
 
 # --- Testing ---
