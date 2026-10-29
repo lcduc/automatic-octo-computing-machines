@@ -9,7 +9,7 @@ httpx==0.28.1
 aiofiles==24.1.0
 
 # --- Database (PostgreSQL + pgvector) ---
-sqlalchemy[asyncio]==2.0.54
+sqlalchemy[asyncio]==2.1.6
 asyncpg==0.32.0
 alembic==1.20.1
 pgvector==0.5.1
