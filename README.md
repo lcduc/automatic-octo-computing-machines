@@ -114,23 +114,23 @@ per-question `rank` in its `--out` report.
 ## Repository layout
 
 ```text
-main.py                 FastAPI wiring (middleware, routers, lifespan)
-worker.py               ingestion worker: parses/OCRs queued uploads outside the API
-api/                    routes (v1 public + admin), schemas, dependencies
-middleware/             app-wide ASGI middleware, one class per file (only main.py imports it)
-services/               use cases: chat, knowledge, ingestion, auth, settings, usage…
-core/agent/             LLM providers (usage-reporting), chat pipeline, prompts, tools
-core/retrieval/         embeddings, reranker, in-memory knowledge index, retriever
-core/guardrails/        PII redactor, input guard
-core/storage/           SQLAlchemy tables, repositories, connection pool
-core/document_processing/  Docling / OCR parsing
-migrations/             Alembic schema migrations
-frontends/widget/         chat widget (Next.js); client deployments customise it on a branch
-frontends/admin/          admin web shared by every deployment (Vite + React)
-app.py                  internal Streamlit demo of the chat API
-docs/DEPLOYMENT.md      VPS deployment, embedding, backups, operations
-docs/API.md             API reference (public chat + admin); docs/openapi.json is its schema
-docs/PERFORMANCE.md     load test of the chat pipeline (scripts/loadtest/): latency, ceiling, VRAM
+main.py                     FastAPI wiring (middleware, routers, lifespan)
+worker.py                   ingestion worker: parses/OCRs queued uploads outside the API
+api/                        routes (v1 public + admin), schemas, dependencies
+middleware/                 app-wide ASGI middleware, one class per file (only main.py imports it)
+services/                   use cases: chat, knowledge, ingestion, auth, settings, usage…
+core/agent/                 LLM providers (usage-reporting), chat pipeline, prompts, tools
+core/retrieval/             embeddings, reranker, in-memory knowledge index, retriever
+core/guardrails/            II redactor, input guard
+core/storage/               SQLAlchemy tables, repositories, connection pool
+core/document_processing/   Docling / OCR parsing
+migrations/                 Alembic schema migrations
+frontends/widget/           chat widget (Next.js); client deployments customise it on a branch
+frontends/admin/            admin web shared by every deployment (Vite + React)
+app.py                      internal Streamlit demo of the chat API
+docs/DEPLOYMENT.md          VPS deployment, embedding, backups, operations
+docs/API.md                 API reference (public chat + admin); docs/openapi.json is its schema
+docs/PERFORMANCE.md         load test of the chat pipeline (scripts/loadtest/): latency, ceiling, VRAM
 ```
 
 ## Development
