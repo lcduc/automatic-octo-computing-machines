@@ -4,11 +4,10 @@ name: Deploy
 # on that server, so no server credentials or open ports are needed. It is triggered only by the
 # CI run of main (never by pull requests or forks).
 
+# Automatic deploy after CI is DISABLED (project handed over). Run manually via workflow_dispatch if needed.
+# To re-enable, restore:
+#   workflow_run: { workflows: [CI], types: [completed], branches: [main] }
 on:
-  workflow_run:
-    workflows: [CI]
-    types: [completed]
-    branches: [main]
   workflow_dispatch:
 
 # One deploy at a time; a newer one waits for the running one instead of interrupting a migration.
