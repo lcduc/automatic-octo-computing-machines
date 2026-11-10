@@ -113,11 +113,13 @@ cd .. && ruff check .             # lint from the repo root (root ruff.toml)
   redirected -> run with `PYTHONIOENCODING=utf-8`.
 - `test/integration/test_api.py::test_rate_limit_and_roles` is timing-flaky (per-minute rate-limit
   window); passes on rerun.
-- pip-audit (advisory CI job) fails: pypdf 6.21.2 CVEs (fixed in 6.21.4, bump pending); pillow CVEs
-  need pillow 13 but docling/streamlit require pillow<13.
+- pip-audit (advisory CI job) failed for weeks: pypdf 6.21.2 CVEs, and Pillow 12 CVEs that docling and
+  streamlit blocked with `pillow<13` -> pypdf 6.21.4, docling 2.148 and streamlit 1.67 lift the cap; Pillow
+  is pinned to 13.0.0, uvicorn to 0.54 (with `ws=none`) and the audit runs with no ignores
+  (Dependabot #77–#81; Pillow pin and audit cleanup on branch `chore/pillow-13-audit`, 2026-11-10).
 - `.dockerignore` excludes `*.md` and `test_*`, so READMEs and tests are not in the image.
 
 ## Status
 - Last reviewed: 2026-11-10
-- Open issues / follow-ups: bump pypdf to 6.21.4.
+- Open issues / follow-ups: none.
 - Ceilings (`# ceiling:` markers in this folder): none in the files directly here; see each package README.

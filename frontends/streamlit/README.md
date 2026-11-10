@@ -56,7 +56,8 @@ No tests. Lint with `ruff check .` from the repo root.
   (3fa9dda, 2026-11-10).
 - The "backend not ready" banner said to start the backend with `python main.py`; it now says
   `python -m app.main` from `backend/` (branch `refactor/structure-fixes`, 2026-11-10).
-- Streamlit's pillow pin keeps `pillow<13`, which blocks the pillow CVE fixes flagged by pip-audit.
+- Streamlit up to 1.64 capped `pillow<13`, which blocked the Pillow CVE fixes flagged by pip-audit -> 1.67
+  allows Pillow 13 (Dependabot #77, 2026-11-10).
 
 ## Status
 - Last reviewed: 2026-11-10

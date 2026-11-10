@@ -122,11 +122,11 @@ Integration (needs `TEST_DATABASE_URL` to a pgvector database): `test/integratio
   (`caa7e10`, 2026-09-29).
 - Datalab's `/api/v1/ocr` is the only endpoint that documents itself as Surya; revisit if Datalab removes
   it (`datalab_surya_engine.py` comment).
-- pip-audit flags pypdf 6.21.2 CVEs (fixed in 6.21.4, bump pending).
+- pip-audit flagged pypdf 6.21.2 CVEs -> bumped to 6.21.4 (Dependabot #78, 2026-11-10).
 
 ## Status
 - Last reviewed: 2026-11-10
-- Open issues / follow-ups: bump pypdf to 6.21.4; RES-03 (chat load measured while an OCR job runs) is still open (`docs/PERFORMANCE.md`).
+- Open issues / follow-ups: RES-03 (chat load measured while an OCR job runs) is still open (`docs/PERFORMANCE.md`).
 - Ceilings (`# ceiling:` markers in this folder):
   - `docling_processor.py:135` — Docling parsing shares the process's torch thread pool — move it to a
     worker process if the cap slows chat.
