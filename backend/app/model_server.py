@@ -5,7 +5,7 @@ Wiring only. Loads the embedding model, the reranker and the OCR engine once,
 keeps them resident, and serves them to api and ingestion-worker over the
 internal Docker network (``MODEL_SERVER_URL=http://model-server:8600``)::
 
-    python model_server.py
+    python -m app.model_server        # from backend/
 """
 
 # Standard library imports
@@ -21,7 +21,7 @@ load_dotenv()
 
 from app.config.model_server_settings import ModelServerConfig  # noqa: E402
 from app.config.settings import Config  # noqa: E402
-from app.core.infrastructure.model_server.app import create_model_server_app  # noqa: E402
+from app.api.model_server_api import create_model_server_app  # noqa: E402
 from app.core.infrastructure.model_server.model_host import ModelHost  # noqa: E402
 from app.core.infrastructure.model_server.scheduler import PriorityScheduler  # noqa: E402
 from app.core.infrastructure.logging_setup import configure_logging  # noqa: E402

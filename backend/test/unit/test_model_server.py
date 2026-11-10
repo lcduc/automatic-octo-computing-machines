@@ -14,7 +14,7 @@ from starlette.testclient import TestClient
 from app.api.schemas.admin import ModelServerLoad
 from app.config.settings import Config
 from app.core.document_processing.remote_ocr_engine import RemoteOCREngine
-from app.core.infrastructure.model_server.app import create_model_server_app
+from app.api.model_server_api import create_model_server_app
 from app.core.infrastructure.model_server.scheduler import Lane, PriorityScheduler, SchedulerBusyError
 from app.core.infrastructure.model_server_client import ModelServerClient, ModelServerError
 from app.core.retrieval.remote_models import RemoteEmbeddingService, RemoteReranker
