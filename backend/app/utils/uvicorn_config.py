@@ -31,7 +31,9 @@ def get_uvicorn_config():
     config = {
         "loop": "asyncio",
         "http": "httptools",
-        "ws": "websockets",
+        # No websocket routes (chat streams over SSE); "none" also avoids the deprecated legacy
+        # "websockets" implementation that newer uvicorn releases warn about.
+        "ws": "none",
     }
 
     if sys.platform == "win32":
