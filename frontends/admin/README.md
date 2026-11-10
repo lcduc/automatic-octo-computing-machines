@@ -75,5 +75,7 @@ with a strict CSP (`frame-ancestors 'none'`) and proxies only `/api/v1/admin/*` 
 
 ## Status
 - Last reviewed: 2026-11-10
-- Open issues / follow-ups: none recorded.
+- Open issues / follow-ups:
+  - OPT-12: the build is one 544 KB JS chunk (158 KB gzipped); split routes with `lazy()` (docs/checklists/optimization.md).
+  - APPSEC-14: the `caddy:2-alpine` image runs as root (docs/checklists/security.md).
 - Ceilings (`# ceiling:` markers in this folder): none.

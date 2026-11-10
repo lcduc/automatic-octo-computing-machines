@@ -150,7 +150,7 @@ ruff check .                                # from the repo root
 ## Status
 - Last reviewed: 2026-11-10
 - Open issues / follow-ups:
-  - No direct unit tests for `TurnDeadline`, `KnowledgeAnswerer` (covered through `ChatbotService`
+  - TST-09 (docs/checklists/testing.md): no direct unit tests for `TurnDeadline`, `KnowledgeAnswerer` (covered through `ChatbotService`
     in `test_chat_pipeline.py`), `ConfidenceScorer`, `AnthropicClientProvider`, `GeminiClientProvider`.
   - `response_cache.py` docstring still describes caching as part of `ChatbotService` (answers are
     now cached by `KnowledgeAnswerer`).

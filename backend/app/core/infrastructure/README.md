@@ -87,5 +87,7 @@ From `backend/` with `venv` active.
 
 ## Status
 - Last reviewed: 2026-11-10
-- Open issues / follow-ups: no load test with an OCR job running during chat (RES-03).
+- Open issues / follow-ups:
+  - no load test with an OCR job running during chat (RES-03).
+  - OPT-03: batch reranking across concurrent turns in the model-server queue (`model_server/scheduler.py`) (docs/checklists/optimization.md).
 - Ceilings (`# ceiling:` markers in this folder): none.

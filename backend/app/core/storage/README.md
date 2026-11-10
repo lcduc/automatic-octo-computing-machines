@@ -89,5 +89,6 @@ From `backend/` with `venv` active.
 
 ## Status
 - Last reviewed: 2026-11-10
-- Open issues / follow-ups: none recorded.
+- Open issues / follow-ups:
+  - CQ-03: `knowledge_repository.py` is 445 lines (docs/checklists/code-quality.md).
 - Ceilings (`# ceiling:` markers in this folder): none.

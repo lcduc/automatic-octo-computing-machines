@@ -105,6 +105,7 @@ ruff check .                  # from the repo root
 - Open issues / follow-ups:
   - `embeddings.py` keeps module-level helpers marked for legacy compatibility (`get_embedder`,
     `get_device_info`) and lacks type hints on several public methods.
+  - OPT-02 / OPT-04: smaller rerank pool (`MIN_RERANK_POOL` in `retriever.py`) and fp16 reranker loading (`reranker.py:92`) are the cheapest throughput and VRAM levers (docs/checklists/optimization.md).
 - Ceilings (`# ceiling:` markers in this folder):
   - `knowledge_index.py:159` — whole corpus held in RAM and scanned brute-force (~1.5 KB/chunk at 384
     dims, a few ms per query for 100k chunks) — move semantic search to a pgvector HNSW index past ~500k chunks.

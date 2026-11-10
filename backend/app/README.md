@@ -82,5 +82,6 @@ pytest test/unit/test_model_server.py
 
 ## Status
 - Last reviewed: 2026-11-10
-- Open issues / follow-ups: none.
+- Open issues / follow-ups:
+  - TST-08: `worker.py` and `model_server.py` have no test coverage (docs/checklists/testing.md).
 - Ceilings (`# ceiling:` markers in this folder): none.
