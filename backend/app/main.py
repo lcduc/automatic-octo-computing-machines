@@ -38,7 +38,8 @@ from app.middleware import (  # noqa: E402
     RequestContextMiddleware,
     SecurityHeadersMiddleware,
 )
-from app.api.routes import api_v1_router, health_router  # noqa: E402
+from app.api.health import router as health_router  # noqa: E402
+from app.api.v1.routes import api_v1_router  # noqa: E402
 from app.config.settings import Config  # noqa: E402
 from app.core.infrastructure.lifecycle import StartupBanner  # noqa: E402
 from app.core.infrastructure.logging_setup import configure_logging  # noqa: E402
