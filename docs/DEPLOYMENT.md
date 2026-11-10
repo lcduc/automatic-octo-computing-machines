@@ -320,6 +320,7 @@ merged into the client branches, so a client branch differs only in the widget.
 
 Natively, without the compose stack: Postgres in Docker, the API, then the admin
 web and/or the widget dev servers, each in its own terminal from the repository root.
+The backend's commands run from `backend/`.
 
 **1. Database** (first time; afterwards `docker start chatbot-pg`)
 
@@ -331,16 +332,17 @@ docker run -d --name chatbot-pg -e POSTGRES_USER=chatbot -e POSTGRES_PASSWORD=de
 **2. API** (`:8500`, Swagger on `/docs`)
 
 ```bash
+cd backend
 python -m venv venv && source venv/bin/activate      # Windows: venv\Scripts\Activate.ps1
 pip install -r requirements-torch.txt --index-url https://download.pytorch.org/whl/cu126   # no GPU: .../whl/cpu
 pip install -r requirements.txt
 cp .env.example .env
 alembic upgrade head
 python -m scripts.manage create-admin --email you@example.com --role owner   # once; prompts for the password
-python main.py
+python -m app.main
 ```
 
-In `.env`:
+In `backend/.env`:
 
 - `APP_ENV=development`: the admin session cookie is only `Secure` in production,
   and missing secrets are startup warnings instead of a refusal to start.
@@ -352,11 +354,11 @@ In `.env`:
 - `HOST_AUTH_MODE=none` keeps every visitor anonymous and silences the host-token
   warning; leave it unset to test signed-in users (then set `HOST_JWT_*`).
 - Leave `MODEL_SERVER_URL` unset: embedding, reranking and OCR then run inside the
-  API process, and the first upload downloads their weights into `model_weights/`.
+  API process, and the first upload downloads their weights into `backend/model_weights/`.
 - Uploads are parsed in-process (`INGESTION_WORKER=embedded`). To mirror
-  production, set `INGESTION_WORKER=external` and also run `python worker.py`.
-  `python model_server.py` (with `MODEL_SERVER_URL=http://127.0.0.1:8600` and a
-  32+ character `MODEL_SERVER_TOKEN` in `.env`) does the same for the model server.
+  production, set `INGESTION_WORKER=external` and also run `python -m app.worker`.
+  `python -m app.model_server` (with `MODEL_SERVER_URL=http://127.0.0.1:8600` and a
+  32+ character `MODEL_SERVER_TOKEN` in `backend/.env`) does the same for the model server.
 
 **3. Admin web** (`http://localhost:5174`)
 
@@ -389,14 +391,15 @@ compose does this for `https://PUBLIC_DOMAIN_ADMIN`, and the admin service gets
 
 The whole stack from this checkout, with images built locally
 (`docker-compose.override.yml` is merged automatically here and never shipped).
-The installer writes `.env`, `ops.env` and `secrets/` into the checkout, so move
-a native-development `.env` aside first:
+The installer writes `.env`, `ops.env` and `secrets/` into the checkout root; a
+native-development `backend/.env` is separate and can stay:
 
 ```bash
 python -m deploy.ops --dir . install --answers my-answers.toml --skip-deploy
 docker compose up -d --build
 ```
 
-Tests: `pytest` (unit tests need nothing; integration tests need
+Tests: `pytest` from `backend/` (unit tests need nothing; integration tests need
 `TEST_DATABASE_URL` pointing at a throw-away database). The ops CLI's tests use
-a fake Docker, so they run anywhere.
+a fake Docker, so they run anywhere: `python -m pytest deploy/ops/tests` from the
+repository root. Lint everything with `ruff check .` from the repository root.

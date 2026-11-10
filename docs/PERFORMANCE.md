@@ -25,7 +25,7 @@ Measured 2026-10-24 on a development machine, not staging. See [Limits](#limits)
 | Item | Value |
 |---|---|
 | Machine | Windows 11, Intel i5-14600KF (14 cores / 20 threads), 32 GB RAM, RTX 3060 12 GB (driver 591.86) |
-| API | `python main.py`, one Uvicorn worker, models in-process on the GPU (`MODEL_SERVER_URL` empty) |
+| API | `python -m app.main`, one Uvicorn worker, models in-process on the GPU (`MODEL_SERVER_URL` empty) |
 | Models | `intfloat/multilingual-e5-small` embeddings, `BAAI/bge-reranker-v2-m3` reranker, both fp16 |
 | Database | PostgreSQL 17 + pgvector in Docker (`chatbot-eval-pg`), database `chatbot_load` |
 | Knowledge | `scripts.seed_demo documents`: 10 documents, 66 chunks |
@@ -35,7 +35,7 @@ Measured 2026-10-24 on a development machine, not staging. See [Limits](#limits)
 | Load | Locust, closed loop: N visitors, each asking the 51 golden questions back to back in new conversations; a refused visitor waits `Retry-After` (5 s) |
 | Per level | 90 s after a 20 s warm-up; no other GPU job running (the runner checks before and after every level) |
 
-Every setting is in [scripts/loadtest/loadtest.env](../scripts/loadtest/loadtest.env). The stale local `.env` is not read.
+Every setting is in [backend/scripts/loadtest/loadtest.env](../backend/scripts/loadtest/loadtest.env). The stale local `.env` is not read.
 
 ## Results
 
@@ -139,13 +139,15 @@ These are not done here, and each needs `scripts/eval/rag.py` to confirm retriev
 
 ## Reproduce
 
+From `backend/`:
+
 ```bash
 docker start chatbot-eval-pg
 docker exec chatbot-eval-pg psql -U chatbot -d postgres -c "CREATE DATABASE chatbot_load"
 docker exec chatbot-eval-pg psql -U chatbot -d chatbot_load -c "CREATE EXTENSION IF NOT EXISTS vector"
 python -m dotenv -f scripts/loadtest/loadtest.env run --override -- python -m alembic upgrade head
 python -m dotenv -f scripts/loadtest/loadtest.env run --override -- python -m scripts.seed_demo documents
-python -m dotenv -f scripts/loadtest/loadtest.env run --override -- python main.py   # note the "Started server process [pid]"
+python -m dotenv -f scripts/loadtest/loadtest.env run --override -- python -m app.main   # note the "Started server process [pid]"
 ```
 
 The load generator has its own venv, so Locust's pins never touch the app's:

@@ -83,7 +83,7 @@ project_root/
 - Dependency direction: `api → services → core → models/utils`. Never import upward (`core` must not import `api`/`services`). `middleware/` may call `services`/`core`; only `main.py` imports `middleware/`. Middleware serving a single feature lives with that feature instead.
 - Each deployable component (`backend/`, each frontend) owns its own dependencies, Dockerfile and `.env.example`.
 - Client frontends: install `frontend-ui-engineering` and `browser-testing-with-devtools` from `addyosmani/agent-skills` (plus its `references/accessibility-checklist.md` and `performance-checklist.md`, and `/webperf`) at project level in that frontend when it starts. Chrome DevTools MCP always runs with `--isolated`, never `--autoConnect`.
-- Migration: the repo still uses the old flat layout (`main.py`, `api/`, `core/`… at root). Don't move files as a side effect of an unrelated task — migration is its own dedicated change. Until then, put new code in the existing folder that corresponds to its target location.
+- The backend follows this layout: one `app` package under `backend/` (imports read `from app.core…`), run from `backend/` (`python -m app.main`, `pytest`, `alembic`). Health probes are unversioned in `api/health.py`. Native local runs keep runtime data in `backend/data` and `backend/model_weights` (paths are relative to the working directory); compose mounts the root `data/` into the container instead. Not yet split out: `frontends/streamlit` is a single `app.py` with no `pages/`, `api_client.py` or Dockerfile.
 
 - One primary class per file, matching filename (`invoice_service.py` → `InvoiceService`).
 - `__init__` only assigns dependencies — no I/O or heavy compute.
