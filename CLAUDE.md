@@ -3,6 +3,7 @@
 
 ## 0. Before Writing Code
 - Understand first: read the task and the code it touches, trace the real flow end to end. A small diff in the wrong place is a second bug.
+- Folder READMEs: before editing a folder, read its `README.md` (or the nearest parent's) — Files lists every module, Known problems lists traps already hit. In the same change, update it: Files for added/renamed/removed files (`backend/test/unit/test_folder_readmes.py` fails otherwise for `app/` and `scripts/`), Known problems and history for a problem you hit and how it was solved, Status for new follow-ups or ceilings.
 - Before adding a class/layer or touching several modules, apply the `codebase-design` skill: deletion test (does complexity vanish, or reappear in N callers?), and check hot spots via `git log` + CodeGraph. Friction found outside the task → one line in the reply, no fix.
 - Then stop at the first rung that holds:
   1. Does this need to exist at all? Speculative need → skip it, say so in one line (YAGNI).
