@@ -6,8 +6,8 @@
 ## Purpose
 Process-level plumbing shared by the three entry points (`app/main.py` API, `app/worker.py`
 ingestion worker, `app/model_server.py`): logging setup, the start-up banner, periodic jobs in the
-worker, operator alerts and e-mail, and the model-server (its HTTP app, model host, GPU scheduler)
-plus the client the API and worker use to call it. Domain logic does not belong here: alert *rules*
+worker, operator alerts and e-mail, and the model-server (its model host and GPU scheduler; its HTTP
+app is `api/model_server_api.py`) plus the client the API and worker use to call it. Domain logic does not belong here: alert *rules*
 live in `services/alert_monitor_service.py`, ticket mail in `services/handoff_service.py`, service
 construction and shutdown in `api/container.py`. Pure helpers go to `app/utils/`.
 
@@ -24,17 +24,18 @@ construction and shutdown in `api/container.py`. Pure helpers go to `app/utils/`
 
 ### `model_server/`
 One process that owns the GPU models (embedding, reranker, OCR); entry point `app/model_server.py`.
-Reachable only on the internal Docker network (no published port).
+Reachable only on the internal Docker network (no published port). Its FastAPI app
+(`create_model_server_app`: `/health/live`, `/ready`, `/embed`, `/rerank`, `/ocr`) lives in
+`app/api/model_server_api.py`, so `core/` has no FastAPI import.
 
 | File | Public names | What it does |
 |---|---|---|
-| `app.py` | `create_model_server_app`, `EmbedRequest`, `EmbedResponse`, `RerankRequest`, `RerankResponse`, `OcrResponse` | FastAPI app: `/health/live` (no token), `/ready`, `/embed`, `/rerank`, `/ocr`; every route but liveness needs `X-Service-Token: MODEL_SERVER_TOKEN`; request size caps; answers 503 with `Retry-After` when the scheduler is full. |
 | `model_host.py` | `ModelHost` | Loads the embedding model, reranker and local OCR engine once and keeps them resident (RES-01); `apply_gpu_limits` caps paddle (`FLAGS_gpu_memory_limit_mb`) and torch GPU memory before any model loads; reports VRAM. |
 | `scheduler.py` | `PriorityScheduler`, `Lane`, `SchedulerBusyError` | Two-lane scheduling of blocking model calls in threads: chat (query embedding, rerank) starts first; ingestion (passage embedding, OCR) waits while chat waits and is capped at `ingestion_limit`; bounded queues and wait timeouts raise `SchedulerBusyError`. |
 
 ### Flow (model-server mode)
 ```
-api / ingestion-worker --ModelServerClient--> model_server/app.py
+api / ingestion-worker --ModelServerClient--> api/model_server_api.py
     -> PriorityScheduler.run(lane, ...) -> ModelHost (embedding | reranker | OCR engine)
 ```
 Callers: `core/retrieval/remote_models.py` (embed, rerank) and
@@ -48,7 +49,7 @@ in-process instead.
   and `core.guardrails.pii_redactor` are imported lazily inside functions). Never `api`, `services` or `middleware` (layering rule api -> services -> core ->
   models/utils, config at the bottom; only main.py imports middleware; enforced by
   `test/unit/test_layering.py`).
-- Used by: `app/main.py`, `app/worker.py`, `app/model_server.py`, `api/container.py`,
+- Used by: `app/main.py`, `app/worker.py`, `app/model_server.py`, `api/container.py`, `api/model_server_api.py`,
   `services/alert_monitor_service.py`, `services/handoff_service.py`, `core/retrieval/remote_models.py`,
   `core/document_processing/engine_selector.py`, `core/document_processing/remote_ocr_engine.py`,
   `scripts/manage.py`.
@@ -80,10 +81,11 @@ From `backend/` with `venv` active.
   nothing stores or alerts on them (`docs/reports/REPO_ASSESSMENT.md`).
 - Logs of the worker and model-server go to their own subfolders of `LOG_DIR`, never the API's rotating
   file (`app/worker.py`, `app/model_server.py`).
+- The model-server FastAPI app was `model_server/app.py`; it moved to `app/api/model_server_api.py`
+  so `core/` imports no web framework, which `test_layering.py` now checks
+  (branch `refactor/structure-fixes`, 2026-11-10).
 
 ## Status
 - Last reviewed: 2026-11-10
-- Open issues / follow-ups: `model_server/app.py` imports FastAPI although the project layout says
-  `core/` has no FastAPI imports (`test_layering.py` checks only `app.*` imports). No load test with an
-  OCR job running during chat (RES-03).
+- Open issues / follow-ups: no load test with an OCR job running during chat (RES-03).
 - Ceilings (`# ceiling:` markers in this folder): none.

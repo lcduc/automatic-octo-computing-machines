@@ -50,8 +50,9 @@ Runtime folders (gitignored, created on first run): `data/` (logs in `data/logs`
 
 ## Dependencies
 - Layering inside `app`: `api -> services -> core -> models/utils`, with `config` at the bottom;
-  only `main.py` imports `middleware`. Enforced by `test/unit/test_layering.py` (AST walk over every
-  import, lazy ones included).
+  only `main.py` imports `middleware`; only `api` and `middleware` import `fastapi`/`starlette`.
+  Enforced by `test/unit/test_layering.py` (AST walk over every import, lazy and relative ones
+  included).
 - `scripts/` may import `app`; `app` never imports `scripts`.
 - External services: PostgreSQL 17 + pgvector, one LLM API (OpenAI, Anthropic or Gemini, or an
   OpenAI-compatible server via `OPENAI_BASE_URL`), Hugging Face model downloads, optional SMTP and
@@ -118,6 +119,5 @@ cd .. && ruff check .             # lint from the repo root (root ruff.toml)
 
 ## Status
 - Last reviewed: 2026-11-10
-- Open issues / follow-ups: bump pypdf to 6.21.4; `docs/openapi.json` is stale (regenerate with
-  `python -m scripts.export_openapi`).
+- Open issues / follow-ups: bump pypdf to 6.21.4.
 - Ceilings (`# ceiling:` markers in this folder): none in the files directly here; see each package README.

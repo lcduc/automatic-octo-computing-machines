@@ -24,7 +24,7 @@ Mounted under `/api/v1/admin` by `admin/__init__.py` (`router`, which includes e
 | `admin/auth.py` | `router`, `login`, `logout`, `me`, `change_password`, `list_users`, `create_user`, `update_user`, `LOGIN_ATTEMPTS_PER_MINUTE` | Sign-in (sets the HttpOnly `admin_session` cookie and returns a Bearer token; 5 attempts/min per IP and per e-mail), sign-out, own account, owner-only account management. |
 | `admin/knowledge.py` | `router`, `list_sources`, `create_source`, `update_source`, `delete_source`, `list_documents`, `upload_document`, `create_text_document`, `list_access_tiers`, `review_counts`, `review_document`, `get_document`, `update_document`, `document_citations`, `delete_document`, `export_knowledge`, `import_knowledge`, `add_chunk`, `update_chunk`, `delete_chunk`, `list_chunking_strategies`, `preview_chunking`, `rechunk_document` | Knowledge base under `/knowledge`: sources, documents (upload / typed text), review, citations, export/import bundles, chunk edits, chunking strategies, preview and re-chunk. |
 | `admin/conversations.py` | `router`, `list_conversations`, `conversation_detail`, `message_trace`, `list_feedback`, `review_feedback`, `list_handoffs`, `answer_handoff`, `reveal_handoff_contact`, `update_handoff`, `OUTCOME_PATTERN` | Conversation list/detail, per-answer trace, feedback inbox, handoff tickets. |
-| `admin/monitoring.py` | `router`, `usage_summary`, `usage_history`, `usage_live`, `logs`, `system_status`, `clear_cache`, `reindex`, `APP_VERSION`, `MAX_SUMMARY_DAYS`, `MAX_HISTORY_DAYS` | Usage summary/history, live SSE feed, log search, system status, cache clear, index rebuild. |
+| `admin/monitoring.py` | `router`, `usage_summary`, `usage_history`, `usage_live`, `logs`, `system_status`, `clear_cache`, `reindex`, `MAX_SUMMARY_DAYS`, `MAX_HISTORY_DAYS` | Usage summary/history, live SSE feed, log search, system status (version from `app.APP_VERSION`), cache clear, index rebuild. |
 | `admin/configuration.py` | `router`, `get_settings`, `update_settings`, `get_setting_defaults`, `reset_setting`, `list_api_keys`, `create_api_key`, `rotate_api_key`, `revoke_api_key`, `list_prices`, `set_price`, `delete_price`, `list_tools`, `update_tool` | Runtime settings (applied on the next turn, new models tried first), API keys, model prices, SQL tool switches. |
 | `admin/audit.py` | `router`, `list_audit_entries` | Owner-only read of the append-only audit log. |
 | `admin/privacy.py` | `router`, `hold_conversation`, `hold_ticket`, `export_subject`, `delete_subject` | Owner-only legal hold and data-subject export/delete; all PUT/POST so the audit middleware records them. |
@@ -145,13 +145,14 @@ All need `TEST_DATABASE_URL` (pgvector/pgvector:pg17); they are skipped otherwis
   ingestion queue if imports time out (export/import added in 54b76a5, #32).
 - Privacy routes are PUT/POST only so the audit middleware records who did it (ADM-02) (baf0dd9,
   2026-09-29).
+- `APP_VERSION` duplicated `app/main.py` and now comes from `app/__init__.py`; the `chat.py`
+  docstring now names `X-Service-Token` or `X-API-Key`; `docs/openapi.json` regenerated
+  (branch `refactor/structure-fixes`, 2026-11-10).
 - `test_api.py::test_rate_limit_and_roles` is timing-flaky (per-minute rate-limit window); passes
   on rerun.
 
 ## Status
 - Last reviewed: 2026-11-10
-- Open issues / follow-ups: `APP_VERSION = "3.0.0"` in `admin/monitoring.py` duplicates the one in
-  `app/main.py`. The `chat.py` module docstring says every route needs `X-API-Key`, but
-  `require_chat_caller` also accepts `X-Service-Token`. `docs/openapi.json` is stale.
+- Open issues / follow-ups: none.
 - Ceilings (`# ceiling:` markers in this folder): `admin/knowledge.py:226` — knowledge import embeds
   inside the request — move to the ingestion queue if imports time out.

@@ -141,6 +141,9 @@ ruff check .                                # from the repo root
 - `IntentRouter` makes an LLM call per message when tools are offered; the routing spec allows this only
   as deviation DV1 (see [`docs/CHATBOT_ROUTING_SPEC.md`](../../../../docs/CHATBOT_ROUTING_SPEC.md) §0.1).
   It returns RAG without a call when no tool is offered to the caller.
+- `gemini_client.py` and `intent_router.py` docstrings pointed at the old layout (`api/routes/`,
+  retrieval in `ChatbotService`); fixed, and the `chatbot.py` ceiling now names its trigger
+  (branch `refactor/structure-fixes`, 2026-11-10).
 - Windows: scripts that print Vietnamese crash with `UnicodeEncodeError` (cp1252) when output is
   redirected; run them with `PYTHONIOENCODING=utf-8`.
 
@@ -149,11 +152,10 @@ ruff check .                                # from the repo root
 - Open issues / follow-ups:
   - No direct unit tests for `TurnDeadline`, `KnowledgeAnswerer` (covered through `ChatbotService`
     in `test_chat_pipeline.py`), `ConfidenceScorer`, `AnthropicClientProvider`, `GeminiClientProvider`.
-  - `gemini_client.py` docstring still points at `api/routes/chat.py` (now `api/v1/routes/chat.py`);
-    `intent_router.py` and `response_cache.py` docstrings still describe retrieval as part of
-    `ChatbotService` (now `KnowledgeAnswerer`).
+  - `response_cache.py` docstring still describes caching as part of `ChatbotService` (answers are
+    now cached by `KnowledgeAnswerer`).
 - Ceilings (`# ceiling:` markers in this folder):
   - `chatbot.py:195` — moderation task not awaited on paths that need no answer still completes in
-    the background — no trigger named in the marker.
+    the background — cancel it on those paths if moderation API cost or rate limits start to matter.
   - `chatbot.py:305` — the previous clarification is recognised by its fixed text — add a `CLARIFY`
     outcome if admins need to see clarifications as their own outcome.

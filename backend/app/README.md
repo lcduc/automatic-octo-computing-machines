@@ -5,15 +5,16 @@
 
 ## Purpose
 The one application package. Imports read `from app.<package> ...` and every command runs from
-`backend/`. The `.py` files directly here are the three process entry points and contain wiring
-only; behaviour lives in the sub-packages. One-off CLIs belong in `backend/scripts/`, never here.
+`backend/`. The `.py` files directly here are `__init__.py` (the app version) and the three process
+entry points, which contain wiring only; behaviour lives in the sub-packages. One-off CLIs belong in `backend/scripts/`, never here.
 
 ## Files
 | File | Public names | What it does |
 |---|---|---|
-| `main.py` | `create_app`, `main`, `app`, `APP_VERSION`, `CORS_ALLOWED_HEADERS`, `CORS_ALLOWED_METHODS` | API process. `create_app(container_factory)` builds the FastAPI app: error handlers, middleware, health router, `/api/v1` router, and a lifespan that starts/stops `AppContainer` and prints the startup banner. `main()` runs Uvicorn with one worker. |
+| `__init__.py` | `APP_VERSION` | The one app version (`3.0.0`), reported by the OpenAPI document and the admin system status; imported by `main.py` and `api/v1/routes/admin/monitoring.py`. |
+| `main.py` | `create_app`, `main`, `app`, `CORS_ALLOWED_HEADERS`, `CORS_ALLOWED_METHODS` | API process. `create_app(container_factory)` builds the FastAPI app: error handlers, middleware, health router, `/api/v1` router, and a lifespan that starts/stops `AppContainer` and prints the startup banner. `main()` runs Uvicorn with one worker. |
 | `worker.py` | `build_scheduler`, `run_worker`, `main` | Ingestion worker process: parses/OCRs/embeds queued uploads (`IngestionWorker`) and runs the scheduled jobs `metrics_rollup` (hourly), `alert_checks` (5 min) and `retention_purge` (daily) through `JobScheduler`. Stops on SIGTERM/SIGINT and hands its current upload back. |
-| `model_server.py` | `main` | Model-server process: the one process that holds the GPU models (embedding, reranker, OCR) and serves them to the API and the worker through a `PriorityScheduler`. Refuses to start without `MODEL_SERVER_TOKEN`. |
+| `model_server.py` | `main` | Model-server process: the one process that holds the GPU models (embedding, reranker, OCR) and serves them to the API and the worker through a `PriorityScheduler`. Refuses to start without `MODEL_SERVER_TOKEN`. Its HTTP app is `api/model_server_api.py`. |
 
 How each starts (from `backend/`):
 
@@ -75,11 +76,11 @@ pytest test/unit/test_model_server.py
   2026-09-29); the scheduler queue got a bound and wait timeouts (07c6f95, 2026-10-15).
 - `main()` re-imports `app.main:app` only when reload is on (5709055, 2026-08-04).
 - `main.py` prints the startup banner with `print()` on purpose (operator-facing console output).
+- `APP_VERSION` was defined in both `main.py` and `api/v1/routes/admin/monitoring.py`; it now lives
+  once in `__init__.py`. The model-server HTTP app moved from `core/infrastructure/model_server/`
+  to `api/model_server_api.py` (branch `refactor/structure-fixes`, 2026-11-10).
 
 ## Status
 - Last reviewed: 2026-11-10
-- Open issues / follow-ups: the module docstrings of `worker.py` and `model_server.py` still show
-  `python worker.py` / `python model_server.py`; since #76 the commands are `python -m app.worker` and
-  `python -m app.model_server`. `APP_VERSION = "3.0.0"` is also defined in
-  `api/v1/routes/admin/monitoring.py`; keep the two in sync.
+- Open issues / follow-ups: none.
 - Ceilings (`# ceiling:` markers in this folder): none.

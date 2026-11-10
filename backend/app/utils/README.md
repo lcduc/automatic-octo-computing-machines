@@ -15,10 +15,8 @@ with I/O, configuration of logging, or state belongs in `core/infrastructure/` i
 | `text_utils.py` | `TextUtils`, `UNACCENTED_VIETNAMESE_WORDS`, `UNACCENTED_MIN_HITS`, `CHAT_SHORTHANDS`, `SHORTHANDS_KEPT_AFTER_NUMBERS` | Static text helpers: extraction quality (`is_probably_gibberish`, `needs_ocr_fallback`), Vietnamese chat handling (`strip_vietnamese_accents`, `normalize_chat_text`, `looks_like_unaccented_vietnamese`, `expand_chat_abbreviations`), search tokens (`tokenize_for_search`) and sentence chunking (`clean_chunk_text`, `chunk_text`). |
 | `vietnamese_parsing.py` | `parse_period`, `parse_amount`, `DateRange` | Parses periods ("tháng trước", "quý 3", "7 ngày qua", "last month", ISO ranges) into `[start, end)` dates and money amounts ("1.000.000 đ", "1,5 triệu", "500k", "3 tỷ") into `Decimal` (TOOL-07). |
 | `request_context.py` | `request_id_var`, `current_request_id` | `ContextVar` holding the current HTTP request id; set by `RequestContextMiddleware`, read by logging, error handlers and the audit trail. |
-| `asyncio_utils.py` | `setup_windows_asyncio`, `setup_asyncio_logging`, `setup_asyncio_error_handling`, `get_safe_event_loop`, `create_safe_task`, `safe_close_session`, `is_session_closed` | Windows event-loop fixes (SelectorEventLoop policy against WinError 10038/10054) and suppression of the matching asyncio warnings. `main.py` and `worker.py` call the first two. |
+| `asyncio_utils.py` | `setup_windows_asyncio`, `setup_asyncio_logging`, `setup_asyncio_error_handling` | Windows event-loop fixes (SelectorEventLoop policy against WinError 10038/10054) and suppression of the matching asyncio warnings. `main.py` calls the first two, `worker.py` the first; `setup_windows_asyncio` calls the third. |
 | `uvicorn_config.py` | `configure_uvicorn_for_windows`, `get_uvicorn_config`, `get_uvicorn_ssl_config` | Uvicorn options (`loop=asyncio`, `http=httptools`, `ws=websockets`) and the Windows loop policy; `get_uvicorn_ssl_config` enables HTTPS when `./SSL/fullchain.pem` and `./SSL/privkey_converted.pem` exist (relative to the working directory). Used by `main.py`. |
-| `background_tasks.py` | `BackgroundTaskManager`, `get_background_manager`, `start_background_tasks`, `stop_background_tasks` | Global manager for periodic metrics sampling and memory cleanup. Not imported anywhere (see Status). |
-| `monitor.py` | `PerformanceMonitor`, `get_performance_monitor`, `log_performance_summary` | Global in-process latency/CPU/memory monitor using `Config.Health` thresholds. Not imported anywhere except `background_tasks.py` (see Status). |
 
 ## Dependencies
 - May import: stdlib and `config` only. Must not import `api`, `services`, `middleware` or `core`
@@ -28,7 +26,7 @@ with I/O, configuration of logging, or state belongs in `core/infrastructure/` i
   the chat pipeline and `scripts/eval/`; `vietnamese_parsing` by `core/agent/tools/tool_arguments.py`;
   `request_context` by middleware, `api/` and `core/infrastructure/logging_setup.py`;
   `asyncio_utils`/`uvicorn_config` by the entry points.
-- External: `psutil` (`monitor.py` only).
+- External: none. (`psutil` in `requirements.txt` is used only by `scripts/loadtest/run_levels.py`.)
 
 ## Run / test
 ```bash
@@ -50,14 +48,12 @@ redirected, or they crash with `UnicodeEncodeError` (cp1252).
   shorthand-perturbed input rose 96.3% -> 98.8% (baccecf, 2026-10-24).
 - Vietnamese period and amount parsing added for the SQL tools (81bb16a, 2026-09-29).
 - Backend moved under `backend/app` (#76, 2026-11-10).
+- `background_tasks.py` and `monitor.py` (only imported each other) and four unused
+  `asyncio_utils.py` helpers deleted (branch `refactor/structure-fixes`, 2026-11-10).
 
 ## Status
 - Last reviewed: 2026-11-10
-- Open issues / follow-ups: `background_tasks.py` and `monitor.py` are not imported by any module
-  in `app/`, `scripts/` or `test/` (only by each other), hold global state, and `monitor.py` prints
-  to the console; `Config.Health` exists only for them. `asyncio_utils.py` helpers other than
-  `setup_windows_asyncio`/`setup_asyncio_logging` are not called anywhere. Deletion candidates;
-  not removed here.
+- Open issues / follow-ups: none.
 - Ceilings (`# ceiling:` markers in this folder): `text_utils.py:58` — gibberish check uses
   character categories only, so mis-mapped fonts that decode to real letters pass — add a
   dictionary/language score if they show up.

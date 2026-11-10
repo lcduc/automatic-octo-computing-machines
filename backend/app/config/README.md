@@ -15,7 +15,9 @@ constants in the module that uses them. Settings that admins change live at runt
 |---|---|---|
 | `__init__.py` | `Config` | Re-exports `Config` from `settings.py`. |
 | `env.py` | `env_str`, `env_int`, `env_float`, `env_bool`, `env_list` | Typed `os.getenv` readers; a malformed int/float logs a warning and falls back to the default instead of crashing at import. `true/1/yes/on` are truthy. |
-| `settings.py` | `Config`, `PathConfig`, `LLMConfig`, `FileConfig`, `RAGConfig`, `OCRConfig`, `RoutingConfig`, `LoggingConfig`, `HealthConfig`, `MIN_JWT_SECRET_LENGTH`, `STUB_PROVIDER`, `STUB_MODEL` | The namespace `Config` (`Paths`, `Database`, `LLM`, `File`, `Server`, `Security`, `RAG`, `Routing`, `Chat`, `OCR`, `Logging`, `Health`, `Alerts`, `Smtp`, `HostAuth`, `ModelServer`) plus the groups defined here: paths, LLM provider/models/cache, upload and chunk limits, retrieval, OCR and ingestion mode, embedding-router margins, logging, slow-request threshold. `Config.problems()` lists unsafe settings; `Config.validate()` creates `LOG_DIR`, raises in production, warns in development. |
+| `settings.py` | `Config`, `PathConfig`, `LoggingConfig`, `MIN_JWT_SECRET_LENGTH` | The namespace `Config` (`Paths`, `Database`, `LLM`, `File`, `Server`, `Security`, `RAG`, `Routing`, `Chat`, `OCR`, `Logging`, `Alerts`, `Smtp`, `HostAuth`, `ModelServer`) over the `*_settings.py` groups, plus paths and logging. `Config.problems()` lists unsafe settings; `Config.validate()` creates `LOG_DIR`, raises in production, warns in development. |
+| `llm_settings.py` | `LLMConfig`, `STUB_PROVIDER`, `STUB_MODEL` | LLM provider, credentials, models and answer-cache tuning; `stub` is the load-test provider. |
+| `knowledge_settings.py` | `FileConfig`, `RAGConfig`, `OCRConfig`, `RoutingConfig` | Upload and chunk limits, retrieval and ranking, OCR and ingestion mode, embedding-router margins. |
 | `platform_settings.py` | `DatabaseConfig`, `ServerConfig`, `SecurityConfig`, `ChatConfig` | PostgreSQL connection (`POSTGRES_*`, `DB_POOL_SIZE`, `DATABASE_URL` override), HTTP server and `APP_ENV`, auth secrets / CORS / rate limits / guardrail switches, chat-policy defaults. |
 | `identity_settings.py` | `HostAuthConfig` | How host-site visitor tokens are verified: `HOST_AUTH_MODE` = `rs256` (default; JWKS URL or PEM), `hs256` (shared secret, fallback) or `none` (anonymous only); issuer, audience, tiers, TTL, leeway; its own `problems()`. |
 | `model_server_settings.py` | `ModelServerConfig` | `MODEL_SERVER_URL`/`TOKEN`/`PORT` (8600) and scheduler slots, queue bound and wait timeouts. URL unset = each process loads its own models. |
@@ -56,10 +58,11 @@ pytest test/unit/test_model_server.py test/unit/test_stub_llm_provider.py
 - ML model cache dir is `model_weights/`, named apart from the `models/` package after a collision
   (139f439, 2026-08-04).
 - Backend moved under `backend/app`; config imports became `app.config.*` (#76, 2026-11-10).
+- `settings.py` was 616 lines; it was split along the existing `*_settings.py` pattern into
+  `llm_settings.py` and `knowledge_settings.py`, and the unused `HealthConfig` was deleted
+  (branch `refactor/structure-fixes`, 2026-11-10).
 
 ## Status
 - Last reviewed: 2026-11-10
-- Open issues / follow-ups: `settings.py` is 616 lines, above the project's ~300–400 line split
-  guideline. The `__init__.py` and `settings.py` docstrings still say `from config.settings import
-  Config` / `config.env`; since #76 the path is `app.config`.
+- Open issues / follow-ups: none.
 - Ceilings (`# ceiling:` markers in this folder): none.

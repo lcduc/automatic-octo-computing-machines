@@ -101,8 +101,8 @@ python -m scripts.loadtest.report data/loadtest/<run>       # app venv
 ## Known problems and history
 - Before #76 the backend lived at the repo root, so these were `scripts/*` at the root; the eval and
   experiment scripts moved into `scripts/eval/` (`lcduc/automatic-octo-computing-machines#76`, 30cfa1c,
-  2026-11-10). Several docstrings still say "from the repository root"; since #76 the working directory is
-  `backend/`.
+  2026-11-10). Script docstrings said "from the repository root" until they were changed to "from
+  `backend/`" (branch `refactor/structure-fixes`, 2026-11-10).
 - `seed_demo.py` and the Germany demo documents, chats and golden sets were added on 2026-09-30/10-01
   (affa8ce, 13e9671); `eval_baseline.json` came with the CI eval gates (f7f365b, #25).
 - `golden_intents.json` was never committed while `eval/intent_router.py` pointed at it; added in a3fa726
@@ -111,15 +111,16 @@ python -m scripts.loadtest.report data/loadtest/<run>       # app venv
   turns at 4.7 turns/s; GPU reranking is the only stage that slowed with load. Details in `docs/PERFORMANCE.md`.
 - `synthetic/` was produced by the synthetic-query experiment (#55, 7b055c6); write-up in
   `docs/reports/SYNTHETIC_FINETUNE_RESULTS.md`.
-- `embed_test.py` (28576fe, 2026-10-15) defaults `--widget` to the old VPS demo widget URL; VPS deployment is
-  out of scope now, so pass `--widget` explicitly.
+- `embed_test.py` (28576fe, 2026-10-15) defaulted `--widget` to the old VPS demo widget URL; VPS deployment is
+  out of scope, so the default is now the local widget dev server `http://localhost:3000`
+  (branch `refactor/structure-fixes`, 2026-11-10).
 - Windows: scripts that print Vietnamese crash with `UnicodeEncodeError` (cp1252) when output is redirected;
   run with `PYTHONIOENCODING=utf-8`.
-- `docs/openapi.json` is stale versus the current app; re-export it with `python -m scripts.export_openapi`.
+- `docs/openapi.json` had drifted from the app; regenerated with `python -m scripts.export_openapi`
+  (branch `refactor/structure-fixes`, 2026-11-10).
 
 ## Status
 - Last reviewed: 2026-11-10
-- Open issues / follow-ups: refresh `docs/openapi.json`; update the "from the repository root" usage lines
-  in script docstrings to `backend/`; `qa_to_jsonl.py` / `qa_to_text_chunks.py` predate the current
+- Open issues / follow-ups: `qa_to_jsonl.py` / `qa_to_text_chunks.py` predate the current
   conventions (no type hints on all functions, `logging.basicConfig` in `qa_to_jsonl.py`).
 - Ceilings (`# ceiling:` markers in this folder): none here; see [`eval/README.md`](eval/README.md).

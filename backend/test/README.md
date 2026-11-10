@@ -43,7 +43,7 @@ Marked tests also run in the plain `pytest` step. Async tests need an explicit `
 | `test_host_identity.py` | `HostIdentityService` token checks with real RSA keys (visitor binding stubbed). |
 | `test_intent_router.py` | `IntentRouter`: RAG lookup vs action/tool call. |
 | `test_knowledge_bundle.py` | `KnowledgeBundle` rejects import files it must not trust. |
-| `test_layering.py` | Import direction api -> services -> core -> models/utils; only `main.py` imports middleware. |
+| `test_layering.py` | Import direction api -> services -> core -> models/utils; only `main.py` imports middleware; relative imports are resolved and checked like absolute ones; `fastapi`/`starlette` may not be imported in services, core, models, utils or config. |
 | `test_model_server.py` | Model-server app and client with a fake model host, remote embedding/reranker/OCR adapters, the two-lane scheduler, `ReadinessService`. |
 | `test_no_answer_filter.py` | The no-answer marker is caught at the start of a stream and never shown. |
 | `test_ocr_resource_limits.py` | Parsing/OCR stays within its CPU budget and off the event loop (`IngestionService`). |
@@ -136,10 +136,11 @@ CI order (job `test`): migrations check -> `pytest -m hard_gate -v` -> `pytest -
   (55daf18); eval scripts moved to `scripts/eval`, so tests import `from scripts.eval import ...` — two
   `from scripts import ...` forms were missed at first and fixed ->
   `lcduc/automatic-octo-computing-machines#76` (2026-11-10).
+- `test_layering.py` checked absolute imports only -> it now resolves relative imports and fails on
+  a web-framework import below the HTTP layer (branch `refactor/structure-fixes`, 2026-11-10).
 
 ## Status
 - Last reviewed: 2026-11-10
 - Open issues / follow-ups: EVAL-09 SEC-11 impersonation and ADM-01a role tests are not yet `hard_gate`
-  (docs/PRODUCTION_CHECKLIST.md); `test_layering.py` checks absolute imports only (relative
-  `from .x import` lines are not walked).
+  (docs/PRODUCTION_CHECKLIST.md).
 - Ceilings (`# ceiling:` markers in this folder): none.

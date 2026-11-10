@@ -22,7 +22,7 @@ parsing live in `../document_processing/`. Deciding whether to answer from the r
 | `embeddings.py` | `EmbeddingService`, `get_embedding_service`, `reset_embedding_service`, `get_embedder`, `get_device_info`, `E5_PROMPTS`, `MODEL_PROMPTS`, `PASSAGE_BATCH_SIZE`, `QUERY_CACHE_SIZE` | Process-wide sentence-transformers model (GPU fp16, else CPU fp32) with E5 query/passage prompts, an LRU query cache and an optional query adapter. |
 | `reranker.py` | `Reranker`, `get_reranker`, `RERANKER_FALLBACK_MODEL`, `RERANK_BATCH_SIZE`, `RERANK_MAX_TOKENS` | Process-wide cross-encoder (`RERANKER_MODEL`, fallback mMiniLM) loaded through `transformers`; `score` returns sigmoid scores or `None` when unavailable. |
 | `remote_models.py` | `RemoteEmbeddingService`, `RemoteReranker`, `embedding_service`, `model_server_client`, `PASSAGE_BATCH_SIZE` | Model-server-backed embedder/reranker; `embedding_service(client)` picks remote or in-process; remote rerank failures return `None` (hybrid scores used). |
-| `context_builder.py` | `ContextAssembler`, `MAX_METADATA_VALUE_LENGTH`, `MAX_METADATA_ATTRIBUTES`, `HIDDEN_METADATA_KEYS` | Renders chunks as `<document id source title ...>` elements within a character budget; escapes attributes and a closing `</document` inside chunk text. |
+| `context_assembler.py` | `ContextAssembler`, `MAX_METADATA_VALUE_LENGTH`, `MAX_METADATA_ATTRIBUTES`, `HIDDEN_METADATA_KEYS` | Renders chunks as `<document id source title ...>` elements within a character budget; escapes attributes and a closing `</document` inside chunk text. |
 | `query_adapter.py` | `compute_query_adapter`, `save_query_adapter`, `build_from_evals` | Closed-form ridge-regression adapter for query embeddings; only used offline by `scripts/eval/build_query_adapter.py`. |
 
 ### Flow: one search
@@ -97,11 +97,12 @@ ruff check .                  # from the repo root
   turns wait for the reranker ([`docs/PERFORMANCE.md`](../../../../docs/PERFORMANCE.md) lists what would move the knee).
 - Backend moved under `backend/app`; this folder used to be `core/retrieval/`
   (lcduc/automatic-octo-computing-machines#76, 06f0477, 2026-11-10).
+- `context_builder.py` renamed to `context_assembler.py` to match its class `ContextAssembler`
+  (branch `refactor/structure-fixes`, 2026-11-10).
 
 ## Status
 - Last reviewed: 2026-11-10
 - Open issues / follow-ups:
-  - `context_builder.py` holds `ContextAssembler` (file name does not match the class).
   - `embeddings.py` keeps module-level helpers marked for legacy compatibility (`get_embedder`,
     `get_device_info`) and lacks type hints on several public methods.
 - Ceilings (`# ceiling:` markers in this folder):

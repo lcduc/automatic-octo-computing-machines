@@ -46,10 +46,10 @@ pytest test/unit/test_audit_redaction.py
 - Backend moved under `backend/app` (lcduc/automatic-octo-computing-machines#76, 2026-11-10).
 - `test_api.py::test_rate_limit_and_roles` is timing-flaky (per-minute rate-limit window); passes
   on rerun.
+- `AdminAuditMiddleware` docstring now lists PUT and the `ADMIN_API_PREFIX` comment says
+  `api/v1/routes` (branch `refactor/structure-fixes`, 2026-11-10).
 
 ## Status
 - Last reviewed: 2026-11-10
-- Open issues / follow-ups: the `AdminAuditMiddleware` docstring says "POST/PATCH/DELETE" but
-  `AUDITED_METHODS` also includes PUT; the comment on `ADMIN_API_PREFIX` still says "mounted by
-  api/routes" (now `api/v1/routes`).
+- Open issues / follow-ups: none.
 - Ceilings (`# ceiling:` markers in this folder): none.

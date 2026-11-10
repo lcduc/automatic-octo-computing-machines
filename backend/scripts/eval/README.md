@@ -89,7 +89,9 @@ query_adapter or synthetic or threshold or perturber"`.
 - Moved here from `scripts/` with the `eval_` prefix dropped (`eval_rag.py` → `rag.py`, `eval_router.py` →
   `router.py`, …) in `lcduc/automatic-octo-computing-machines#76` (30cfa1c, 2026-11-10). Two
   `from scripts import ...` forms were missed at first and fixed to `from scripts.eval import ...`.
-  Docstrings still say "from the repository root" and `baseline.py` still names `eval_router` / `eval_rag`.
+  Docstrings said "from the repository root" and `baseline.py` named `eval_router` / `eval_rag` until
+  they were changed to "from `backend/`" and `scripts.eval.router` / `scripts.eval.rag`
+  (branch `refactor/structure-fixes`, 2026-11-10).
 - CI eval gates and committed baselines added in #25 (f7f365b, 2026-10-01).
 - Nightly retrieval eval: the CPU reranker costs ~20 s per question, so one sequential job took ~42 of its
   45 minutes and 9 of 10 runs were cancelled → one matrix job per golden set, 40-minute budget,
@@ -97,8 +99,8 @@ query_adapter or synthetic or threshold or perturber"`.
 - `intent_router.py`: `IntentRouter.classify()` returns `(intent, usage)` but the eval called `.value` on the
   tuple, and its default golden set was never committed; a missing API key scored 66.7% because failed
   calls default to rag → unpacked the pair, added `golden_intents.json`, count fallbacks and exit 1
-  (a3fa726, #54). Its docstring still points at `ChatbotService.__init__`; the live registry is now built in
-  `app/api/container.py`.
+  (a3fa726, #54). Its docstring pointed at `ChatbotService.__init__`; it now points at
+  `AppContainer.start` in `app/api/container.py`, where the live registry is built (branch `refactor/structure-fixes`).
 - `compare_configs.py` failed on import (removed vector store, old `RetrievalEvaluator` / `ContextRetriever`
   signatures) → rebuilt on `rag.py`'s evaluator; clears the start-up adapter for runs that don't ask for it and
   refuses a remote model-server, which applies its own adapter (d361ae6, #54).
@@ -112,13 +114,12 @@ query_adapter or synthetic or threshold or perturber"`.
   (dense Recall@1 57 → 13 of 81). Logistic regression doubled off-topic coverage on clean input but stole real
   questions on messy input, so the nearest-example rule stays. Write-up:
   [`docs/reports/EVAL_ROBUSTNESS.md`](../../../docs/reports/EVAL_ROBUSTNESS.md).
-- `hardware_divergence.py` defaults to `data/eval/golden_queries.json`, which does not exist; pass
-  `--golden-set scripts/demo_data/golden_queries.json`.
+- `hardware_divergence.py` defaulted to a golden set that does not exist; the default is now
+  `scripts/demo_data/golden_queries.json` (branch `refactor/structure-fixes`, 2026-11-10).
 - Windows: Vietnamese output raises `UnicodeEncodeError` (cp1252) when redirected → `PYTHONIOENCODING=utf-8`.
 
 ## Status
 - Last reviewed: 2026-11-10
-- Open issues / follow-ups: fix the stale default path in `hardware_divergence.py`, the stale
-  `ChatbotService.__init__` reference in `intent_router.py`, and the "repository root" usage lines.
+- Open issues / follow-ups: none.
 - Ceilings (`# ceiling:` markers in this folder): `finetune_embedding_model.py:60` — quadratic greedy batch
   fill, fine for a few thousand pairs — use a per-chunk queue beyond that.

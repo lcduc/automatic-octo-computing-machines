@@ -18,9 +18,9 @@ tables live in `core/storage/tables/`.
 | `data_subject.py` | `DataSubject` | The person behind a data-subject request (PRV-03): any of their identifiers, at least one set. |
 | `intent.py` | `IntentType` | Which engine a turn goes to: `RAG`, `ACTION` (tool call) or `LOGIN_REQUIRED` (ID-11); produced by `core/agent/intent_router.py`. |
 | `knowledge.py` | `ChunkingSpec`, `ChunkDraft`, `ChunkingResult`, `ExtractedDocument`, `IndexedChunk`, `RetrievalResults`, `RetrievedChunk`, `AUTO_STRATEGY`, `EXTRACTION_*` | Chunking strategy + parameters, chunks before embedding, a parsed upload, chunks held by the in-memory index, and retrieval results with scores. |
-| `knowledge_bundle.py` | `KnowledgeBundle`, `BundleSource`, `BundleDocument`, `BundleChunk`, `ImportResult`, `BUNDLE_VERSION`, `SOURCE_NAME_PATTERN` | Portable knowledge base (sources, documents, chunk text, no embeddings) for `export-knowledge` / `import-knowledge`. Pydantic, because it is read from and written to JSON. |
+| `knowledge_bundle.py` | `KnowledgeBundle`, `BundleSource`, `BundleDocument`, `BundleChunk`, `ImportResult`, `BUNDLE_VERSION`, `SOURCE_NAME_PATTERN` | Portable knowledge base (sources, documents, chunk text, no embeddings) for `export-knowledge` / `import-knowledge`. Pydantic, because it is read from and written to JSON. `SOURCE_NAME_PATTERN` is the one definition; `api/schemas/knowledge.py` imports and re-exports it. |
 | `llm.py` | `LLMUsage`, `LLMResult`, `StreamDelta` | Provider-neutral LLM call results carrying token usage for cost accounting. |
-| `metadata.py` | `NormalizedMetadata`, `MetadataBuilder`, `ProcessingMethod`, `SourceType`, `ProcessingStatus`, `normalize_legacy_metadata` | Normalized per-document processing metadata (pydantic) built by `core/document_processing/docling_processor.py`. |
+| `metadata.py` | `NormalizedMetadata`, `MetadataBuilder`, `ProcessingMethod`, `SourceType`, `ProcessingStatus` | Normalized per-document processing metadata (pydantic) built by `core/document_processing/docling_processor.py`. |
 | `retention_policy.py` | `RetentionPolicy`, `DEFAULT_*_DAYS`, `MIN_RETENTION_DAYS`, `MAX_RETENTION_DAYS`, `MIN_AUDIT_RETENTION_DAYS` | How long each kind of personal data is kept (PRV-04); owner-editable; bounds reused by `api/schemas/admin.py`. |
 | `tool_context.py` | `ToolContext` | The caller's identity as tools see it; set by the chat service from the verified caller, never by the LLM. |
 | `turn_trace.py` | `TurnTrace`, `ToolCallRecord`, `ROUTE_*`, `SCORE_DIGITS` | Step-by-step diagnostics of one turn (ADM-05, ORC-06): route, retrieval, tools (argument values not kept), timings. |
@@ -50,10 +50,10 @@ pytest test/unit/test_knowledge_bundle.py test/unit/test_chat_turn_recovery.py t
   (139f439, 2026-08-04).
 - Knowledge bundle models added with export/import (54b76a5, #32, 2026-10-07).
 - Backend moved under `backend/app` (#76, 2026-11-10).
+- Unused `normalize_legacy_metadata` deleted; `SOURCE_NAME_PATTERN`, duplicated in
+  `api/schemas/knowledge.py`, now defined only here (branch `refactor/structure-fixes`, 2026-11-10).
 
 ## Status
 - Last reviewed: 2026-11-10
-- Open issues / follow-ups: `normalize_legacy_metadata` in `metadata.py` is not called anywhere in
-  `app/`, `scripts/` or `test/`. `SOURCE_NAME_PATTERN` is defined both here (`knowledge_bundle.py`)
-  and in `api/schemas/knowledge.py` with the same regex.
+- Open issues / follow-ups: none.
 - Ceilings (`# ceiling:` markers in this folder): none.

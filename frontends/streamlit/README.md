@@ -54,12 +54,12 @@ No tests. Lint with `ruff check .` from the repo root.
 - Moved from the repo root (`app.py`, `.streamlit/`) to `frontends/streamlit/`, with its dependencies split out
   of the backend `requirements.txt` into its own, in `lcduc/automatic-octo-computing-machines#76`
   (3fa9dda, 2026-11-10).
-- The "backend not ready" banner still says to start the backend with `python main.py`; since #76 it is
-  `python -m app.main` from `backend/`.
+- The "backend not ready" banner said to start the backend with `python main.py`; it now says
+  `python -m app.main` from `backend/` (branch `refactor/structure-fixes`, 2026-11-10).
 - Streamlit's pillow pin keeps `pillow<13`, which blocks the pillow CVE fixes flagged by pip-audit.
 
 ## Status
 - Last reviewed: 2026-11-10
-- Open issues / follow-ups: fix the stale `python main.py` hint; split out `api_client.py` / `pages/` and add a
+- Open issues / follow-ups: split out `api_client.py` / `pages/` and add a
   Dockerfile only if the demo grows.
 - Ceilings (`# ceiling:` markers in this folder): none.

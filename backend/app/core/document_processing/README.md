@@ -91,7 +91,8 @@ Integration (needs `TEST_DATABASE_URL` to a pgvector database): `test/integratio
 ## Known problems and history
 - OCR engines used to live in an `ocr/` subfolder; it was flattened into this folder in `e5adde7`
   (2026-08-13). Docstrings in `docling_processor.py` and the paddle comment in `backend/Dockerfile`
-  still point at `core/document_processing/ocr` (stale).
+  pointed at the old folder until they were changed to `engine_selector.py` / `*_engine.py`
+  (branch `refactor/structure-fixes`, 2026-11-10).
 - paddlepaddle 3.3.x breaks CPU text detection (oneDNN/PIR executor, upstream PaddlePaddle/Paddle#77340,
   confirmed by running OCR against this code) -> pinned to 3.2.0; re-verify the bug before bumping past
   3.2.x -> `backend/Dockerfile`.
@@ -125,8 +126,7 @@ Integration (needs `TEST_DATABASE_URL` to a pgvector database): `test/integratio
 
 ## Status
 - Last reviewed: 2026-11-10
-- Open issues / follow-ups: fix the stale `core/document_processing/ocr` references; bump pypdf to
-  6.21.4; RES-03 (chat load measured while an OCR job runs) is still open (`docs/PERFORMANCE.md`).
+- Open issues / follow-ups: bump pypdf to 6.21.4; RES-03 (chat load measured while an OCR job runs) is still open (`docs/PERFORMANCE.md`).
 - Ceilings (`# ceiling:` markers in this folder):
   - `docling_processor.py:135` — Docling parsing shares the process's torch thread pool — move it to a
     worker process if the cap slows chat.
