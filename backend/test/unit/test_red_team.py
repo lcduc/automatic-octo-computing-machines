@@ -23,7 +23,7 @@ from app.core.agent.tools.base import BaseTool
 from app.core.agent.tools.registry import ToolRegistry
 from app.core.agent.tools.tool_arguments import ToolArguments, ToolArgumentsError
 from app.core.guardrails.input_guard import GuardAction, InputGuard
-from app.core.retrieval.context_builder import ContextAssembler
+from app.core.retrieval.context_assembler import ContextAssembler
 from app.models.knowledge import IndexedChunk, RetrievedChunk
 from app.models.tool_context import ToolContext
 

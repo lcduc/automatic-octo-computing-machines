@@ -13,6 +13,7 @@ from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
 
 # Local imports
+from app import APP_VERSION
 from app.api.container import AppContainer
 from app.api.dependencies import READ_ROLES, WRITE_ROLES, get_container, require_admin
 from app.core.storage.tables.access_tables import SCOPE_ADMIN_READ
@@ -24,7 +25,6 @@ from app.config.settings import Config
 router = APIRouter(tags=["Admin: monitoring"])
 read_access = Depends(require_admin(READ_ROLES, key_scope=SCOPE_ADMIN_READ))
 
-APP_VERSION = "3.0.0"
 MAX_SUMMARY_DAYS = 90
 #: Rollups are kept forever; two years is plenty for a dashboard.
 MAX_HISTORY_DAYS = 730

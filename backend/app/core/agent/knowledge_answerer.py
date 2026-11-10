@@ -20,7 +20,7 @@ from typing import AsyncIterator, Awaitable, Callable, Dict, List, Optional, Seq
 # Local imports
 from app.config.settings import Config
 from app.core.document_processing.chunking.chunker import section_label
-from app.core.retrieval.context_builder import ContextAssembler
+from app.core.retrieval.context_assembler import ContextAssembler
 from app.core.retrieval.knowledge_index import KnowledgeIndex
 from app.core.retrieval.retriever import ContextRetriever
 from app.core.routing.embedding_router import RouteDecision
