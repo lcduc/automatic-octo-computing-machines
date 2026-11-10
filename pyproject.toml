@@ -1,4 +1,4 @@
-# Tool configuration only — this project is run from source (main.py / app.py),
+# Tool configuration only — this project is run from source (main.py),
 # not installed as a package, so there is deliberately no [build-system] here.
 
 [tool.ruff]
@@ -24,7 +24,7 @@ ignore = [
 # entrypoints (asyncio/event-loop setup on Windows, dotenv loading), so the
 # "module level import not at top of file" rule cannot hold.
 "main.py" = ["E402"]
-"app.py" = ["E402"]
+"frontends/streamlit/app.py" = ["E402"]
 # These CLI scripts insert the project root on sys.path before importing
 # project modules, same E402 situation.
 "scripts/eval_rag.py" = ["E402"]

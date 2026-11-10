@@ -5,7 +5,7 @@ Talks to the backend exactly like a client frontend's server would: the
 ``/api/v1`` chat routes with a chat-scope ``CHATBOT_API_KEY`` and a per-session
 visitor id. Knowledge management lives in the admin web (frontends/).
 
-Run:  streamlit run app.py
+Run (from frontends/streamlit, with its own venv):  streamlit run app.py
 """
 
 import json

@@ -164,7 +164,7 @@ cython_debug/
 # Custom ignore
 data/
 .cursor/
-/.streamlit/secrets.toml
+/frontends/streamlit/.streamlit/secrets.toml
 SSL/
 
 # Downloaded ML model weights (fetched by scripts/download_models.py /
