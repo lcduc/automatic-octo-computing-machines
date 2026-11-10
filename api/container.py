@@ -55,7 +55,7 @@ from services.settings_service import SettingsService
 from services.sql_tool_catalog import SqlToolCatalog
 from services.transcription_service import TranscriptionService
 from services.usage_service import UsageService
-from utils.logging_setup import LOG_BACKUP_COUNT, json_log_path
+from core.infrastructure.logging_setup import LOG_BACKUP_COUNT, json_log_path
 
 logger = logging.getLogger(__name__)
 

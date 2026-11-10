@@ -24,7 +24,7 @@ from config.settings import Config  # noqa: E402
 from core.infrastructure.model_server.app import create_model_server_app  # noqa: E402
 from core.infrastructure.model_server.model_host import ModelHost  # noqa: E402
 from core.infrastructure.model_server.scheduler import PriorityScheduler  # noqa: E402
-from utils.logging_setup import configure_logging  # noqa: E402
+from core.infrastructure.logging_setup import configure_logging  # noqa: E402
 
 logger = logging.getLogger(__name__)
 

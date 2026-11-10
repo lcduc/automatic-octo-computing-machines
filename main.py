@@ -41,7 +41,7 @@ from middleware import (  # noqa: E402
 from api.routes import api_v1_router, health_router  # noqa: E402
 from config.settings import Config  # noqa: E402
 from core.infrastructure.lifecycle import StartupBanner  # noqa: E402
-from utils.logging_setup import configure_logging  # noqa: E402
+from core.infrastructure.logging_setup import configure_logging  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
