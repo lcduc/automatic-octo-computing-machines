@@ -41,6 +41,8 @@ from services.handoff_service import HandoffService
 from services.host_identity_service import HostIdentityService
 from services.ingestion_service import IngestionService
 from services.ingestion_worker import IngestionWorker
+from services.chunk_editing_service import ChunkEditingService
+from services.index_sync_service import IndexSyncService
 from services.knowledge_service import KnowledgeService
 from services.knowledge_transfer_service import KnowledgeTransferService
 from services.log_service import LogService
@@ -116,6 +118,8 @@ class AppContainer:
         self.pipeline: Optional[ChatbotService] = None
         self.chat: Optional[ChatService] = None
         self.knowledge: Optional[KnowledgeService] = None
+        self.chunks: Optional[ChunkEditingService] = None
+        self.index_sync: Optional[IndexSyncService] = None
         self.ingestion_worker: Optional[IngestionWorker] = None
         self.transcription: Optional[TranscriptionService] = None
         self._background_loops: List[asyncio.Task] = []
@@ -155,12 +159,14 @@ class AppContainer:
             )
         on_upload = self.ingestion_worker.wake if self.ingestion_worker else None
         self.knowledge = KnowledgeService(self.database, ingestion, self.index, uploads, on_upload)
+        self.chunks = ChunkEditingService(self.database, ingestion, self.index)
+        self.index_sync = IndexSyncService(self.database, ingestion, self.index)
 
-        reembedded = await self.knowledge.reembed_stale_chunks()
+        reembedded = await self.index_sync.reembed_stale_chunks()
         if reembedded:
             logger.info("Re-embedded %d chunks for model %s", reembedded, embedding.model_name)
         # Record the ingestion mark before the first snapshot so no upload finishing in between is missed.
-        await self.knowledge.refresh_index_if_ingested()
+        await self.index_sync.refresh_index_if_ingested()
         await self.index.refresh()
         self._start_background_loops()
         logger.info("Services started")
@@ -168,7 +174,7 @@ class AppContainer:
     def _start_background_loops(self) -> None:
         """Watch for finished uploads and, in embedded mode, run the ingestion worker in this process."""
         self._background_loops.append(
-            asyncio.create_task(self.knowledge.watch_ingestions(INGESTION_WATCH_SECONDS))
+            asyncio.create_task(self.index_sync.watch_ingestions(INGESTION_WATCH_SECONDS))
         )
         if self.ingestion_worker is not None:
             self._background_loops.append(asyncio.create_task(self.ingestion_worker.run()))

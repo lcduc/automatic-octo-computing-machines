@@ -1,4 +1,4 @@
-"""KnowledgeService and IngestionWorker against real PostgreSQL: CRUD keeps the index in sync, uploads go through the queue."""
+"""Knowledge services and IngestionWorker against real PostgreSQL: CRUD keeps the index in sync, uploads go through the queue."""
 
 import asyncio
 import uuid
@@ -12,6 +12,8 @@ from core.storage.knowledge_repository import IngestionQueueStats, KnowledgeRepo
 from core.storage.upload_store import UploadStore
 from models.knowledge import ChunkingSpec
 from services.errors import ConflictError, InvalidRequestError, NotFoundError
+from services.chunk_editing_service import ChunkEditingService
+from services.index_sync_service import IndexSyncService
 from services.ingestion_service import IngestionService
 from services.ingestion_worker import CRASH_LOOP_ERROR, MAX_ATTEMPTS, IngestionWorker
 from services.knowledge_service import KnowledgeService
@@ -20,13 +22,21 @@ from .conftest import FakeEmbeddingService, FakeProcessor
 
 @pytest.fixture
 def kb(database, tmp_path):
-    """Service, index, upload store and worker sharing one database and upload dir."""
+    """Services, index, upload store and worker sharing one database and upload dir."""
     ingestion = IngestionService(FakeProcessor, FakeEmbeddingService(), max_concurrent_files=1)
     index = KnowledgeIndex(database)
     uploads = UploadStore(str(tmp_path / "uploads"))
     worker = IngestionWorker(database, ingestion, uploads, concurrency=1)
     service = KnowledgeService(database, ingestion, index, uploads, worker.wake)
-    return SimpleNamespace(service=service, index=index, uploads=uploads, worker=worker, database=database)
+    return SimpleNamespace(
+        service=service,
+        chunks=ChunkEditingService(database, ingestion, index),
+        sync=IndexSyncService(database, ingestion, index),
+        index=index,
+        uploads=uploads,
+        worker=worker,
+        database=database,
+    )
 
 
 async def _expire_claim(database, document_id, attempts=None) -> None:
@@ -58,7 +68,7 @@ async def test_text_document_is_searchable_and_edits_refresh_the_index(kb):
     assert index.snapshot.chunks[0].metadata["url"] == "https://x.test/faq"
 
     chunk_id = (await service.get_document(document.id)).chunks[0].id
-    await service.update_chunk(chunk_id, "Văn phòng mở cửa từ 7 giờ sáng.", {"page": 2})
+    await kb.chunks.update_chunk(chunk_id, "Văn phòng mở cửa từ 7 giờ sáng.", {"page": 2})
     chunk = index.snapshot.chunks[0]
     assert "7 giờ" in chunk.content and chunk.metadata["page"] == 2
 
@@ -73,13 +83,13 @@ async def test_text_document_is_searchable_and_edits_refresh_the_index(kb):
 async def test_add_and_delete_chunk_keep_positions_contiguous(kb):
     service, index = kb.service, kb.index
     document = await service.create_text_document("general", "Doc", "first", {}, None, auto_approve=True)
-    await service.add_chunk(document.id, "third", {}, position=None)
-    await service.add_chunk(document.id, "second", {}, position=1)
+    await kb.chunks.add_chunk(document.id, "third", {}, position=None)
+    await kb.chunks.add_chunk(document.id, "second", {}, position=1)
     loaded = await service.get_document(document.id)
     assert [c.content for c in loaded.chunks] == ["first", "second", "third"]
     assert loaded.chunk_count == 3
 
-    await service.delete_chunk(loaded.chunks[0].id)
+    await kb.chunks.delete_chunk(loaded.chunks[0].id)
     loaded = await service.get_document(document.id)
     assert [(c.position, c.content) for c in loaded.chunks] == [(0, "second"), (1, "third")]
     assert [c.content for c in index.snapshot.chunks] == ["second", "third"]
@@ -88,7 +98,7 @@ async def test_add_and_delete_chunk_keep_positions_contiguous(kb):
 @pytest.mark.asyncio
 async def test_upload_is_queued_then_ingested_by_the_worker(kb):
     service, index = kb.service, kb.index
-    assert await service.refresh_index_if_ingested() is False  # records the starting mark
+    assert await kb.sync.refresh_index_if_ingested() is False  # records the starting mark
     content = b"Muc luong toi thieu\n\nThoi gian thu viec"
     document = await service.upload_file(content, "policy.txt", "contracts", None, {"year": 2026}, None)
     assert document.status == "processing"
@@ -96,8 +106,8 @@ async def test_upload_is_queued_then_ingested_by_the_worker(kb):
 
     assert await kb.worker.process_next() is True
     assert await kb.worker.process_next() is False
-    assert await service.refresh_index_if_ingested() is True
-    assert await service.refresh_index_if_ingested() is False
+    assert await kb.sync.refresh_index_if_ingested() is True
+    assert await kb.sync.refresh_index_if_ingested() is False
 
     loaded = await service.get_document(document.id)
     assert loaded.status == "ready" and loaded.chunk_count == 2 and loaded.claimed_at is None
@@ -160,23 +170,23 @@ def _pdf_with_pages(count: int) -> bytes:
 
 @pytest.mark.asyncio
 async def test_queue_stats_report_pending_and_claimed_uploads(kb):
-    assert await kb.service.ingestion_queue() == IngestionQueueStats(0, 0, None)
+    assert await kb.sync.ingestion_queue() == IngestionQueueStats(0, 0, None)
     await kb.service.upload_file(b"a\n\nb", "one.txt", "general", None, {}, None)
     await kb.service.upload_file(b"c\n\nd", "two.txt", "general", None, {}, None)
     held = await _claim(kb.database)  # another worker is busy with the first one
 
-    stats = await kb.service.ingestion_queue()
+    stats = await kb.sync.ingestion_queue()
     assert (stats.pending, stats.in_progress) == (2, 1) and stats.oldest_pending_seconds >= 0
 
     assert await kb.worker.process_next() is True  # takes the second upload
-    stats = await kb.service.ingestion_queue()
+    stats = await kb.sync.ingestion_queue()
     assert (stats.pending, stats.in_progress) == (1, 1)
 
     await _expire_claim(kb.database, held.document_id)  # that worker died
-    stats = await kb.service.ingestion_queue()
+    stats = await kb.sync.ingestion_queue()
     assert (stats.pending, stats.in_progress) == (1, 0)
     assert await kb.worker.process_next() is True
-    assert await kb.service.ingestion_queue() == IngestionQueueStats(0, 0, None)
+    assert await kb.sync.ingestion_queue() == IngestionQueueStats(0, 0, None)
 
 
 @pytest.mark.asyncio
@@ -283,11 +293,11 @@ async def test_preview_writes_nothing_and_rechunk_replaces_the_chunks(kb):
     await service.review_document(document.id, True, "reviewer@x.test")
     auto_chunks = [c.content for c in (await service.get_document(document.id)).chunks]
 
-    preview = await service.preview_chunking(document.id, ChunkingSpec("legal_article", {}))
+    preview = await kb.chunks.preview_chunking(document.id, ChunkingSpec("legal_article", {}))
     assert [d.metadata.get("article") for d in preview.drafts] == ["Điều 1", "Điều 2"]
     assert [c.content for c in (await service.get_document(document.id)).chunks] == auto_chunks
 
-    rechunked = await service.rechunk(document.id, ChunkingSpec("legal_article", {}), discard_manual_edits=False)
+    rechunked = await kb.chunks.rechunk(document.id, ChunkingSpec("legal_article", {}), discard_manual_edits=False)
     assert rechunked.chunk_count == 2 and rechunked.chunking == {"strategy": "legal_article"}
     assert [c.position for c in rechunked.chunks] == [0, 1]
     assert sorted(c.metadata["article"] for c in index.snapshot.chunks) == ["Điều 1", "Điều 2"]
@@ -298,11 +308,11 @@ async def test_rechunk_protects_hand_edited_chunks(kb):
     service = kb.service
     document = await service.create_text_document("FAQ", "Hỏi đáp", "Hỏi: Phí?\nĐáp: Miễn phí.", {}, None)
     chunk_id = (await service.get_document(document.id)).chunks[0].id
-    await service.update_chunk(chunk_id, "Hỏi: Phí?\nĐáp: 100 nghìn đồng.", None)
+    await kb.chunks.update_chunk(chunk_id, "Hỏi: Phí?\nĐáp: 100 nghìn đồng.", None)
 
     with pytest.raises(ConflictError, match="edited by hand"):
-        await service.rechunk(document.id, ChunkingSpec("qa_pair", {}), discard_manual_edits=False)
-    rechunked = await service.rechunk(document.id, ChunkingSpec("qa_pair", {}), discard_manual_edits=True)
+        await kb.chunks.rechunk(document.id, ChunkingSpec("qa_pair", {}), discard_manual_edits=False)
+    rechunked = await kb.chunks.rechunk(document.id, ChunkingSpec("qa_pair", {}), discard_manual_edits=True)
     assert [(c.content, c.edited) for c in rechunked.chunks] == [("Hỏi: Phí?\nĐáp: Miễn phí.", False)]
     assert rechunked.chunks[0].extra_metadata == {"question": "Phí?"}
 
@@ -312,14 +322,14 @@ async def test_rechunk_needs_stored_text_and_a_strategy_that_fits(kb):
     service = kb.service
     document = await service.create_text_document("general", "Ghi chú", "Chỉ là một đoạn văn.", {}, None)
     with pytest.raises(InvalidRequestError, match="No question/answer pairs"):
-        await service.preview_chunking(document.id, ChunkingSpec("qa_pair", {}))
+        await kb.chunks.preview_chunking(document.id, ChunkingSpec("qa_pair", {}))
 
     async with kb.database.session() as session:
         await session.execute(text("UPDATE knowledge_documents SET extracted_text = NULL WHERE id = :id"), {"id": document.id})
     with pytest.raises(ConflictError, match="upload the file again"):
-        await service.rechunk(document.id, ChunkingSpec("size", {"max_chars": 500}), discard_manual_edits=False)
+        await kb.chunks.rechunk(document.id, ChunkingSpec("size", {"max_chars": 500}), discard_manual_edits=False)
     with pytest.raises(NotFoundError):
-        await service.preview_chunking(uuid.uuid4(), ChunkingSpec())
+        await kb.chunks.preview_chunking(uuid.uuid4(), ChunkingSpec())
 
 
 @pytest.mark.asyncio

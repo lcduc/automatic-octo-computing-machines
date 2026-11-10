@@ -224,7 +224,7 @@ async def import_knowledge(body: KnowledgeBundle, container: AppContainer = Depe
     """
     result = await container.knowledge_transfer.import_bundle(body)
     # ceiling: embeds inside the request; move to the ingestion queue if imports time out
-    await container.knowledge.reembed_stale_chunks()
+    await container.index_sync.reembed_stale_chunks()
     return ImportResultOut(**vars(result))
 
 
@@ -234,21 +234,21 @@ async def import_knowledge(body: KnowledgeBundle, container: AppContainer = Depe
 @router.post("/documents/{document_id}/chunks", response_model=ChunkOut, status_code=201, dependencies=[Depends(write_access)])
 async def add_chunk(document_id: uuid.UUID, body: ChunkCreate, container: AppContainer = Depends(get_container)) -> ChunkOut:
     """Insert a chunk into a document."""
-    chunk = await container.knowledge.add_chunk(document_id, body.content, body.metadata, body.position)
+    chunk = await container.chunks.add_chunk(document_id, body.content, body.metadata, body.position)
     return ChunkOut.model_validate(chunk)
 
 
 @router.patch("/chunks/{chunk_id}", response_model=ChunkOut, dependencies=[Depends(write_access)])
 async def update_chunk(chunk_id: uuid.UUID, body: ChunkUpdate, container: AppContainer = Depends(get_container)) -> ChunkOut:
     """Edit a chunk's text (re-embedded automatically) and/or metadata."""
-    chunk = await container.knowledge.update_chunk(chunk_id, body.content, body.metadata)
+    chunk = await container.chunks.update_chunk(chunk_id, body.content, body.metadata)
     return ChunkOut.model_validate(chunk)
 
 
 @router.delete("/chunks/{chunk_id}", response_model=MessageResponse, dependencies=[Depends(write_access)])
 async def delete_chunk(chunk_id: uuid.UUID, container: AppContainer = Depends(get_container)) -> MessageResponse:
     """Remove a chunk."""
-    await container.knowledge.delete_chunk(chunk_id)
+    await container.chunks.delete_chunk(chunk_id)
     return MessageResponse(message="Chunk deleted")
 
 
@@ -268,7 +268,7 @@ async def preview_chunking(
     document_id: uuid.UUID, body: ChunkingPreviewRequest, container: AppContainer = Depends(get_container)
 ) -> ChunkingPreview:
     """What a strategy would make of the document's stored text; nothing is saved."""
-    result = await container.knowledge.preview_chunking(document_id, to_spec(body.chunking))
+    result = await container.chunks.preview_chunking(document_id, to_spec(body.chunking))
     return ChunkingPreview.from_result(result, body.limit)
 
 
@@ -277,5 +277,5 @@ async def rechunk_document(
     document_id: uuid.UUID, body: RechunkRequest, container: AppContainer = Depends(get_container)
 ) -> DocumentDetail:
     """Replace the document's chunks with its stored text split by the given strategy."""
-    document = await container.knowledge.rechunk(document_id, to_spec(body.chunking), body.discard_manual_edits)
+    document = await container.chunks.rechunk(document_id, to_spec(body.chunking), body.discard_manual_edits)
     return DocumentDetail.from_document(document)

@@ -100,7 +100,7 @@ class DemoSeeder:
                     )
                     logger.info("Created document: %s", title)
                 elif document.chunking != DEMO_CHUNKING.to_json():
-                    await knowledge.rechunk(document.id, DEMO_CHUNKING, discard_manual_edits=False)
+                    await container.chunks.rechunk(document.id, DEMO_CHUNKING, discard_manual_edits=False)
                     logger.info("Re-chunked document: %s", title)
                 else:
                     logger.info("Skipping unchanged document: %s", title)
