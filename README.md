@@ -64,17 +64,17 @@ refuses most of them. Classification takes 6.2 ms median and 9.3 ms p95 per mess
 separately; the eval script doesn't time).
 
 **Tests:** all 417 pass with `TEST_DATABASE_URL` pointing at a pgvector Postgres 17; line coverage
-is 81% (`pytest-cov` over `api`, `config`, `core`, `services`, `middleware`, `models`, `utils`).
+is 81% (`pytest-cov` over `backend/app`).
 
-To reproduce, seed a fresh database (settings changed in the admin web override these environment
+To reproduce from `backend/`, seed a fresh database (settings changed in the admin web override these environment
 defaults), then run once per golden set and configuration:
 
 ```bash
-RETRIEVAL_TOP_K=10 SEMANTIC_WEIGHT=1.0 RERANKING_ENABLED=false python -m scripts.eval_rag --golden-set scripts/demo_data/golden_queries.json --out logs/rag_dense_only.json
-python -m scripts.eval_router --golden-set scripts/demo_data/golden_colloquial_dev.json --golden-set scripts/demo_data/golden_colloquial_holdout.json --golden-set scripts/demo_data/golden_queries.json
+RETRIEVAL_TOP_K=10 SEMANTIC_WEIGHT=1.0 RERANKING_ENABLED=false python -m scripts.eval.rag --golden-set scripts/demo_data/golden_queries.json --out logs/rag_dense_only.json
+python -m scripts.eval.router --golden-set scripts/demo_data/golden_colloquial_dev.json --golden-set scripts/demo_data/golden_colloquial_holdout.json --golden-set scripts/demo_data/golden_queries.json
 ```
 
-`eval_rag` prints Recall@k at `RETRIEVAL_TOP_K` and MRR; Recall@1 and Recall@5 come from the
+`scripts.eval.rag` prints Recall@k at `RETRIEVAL_TOP_K` and MRR; Recall@1 and Recall@5 come from the
 per-question `rank` in its `--out` report.
 
 ## Knowledge from multiple sources
@@ -114,20 +114,25 @@ per-question `rank` in its `--out` report.
 ## Repository layout
 
 ```text
-main.py                     FastAPI wiring (middleware, routers, lifespan)
-worker.py                   ingestion worker: parses/OCRs queued uploads outside the API
-api/                        routes (v1 public + admin), schemas, dependencies
-middleware/                 app-wide ASGI middleware, one class per file (only main.py imports it)
-services/                   use cases: chat, knowledge, ingestion, auth, settings, usage…
-core/agent/                 LLM providers (usage-reporting), chat pipeline, prompts, tools
-core/retrieval/             embeddings, reranker, in-memory knowledge index, retriever
-core/guardrails/            II redactor, input guard
-core/storage/               SQLAlchemy tables, repositories, connection pool
-core/document_processing/   Docling / OCR parsing
-migrations/                 Alembic schema migrations
-frontends/widget/           chat widget (Next.js); client deployments customise it on a branch
-frontends/admin/            admin web shared by every deployment (Vite + React)
-app.py                      internal Streamlit demo of the chat API
+backend/                            the API, worker and model server (one image); run commands from here
+  app/main.py                       FastAPI wiring (middleware, routers, lifespan)
+  app/worker.py                     ingestion worker: parses/OCRs queued uploads outside the API
+  app/model_server.py               shared GPU model server (embeddings, reranker, OCR)
+  app/api/                          v1/routes (public + admin), schemas, dependencies, health probes
+  app/middleware/                   app-wide ASGI middleware, one class per file (only main.py imports it)
+  app/services/                     use cases: chat, knowledge, ingestion, auth, settings, usage…
+  app/core/agent/                   LLM providers (usage-reporting), chat routing, knowledge answers, prompts, tools
+  app/core/retrieval/               embeddings, reranker, in-memory knowledge index, retriever
+  app/core/guardrails/              PII redactor, input guard
+  app/core/storage/                 SQLAlchemy tables, repositories, connection pool
+  app/core/document_processing/     Docling / OCR parsing
+  migrations/                       Alembic schema migrations
+  scripts/                          setup, admin and demo-data CLIs; scripts/eval/ holds the evals
+  test/                             unit and integration tests
+frontends/widget/                   chat widget (Next.js); client deployments customise it on a branch
+frontends/admin/                    admin web shared by every deployment (Vite + React)
+frontends/streamlit/                internal Streamlit demo of the chat API
+deploy/                             installer, ops CLI (deploy/ops) and its compose assets
 docs/DEPLOYMENT.md          VPS deployment, embedding, backups, operations
 docs/API.md                 API reference (public chat + admin); docs/openapi.json is its schema
 docs/PERFORMANCE.md         load test of the chat pipeline (scripts/loadtest/): latency, ceiling, VRAM
@@ -139,8 +144,9 @@ docs/reports/               dated reviews and experiment write-ups (point-in-tim
 See [docs/DEPLOYMENT.md#local-development](docs/DEPLOYMENT.md#local-development).
 
 ```bash
-ruff check .
-pytest                                  # unit tests; integration tests need TEST_DATABASE_URL
+ruff check .                            # every Python component, from the repository root
+cd backend && pytest                    # unit tests; integration tests need TEST_DATABASE_URL
+python -m pytest deploy/ops/tests       # ops CLI, from the repository root
 cd frontends/widget && npm run lint && npx next typegen && npx tsc --noEmit && npm run build
 cd frontends/admin && npm run lint && npm run typecheck && npm test && npm run build
 ```

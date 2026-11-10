@@ -6,7 +6,7 @@
 #   docker compose up -d --build
 
 x-backend-build: &backend-build
-  context: .
+  context: ./backend
   args:
     TORCH_INDEX: ${TORCH_INDEX:-cu126}
 

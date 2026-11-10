@@ -1,0 +1,4 @@
+# Internal Streamlit demo of the chat API (not a client product). Talks to the backend over HTTP only.
+streamlit==1.64.0
+requests==2.34.2
+python-dotenv==1.2.4

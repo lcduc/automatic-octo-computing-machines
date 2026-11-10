@@ -1,0 +1,12 @@
+# Tool configuration only — the backend is run from source (`python -m app.main`, from this
+# directory), not installed as a package, so there is deliberately no [build-system] here.
+# Lint settings for the whole repository live in /ruff.toml.
+
+[tool.pytest.ini_options]
+testpaths = ["test"]
+# All async tests carry an explicit @pytest.mark.asyncio, matching strict mode.
+asyncio_mode = "strict"
+markers = [
+    "hard_gate: must pass 100% before any merge (EVAL-09): tier gating, per-user data isolation, retrieval filters",
+    "red_team: deterministic prompt-injection set (SEC-01): direct, via documents, via tool results",
+]

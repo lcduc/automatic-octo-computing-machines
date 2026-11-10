@@ -43,7 +43,7 @@ jobs:
       - name: Build image
         uses: docker/build-push-action@v7
         with:
-          context: .
+          context: backend
           push: false
           load: false
           # GitHub Actions layer cache: the expensive pip/model layers are

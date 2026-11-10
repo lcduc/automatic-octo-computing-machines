@@ -90,7 +90,7 @@ services:
 
   model-server:
     <<: *backend
-    command: ["python", "model_server.py"]
+    command: ["python", "-m", "app.model_server"]
     environment:
       MODEL_SERVER_TOKEN: ${MODEL_SERVER_TOKEN:?run the installer to generate secrets}
       # Less VRAM fragmentation for the torch models (embedding, reranker).
@@ -144,7 +144,7 @@ services:
 
   ingestion-worker:
     <<: *backend
-    command: ["python", "worker.py"]
+    command: ["python", "-m", "app.worker"]
     environment:
       POSTGRES_HOST: postgres
       POSTGRES_USER: ${POSTGRES_APP_USER:-chatbot_app}
