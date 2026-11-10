@@ -80,7 +80,7 @@ async def logs(
 async def system_status(container: AppContainer = Depends(get_container)) -> SystemStatus:
     """Health, index size, models, cache statistics, the upload queue and GPU load."""
     snapshot = container.index.snapshot
-    queue = await container.knowledge.ingestion_queue()
+    queue = await container.index_sync.ingestion_queue()
     return SystemStatus(
         version=APP_VERSION,
         uptime_seconds=round(time.time() - container.started_at, 1),

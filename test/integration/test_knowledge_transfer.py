@@ -1,12 +1,16 @@
 """KnowledgeTransferService against real PostgreSQL: a knowledge base round-trips without its embeddings."""
 
+from types import SimpleNamespace
+
 import pytest
 from sqlalchemy import text
 
 from core.retrieval.knowledge_index import KnowledgeIndex
 from core.storage.upload_store import UploadStore
 from models.knowledge_bundle import KnowledgeBundle
+from services.chunk_editing_service import ChunkEditingService
 from services.errors import InvalidRequestError
+from services.index_sync_service import IndexSyncService
 from services.ingestion_service import IngestionService
 from services.knowledge_service import KnowledgeService
 from services.knowledge_transfer_service import KnowledgeTransferService
@@ -15,10 +19,16 @@ from .conftest import FakeEmbeddingService, FakeProcessor
 
 @pytest.fixture
 def knowledge(database, tmp_path):
-    """Knowledge service (to create and embed content) and the transfer service on one database."""
+    """Knowledge services (to create, edit and re-embed content) and the transfer service on one database."""
     ingestion = IngestionService(FakeProcessor, FakeEmbeddingService(), max_concurrent_files=1)
-    service = KnowledgeService(database, ingestion, KnowledgeIndex(database), UploadStore(str(tmp_path / "uploads")))
-    return service, KnowledgeTransferService(database)
+    index = KnowledgeIndex(database)
+    service = KnowledgeService(database, ingestion, index, UploadStore(str(tmp_path / "uploads")))
+    return SimpleNamespace(
+        service=service,
+        chunks=ChunkEditingService(database, ingestion, index),
+        sync=IndexSyncService(database, ingestion, index),
+        transfer=KnowledgeTransferService(database),
+    )
 
 
 async def _embedded_chunks(database) -> int:
@@ -28,10 +38,10 @@ async def _embedded_chunks(database) -> int:
 
 @pytest.mark.asyncio
 async def test_round_trip_keeps_content_and_leaves_embedding_to_the_new_server(knowledge, database):
-    service, transfer = knowledge
+    service, transfer = knowledge.service, knowledge.transfer
     document = await service.create_text_document("FAQ", "Giờ làm việc", "Mở cửa từ 8 giờ.", {"tag": "hours"}, "a@x.test", auto_approve=True)
     chunk_id = (await service.get_document(document.id)).chunks[0].id
-    await service.update_chunk(chunk_id, "Mở cửa từ 7 giờ.", {"page": 2})
+    await knowledge.chunks.update_chunk(chunk_id, "Mở cửa từ 7 giờ.", {"page": 2})
     bundle = KnowledgeBundle.model_validate_json((await transfer.export_bundle()).model_dump_json())
 
     await service.delete_document(document.id)
@@ -43,13 +53,13 @@ async def test_round_trip_keeps_content_and_leaves_embedding_to_the_new_server(k
     restored = await service.get_document(documents[0].id)
     assert (restored.title, restored.extra_metadata) == ("Giờ làm việc", {"tag": "hours"})
     assert restored.chunks[0].content == "Mở cửa từ 7 giờ." and restored.chunks[0].edited
-    assert await service.reembed_stale_chunks() == 1
+    assert await knowledge.sync.reembed_stale_chunks() == 1
     assert await _embedded_chunks(database) == 1
 
 
 @pytest.mark.asyncio
 async def test_importing_twice_skips_documents_already_present(knowledge):
-    service, transfer = knowledge
+    service, transfer = knowledge.service, knowledge.transfer
     await service.create_text_document("FAQ", "Doc", "some text", {}, None, auto_approve=True)
     bundle = await transfer.export_bundle()
 
@@ -60,7 +70,7 @@ async def test_importing_twice_skips_documents_already_present(knowledge):
 
 @pytest.mark.asyncio
 async def test_import_creates_missing_sources(knowledge, database):
-    service, transfer = knowledge
+    service, transfer = knowledge.service, knowledge.transfer
     await service.create_text_document("FAQ", "Doc", "some text", {}, None, auto_approve=True)
     bundle = await transfer.export_bundle()
     async with database.session() as session:
@@ -74,7 +84,7 @@ async def test_import_creates_missing_sources(knowledge, database):
 
 @pytest.mark.asyncio
 async def test_import_rejects_an_unknown_access_tier_and_changes_nothing(knowledge, database):
-    service, transfer = knowledge
+    service, transfer = knowledge.service, knowledge.transfer
     await service.create_text_document("FAQ", "Doc", "some text", {}, None, auto_approve=True)
     bundle = await transfer.export_bundle()
     bundle.documents[0].access_tier = "no-such-tier"
@@ -88,7 +98,7 @@ async def test_import_rejects_an_unknown_access_tier_and_changes_nothing(knowled
 
 @pytest.mark.asyncio
 async def test_imported_documents_wait_for_review_unless_the_operator_approves_them(knowledge, database):
-    service, transfer = knowledge
+    service, transfer = knowledge.service, knowledge.transfer
     await service.create_text_document("FAQ", "Doc", "some text", {}, None, auto_approve=True)
     bundle = await transfer.export_bundle()
     for auto_approve, expected in ((False, "pending"), (True, "approved")):
