@@ -37,6 +37,9 @@ jobs:
           --health-cmd "pg_isready -U chatbot" --health-interval 5s --health-timeout 5s --health-retries 10
     env:
       DATABASE_URL: postgresql+asyncpg://chatbot:chatbot_ci@localhost:5432/chatbot_eval
+    defaults:
+      run:
+        working-directory: backend
     steps:
       - uses: actions/checkout@v7
 
@@ -45,8 +48,8 @@ jobs:
           python-version: "3.11"
           cache: pip
           cache-dependency-path: |
-            requirements.txt
-            requirements-torch.txt
+            backend/requirements.txt
+            backend/requirements-torch.txt
 
       # Same CPU torch install as ci.yml (torch is deliberately absent from requirements.txt).
       - name: Install CPU torch
@@ -59,8 +62,8 @@ jobs:
         uses: actions/cache@v6
         with:
           path: |
-            model_weights/models--intfloat--multilingual-e5-small
-            model_weights/models--BAAI--bge-reranker-v2-m3
+            backend/model_weights/models--intfloat--multilingual-e5-small
+            backend/model_weights/models--BAAI--bge-reranker-v2-m3
           key: models-e5-small-bge-reranker-v2-m3-v1
 
       - name: Create the schema

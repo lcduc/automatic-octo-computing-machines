@@ -1,0 +1,29 @@
+# Lint configuration for every Python component in the repository (backend/, deploy/ops,
+# frontends/streamlit). Run from the repository root:  ruff check .
+
+line-length = 100
+target-version = "py311"
+extend-exclude = ["venv", "model_weights", "data", "logs"]
+
+[lint]
+# Start conservative: pyflakes (real errors — undefined names, unused imports)
+# plus the pycodestyle errors. Style-only rules stay off so CI fails on things
+# that are actually broken rather than on formatting opinions.
+select = ["E", "F", "W"]
+ignore = [
+    "E501",  # line length: many existing docstrings/comments run long; the
+             # formatter is not enforced here, so this would be noise.
+]
+
+[lint.per-file-ignores]
+# Package __init__.py files re-export their submodules' public names; those
+# imports are the package API, not dead code.
+"**/__init__.py" = ["F401"]
+# Import-time side effects are required before other imports in these two
+# entrypoints (asyncio/event-loop setup on Windows, dotenv loading), so the
+# "module level import not at top of file" rule cannot hold.
+"backend/app/main.py" = ["E402"]
+"frontends/streamlit/app.py" = ["E402"]
+# These CLI scripts load .env before importing project modules, same E402 situation.
+"backend/scripts/eval_rag.py" = ["E402"]
+"backend/scripts/manage.py" = ["E402"]

@@ -26,8 +26,8 @@ jobs:
       matrix:
         include:
           - image: chatbot-api
-            context: .
-            dockerfile: Dockerfile
+            context: backend
+            dockerfile: backend/Dockerfile
           - image: chatbot-web
             context: frontends/widget
             dockerfile: frontends/widget/Dockerfile

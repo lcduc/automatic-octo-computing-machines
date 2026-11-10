@@ -7,7 +7,7 @@ updates:
   # Dockerfile), so these PRs are the intended way to bump them — one at a
   # time, with CI proving the suite still passes.
   - package-ecosystem: pip
-    directory: "/"
+    directory: "/backend"
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
@@ -29,6 +29,16 @@ updates:
       - dependency-name: torchvision
       - dependency-name: torchaudio
       - dependency-name: paddlepaddle
+
+  # The internal Streamlit demo pins its own few dependencies.
+  - package-ecosystem: pip
+    directory: "/frontends/streamlit"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 2
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
 
   # Keep the workflow actions themselves current (checkout, setup-python, ...).
   - package-ecosystem: github-actions
