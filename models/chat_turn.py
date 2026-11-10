@@ -5,7 +5,7 @@ Data classes exchanged between the chat service and the chat pipeline.
 # Standard library imports
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Callable, Dict, List, Optional, Sequence, TypeVar, Union
 
 # Local imports
 from .llm import LLMUsage
@@ -15,6 +15,13 @@ from .turn_trace import TurnTrace
 FALLBACK_MODE_DENY = "deny"
 FALLBACK_MODE_HANDOFF = "handoff"
 FALLBACK_MODES = (FALLBACK_MODE_DENY, FALLBACK_MODE_HANDOFF)
+
+PolicyValue = TypeVar("PolicyValue")
+
+
+def or_default(value: Optional[PolicyValue], default: Callable[[], PolicyValue]) -> PolicyValue:
+    """An admin-set policy value, or the env default when none was saved."""
+    return default() if value is None else value
 
 
 class TurnOutcome(str, Enum):
@@ -121,3 +128,7 @@ class TurnResult:
     rewritten_query: Optional[str] = None
     guard_reason: Optional[str] = None
     handoff_reason: Optional[HandoffReason] = None
+
+
+#: What the pipeline yields: text pieces, token usage, and one final result.
+TurnEvent = Union[TurnDelta, TurnUsage, TurnResult]
