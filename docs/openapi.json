@@ -36,7 +36,7 @@
           "Health"
         ],
         "summary": "Ready to answer chats",
-        "description": "200 when the database answers and services are built; 503 otherwise.",
+        "description": "200 when the database, the pipeline, the model-server (if used) and the LLM provider answer; 503 otherwise.",
         "operationId": "ready_health_ready_get",
         "responses": {
           "200": {
@@ -60,6 +60,16 @@
         "operationId": "chat_stream_api_v1_chat_stream_post",
         "parameters": [
           {
+            "name": "X-Service-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Service-Token"
+            }
+          },
+          {
             "name": "X-API-Key",
             "in": "header",
             "required": false,
@@ -77,6 +87,16 @@
               "type": "string",
               "default": "",
               "title": "X-End-User-Id"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Authorization"
             }
           }
         ],
@@ -122,6 +142,16 @@
         "operationId": "chat_api_v1_chat_post",
         "parameters": [
           {
+            "name": "X-Service-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Service-Token"
+            }
+          },
+          {
             "name": "X-API-Key",
             "in": "header",
             "required": false,
@@ -139,6 +169,16 @@
               "type": "string",
               "default": "",
               "title": "X-End-User-Id"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Authorization"
             }
           }
         ],
@@ -196,6 +236,16 @@
             }
           },
           {
+            "name": "X-Service-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Service-Token"
+            }
+          },
+          {
             "name": "X-API-Key",
             "in": "header",
             "required": false,
@@ -213,6 +263,16 @@
               "type": "string",
               "default": "",
               "title": "X-End-User-Id"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Authorization"
             }
           }
         ],
@@ -246,9 +306,19 @@
           "Chat"
         ],
         "summary": "Submit Feedback",
-        "description": "Rate an assistant answer (thumbs up/down, optional comment).",
+        "description": "Rate an assistant answer; a second thumbs-down in a row may open a ticket (HND-04).",
         "operationId": "submit_feedback_api_v1_feedback_post",
         "parameters": [
+          {
+            "name": "X-Service-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Service-Token"
+            }
+          },
           {
             "name": "X-API-Key",
             "in": "header",
@@ -268,6 +338,16 @@
               "default": "",
               "title": "X-End-User-Id"
             }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Authorization"
+            }
           }
         ],
         "requestBody": {
@@ -276,6 +356,100 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/FeedbackRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeedbackResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/handoffs/{handoff_id}/contact": {
+      "post": {
+        "tags": [
+          "Chat"
+        ],
+        "summary": "Handoff Contact",
+        "description": "Leave contact details for the reply to one's own ticket.",
+        "operationId": "handoff_contact_api_v1_handoffs__handoff_id__contact_post",
+        "parameters": [
+          {
+            "name": "handoff_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Handoff Id"
+            }
+          },
+          {
+            "name": "X-Service-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Service-Token"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Api-Key"
+            }
+          },
+          {
+            "name": "X-End-User-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-End-User-Id"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HandoffContact"
               }
             }
           }
@@ -313,6 +487,16 @@
         "description": "Title, welcome text, colour and suggested questions configured in the admin web.",
         "operationId": "widget_config_api_v1_widget_config_get",
         "parameters": [
+          {
+            "name": "X-Service-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Service-Token"
+            }
+          },
           {
             "name": "X-API-Key",
             "in": "header",
@@ -358,6 +542,16 @@
         "operationId": "transcribe_api_v1_chat_transcribe_post",
         "parameters": [
           {
+            "name": "X-Service-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Service-Token"
+            }
+          },
+          {
             "name": "X-API-Key",
             "in": "header",
             "required": false,
@@ -375,6 +569,16 @@
               "type": "string",
               "default": "",
               "title": "X-End-User-Id"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Authorization"
             }
           }
         ],
@@ -494,6 +698,16 @@
               "default": "",
               "title": "Authorization"
             }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Api-Key"
+            }
           }
         ],
         "responses": {
@@ -537,6 +751,16 @@
               "type": "string",
               "default": "",
               "title": "Authorization"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Api-Key"
             }
           }
         ],
@@ -592,6 +816,16 @@
               "default": "",
               "title": "Authorization"
             }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Api-Key"
+            }
           }
         ],
         "responses": {
@@ -637,6 +871,16 @@
               "type": "string",
               "default": "",
               "title": "Authorization"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Api-Key"
             }
           }
         ],
@@ -702,6 +946,16 @@
               "default": "",
               "title": "Authorization"
             }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Api-Key"
+            }
           }
         ],
         "requestBody": {
@@ -756,6 +1010,16 @@
               "default": "",
               "title": "Authorization"
             }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Api-Key"
+            }
           }
         ],
         "responses": {
@@ -801,6 +1065,16 @@
               "type": "string",
               "default": "",
               "title": "Authorization"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Api-Key"
             }
           }
         ],
@@ -865,6 +1139,16 @@
               "default": "",
               "title": "Authorization"
             }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Api-Key"
+            }
           }
         ],
         "requestBody": {
@@ -926,6 +1210,16 @@
               "default": "",
               "title": "Authorization"
             }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Api-Key"
+            }
           }
         ],
         "responses": {
@@ -958,7 +1252,7 @@
           "Admin: knowledge"
         ],
         "summary": "List Documents",
-        "description": "Documents newest first, filterable by source, status and title/filename.",
+        "description": "Documents newest first, filterable by source, status, review status and title/filename.",
         "operationId": "list_documents_api_v1_admin_knowledge_documents_get",
         "parameters": [
           {
@@ -993,6 +1287,23 @@
                 }
               ],
               "title": "Status"
+            }
+          },
+          {
+            "name": "review_status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^(pending|approved|rejected)$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Review Status"
             }
           },
           {
@@ -1044,6 +1355,16 @@
               "default": "",
               "title": "Authorization"
             }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Api-Key"
+            }
           }
         ],
         "responses": {
@@ -1087,6 +1408,16 @@
               "type": "string",
               "default": "",
               "title": "Authorization"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Api-Key"
             }
           }
         ],
@@ -1142,6 +1473,16 @@
               "default": "",
               "title": "Authorization"
             }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Api-Key"
+            }
           }
         ],
         "requestBody": {
@@ -1161,6 +1502,192 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/DocumentOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/knowledge/access-tiers": {
+      "get": {
+        "tags": [
+          "Admin: knowledge"
+        ],
+        "summary": "List Access Tiers",
+        "description": "Tiers a document may require, lowest first: ``anonymous`` (everyone), then the host's tiers.",
+        "operationId": "list_access_tiers_api_v1_admin_knowledge_access_tiers_get",
+        "parameters": [
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Authorization"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "title": "Response List Access Tiers Api V1 Admin Knowledge Access Tiers Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/knowledge/review/counts": {
+      "get": {
+        "tags": [
+          "Admin: knowledge"
+        ],
+        "summary": "Review Counts",
+        "description": "How many documents wait for review, were approved and were rejected.",
+        "operationId": "review_counts_api_v1_admin_knowledge_review_counts_get",
+        "parameters": [
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Authorization"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewCounts"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/knowledge/documents/{document_id}/review": {
+      "post": {
+        "tags": [
+          "Admin: knowledge"
+        ],
+        "summary": "Review Document",
+        "description": "Approve (the assistant may then answer from it) or reject a document waiting for review.",
+        "operationId": "review_document_api_v1_admin_knowledge_documents__document_id__review_post",
+        "parameters": [
+          {
+            "name": "document_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Document Id"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Authorization"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReviewDecision"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DocumentDetail"
                 }
               }
             }
@@ -1206,6 +1733,16 @@
               "default": "",
               "title": "Authorization"
             }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Api-Key"
+            }
           }
         ],
         "responses": {
@@ -1236,7 +1773,7 @@
           "Admin: knowledge"
         ],
         "summary": "Update Document",
-        "description": "Edit title, source, metadata or enabled flag.",
+        "description": "Edit title, source, metadata, enabled flag, tier, language, version, validity or superseded version.",
         "operationId": "update_document_api_v1_admin_knowledge_documents__document_id__patch",
         "parameters": [
           {
@@ -1257,6 +1794,16 @@
               "type": "string",
               "default": "",
               "title": "Authorization"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Api-Key"
             }
           }
         ],
@@ -1320,6 +1867,16 @@
               "default": "",
               "title": "Authorization"
             }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Api-Key"
+            }
           }
         ],
         "responses": {
@@ -1329,6 +1886,204 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/MessageResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/knowledge/documents/{document_id}/citations": {
+      "get": {
+        "tags": [
+          "Admin: knowledge"
+        ],
+        "summary": "Document Citations",
+        "description": "Recent answers that cited this document, newest first.",
+        "operationId": "document_citations_api_v1_admin_knowledge_documents__document_id__citations_get",
+        "parameters": [
+          {
+            "name": "document_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Document Id"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Authorization"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CitingAnswer"
+                  },
+                  "title": "Response Document Citations Api V1 Admin Knowledge Documents  Document Id  Citations Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/knowledge/export": {
+      "get": {
+        "tags": [
+          "Admin: knowledge"
+        ],
+        "summary": "Export Knowledge",
+        "description": "Every source and ready document with its chunk text (no embeddings), for ``POST /knowledge/import``.",
+        "operationId": "export_knowledge_api_v1_admin_knowledge_export_get",
+        "parameters": [
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Authorization"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeBundle"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/knowledge/import": {
+      "post": {
+        "tags": [
+          "Admin: knowledge"
+        ],
+        "summary": "Import Knowledge",
+        "description": "Add the exported documents this server does not have yet and embed their chunks with its own model.\n\nDocuments whose content hash is already in their source are skipped.",
+        "operationId": "import_knowledge_api_v1_admin_knowledge_import_post",
+        "parameters": [
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Authorization"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KnowledgeBundle"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportResultOut"
                 }
               }
             }
@@ -1373,6 +2128,16 @@
               "type": "string",
               "default": "",
               "title": "Authorization"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Api-Key"
             }
           }
         ],
@@ -1438,6 +2203,16 @@
               "default": "",
               "title": "Authorization"
             }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Api-Key"
+            }
           }
         ],
         "requestBody": {
@@ -1500,6 +2275,16 @@
               "default": "",
               "title": "Authorization"
             }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Api-Key"
+            }
           }
         ],
         "responses": {
@@ -1543,6 +2328,16 @@
               "type": "string",
               "default": "",
               "title": "Authorization"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Api-Key"
             }
           }
         ],
@@ -1601,6 +2396,16 @@
               "type": "string",
               "default": "",
               "title": "Authorization"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Api-Key"
             }
           }
         ],
@@ -1666,6 +2471,16 @@
               "default": "",
               "title": "Authorization"
             }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Api-Key"
+            }
           }
         ],
         "requestBody": {
@@ -1719,7 +2534,7 @@
               "anyOf": [
                 {
                   "type": "string",
-                  "pattern": "^(answered|smalltalk|denied|handoff|blocked|error)$"
+                  "pattern": "^(answered|smalltalk|denied|handoff|blocked|login_required|agent_reply|error)$"
                 },
                 {
                   "type": "null"
@@ -1738,7 +2553,7 @@
               "anyOf": [
                 {
                   "type": "string",
-                  "pattern": "^(active|handoff_pending|closed)$"
+                  "pattern": "^(active|handoff_pending|staff_active|closed)$"
                 },
                 {
                   "type": "null"
@@ -1796,6 +2611,16 @@
               "default": "",
               "title": "Authorization"
             }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Api-Key"
+            }
           }
         ],
         "responses": {
@@ -1850,6 +2675,16 @@
               "default": "",
               "title": "Authorization"
             }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Api-Key"
+            }
           }
         ],
         "responses": {
@@ -1859,6 +2694,70 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ConversationDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/messages/{message_id}/trace": {
+      "get": {
+        "tags": [
+          "Admin: conversations"
+        ],
+        "summary": "Message Trace",
+        "description": "How one answer was produced (kept for the trace retention period).",
+        "operationId": "message_trace_api_v1_admin_messages__message_id__trace_get",
+        "parameters": [
+          {
+            "name": "message_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Message Id"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Authorization"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageTraceOut"
                 }
               }
             }
@@ -1904,6 +2803,24 @@
             }
           },
           {
+            "name": "reviewed",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only reviewed (true) or unreviewed (false) ratings",
+              "title": "Reviewed"
+            },
+            "description": "Only reviewed (true) or unreviewed (false) ratings"
+          },
+          {
             "name": "limit",
             "in": "query",
             "required": false,
@@ -1935,6 +2852,16 @@
               "default": "",
               "title": "Authorization"
             }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Api-Key"
+            }
           }
         ],
         "responses": {
@@ -1961,13 +2888,87 @@
         }
       }
     },
+    "/api/v1/admin/feedback/{feedback_id}": {
+      "patch": {
+        "tags": [
+          "Admin: conversations"
+        ],
+        "summary": "Review Feedback",
+        "description": "Mark a rating reviewed so the inbox shows what is left (ADM-12).",
+        "operationId": "review_feedback_api_v1_admin_feedback__feedback_id__patch",
+        "parameters": [
+          {
+            "name": "feedback_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Feedback Id"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Authorization"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FeedbackReview"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/admin/handoffs": {
       "get": {
         "tags": [
           "Admin: conversations"
         ],
         "summary": "List Handoffs",
-        "description": "Transfer-to-human requests newest first.",
+        "description": "Tickets, earliest due first.",
         "operationId": "list_handoffs_api_v1_admin_handoffs_get",
         "parameters": [
           {
@@ -1978,7 +2979,7 @@
               "anyOf": [
                 {
                   "type": "string",
-                  "pattern": "^(pending|in_progress|resolved)$"
+                  "pattern": "^(open|assigned|answered|closed)$"
                 },
                 {
                   "type": "null"
@@ -2019,6 +3020,16 @@
               "default": "",
               "title": "Authorization"
             }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Api-Key"
+            }
           }
         ],
         "responses": {
@@ -2045,13 +3056,151 @@
         }
       }
     },
+    "/api/v1/admin/handoffs/{handoff_id}/answer": {
+      "post": {
+        "tags": [
+          "Admin: conversations"
+        ],
+        "summary": "Answer Handoff",
+        "description": "Reply to the visitor: shown in their chat and e-mailed when they left an address.",
+        "operationId": "answer_handoff_api_v1_admin_handoffs__handoff_id__answer_post",
+        "parameters": [
+          {
+            "name": "handoff_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Handoff Id"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Authorization"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HandoffAnswer"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HandoffOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/handoffs/{handoff_id}/reveal-contact": {
+      "post": {
+        "tags": [
+          "Admin: conversations"
+        ],
+        "summary": "Reveal Handoff Contact",
+        "description": "The unmasked contact details; a POST so every reveal is in the audit log (ADM-06).",
+        "operationId": "reveal_handoff_contact_api_v1_admin_handoffs__handoff_id__reveal_contact_post",
+        "parameters": [
+          {
+            "name": "handoff_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Handoff Id"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Authorization"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HandoffContactOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/admin/handoffs/{handoff_id}": {
       "patch": {
         "tags": [
           "Admin: conversations"
         ],
         "summary": "Update Handoff",
-        "description": "Mark a handoff in progress or resolved, optionally with a note.",
+        "description": "Assign, re-open or close a ticket, or change its internal note.",
         "operationId": "update_handoff_api_v1_admin_handoffs__handoff_id__patch",
         "parameters": [
           {
@@ -2072,6 +3221,16 @@
               "type": "string",
               "default": "",
               "title": "Authorization"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Api-Key"
             }
           }
         ],
@@ -2139,6 +3298,16 @@
               "default": "",
               "title": "Authorization"
             }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Api-Key"
+            }
           }
         ],
         "responses": {
@@ -2150,6 +3319,77 @@
                   "type": "object",
                   "additionalProperties": true,
                   "title": "Response Usage Summary Api V1 Admin Usage Summary Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/usage/history": {
+      "get": {
+        "tags": [
+          "Admin: monitoring"
+        ],
+        "summary": "Usage History",
+        "description": "Daily rollups (turns, errors, handoffs, latency, tokens, cost and breakdowns), oldest first.",
+        "operationId": "usage_history_api_v1_admin_usage_history_get",
+        "parameters": [
+          {
+            "name": "days",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 730,
+              "minimum": 1,
+              "default": 365,
+              "title": "Days"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Authorization"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": true
+                  },
+                  "title": "Response Usage History Api V1 Admin Usage History Get"
                 }
               }
             }
@@ -2184,6 +3424,16 @@
               "type": "string",
               "default": "",
               "title": "Authorization"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Api-Key"
             }
           }
         ],
@@ -2301,6 +3551,16 @@
               "default": "",
               "title": "Authorization"
             }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Api-Key"
+            }
           }
         ],
         "responses": {
@@ -2337,7 +3597,7 @@
           "Admin: monitoring"
         ],
         "summary": "System Status",
-        "description": "Health, index size, models, cache statistics and the upload queue.",
+        "description": "Health, index size, models, cache statistics, the upload queue and GPU load.",
         "operationId": "system_status_api_v1_admin_system_get",
         "parameters": [
           {
@@ -2348,6 +3608,16 @@
               "type": "string",
               "default": "",
               "title": "Authorization"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Api-Key"
             }
           }
         ],
@@ -2393,6 +3663,16 @@
               "default": "",
               "title": "Authorization"
             }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Api-Key"
+            }
           }
         ],
         "responses": {
@@ -2436,6 +3716,16 @@
               "type": "string",
               "default": "",
               "title": "Authorization"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Api-Key"
             }
           }
         ],
@@ -2481,6 +3771,16 @@
               "default": "",
               "title": "Authorization"
             }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Api-Key"
+            }
           }
         ],
         "responses": {
@@ -2513,7 +3813,7 @@
           "Admin: configuration"
         ],
         "summary": "Update Settings",
-        "description": "Change settings; they apply to the next chat turn without a restart.\n\nA new chat or light model is tried with one tiny request first, so a\nmistyped model name is refused (400) instead of breaking every chat.",
+        "description": "Change settings; they apply to the next chat turn without a restart.\n\nA new chat or light model is tried with one tiny request first, so a\nmistyped model name is refused (400) instead of breaking every chat.\nRetention periods are owner-only (403 for editors).",
         "operationId": "update_settings_api_v1_admin_settings_patch",
         "parameters": [
           {
@@ -2524,6 +3824,16 @@
               "type": "string",
               "default": "",
               "title": "Authorization"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Api-Key"
             }
           }
         ],
@@ -2581,6 +3891,16 @@
               "default": "",
               "title": "Authorization"
             }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Api-Key"
+            }
           }
         ],
         "responses": {
@@ -2636,6 +3956,16 @@
               "default": "",
               "title": "Authorization"
             }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Api-Key"
+            }
           }
         ],
         "responses": {
@@ -2682,6 +4012,16 @@
               "default": "",
               "title": "Authorization"
             }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Api-Key"
+            }
           }
         ],
         "responses": {
@@ -2716,7 +4056,7 @@
           "Admin: configuration"
         ],
         "summary": "Create Api Key",
-        "description": "Issue a key for a frontend; copy it now, it is not retrievable later.",
+        "description": "Issue a server-to-server key; copy it now, only its hash is kept.",
         "operationId": "create_api_key_api_v1_admin_api_keys_post",
         "parameters": [
           {
@@ -2728,6 +4068,16 @@
               "default": "",
               "title": "Authorization"
             }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Api-Key"
+            }
           }
         ],
         "requestBody": {
@@ -2736,6 +4086,80 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/ApiKeyCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiKeyCreated"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/api-keys/{key_id}/rotate": {
+      "post": {
+        "tags": [
+          "Admin: configuration"
+        ],
+        "summary": "Rotate Api Key",
+        "description": "Issue a replacement; the old key keeps working for the grace period so the client can switch.",
+        "operationId": "rotate_api_key_api_v1_admin_api_keys__key_id__rotate_post",
+        "parameters": [
+          {
+            "name": "key_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Key Id"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Authorization"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApiKeyRotate"
               }
             }
           }
@@ -2792,6 +4216,16 @@
               "default": "",
               "title": "Authorization"
             }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Api-Key"
+            }
           }
         ],
         "responses": {
@@ -2801,6 +4235,332 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ApiKeyOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/prices": {
+      "get": {
+        "tags": [
+          "Admin: configuration"
+        ],
+        "summary": "List Prices",
+        "description": "LLM prices applied to recorded calls (models without a price cost nothing toward the spend cap).",
+        "operationId": "list_prices_api_v1_admin_prices_get",
+        "parameters": [
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Authorization"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModelPriceOut"
+                  },
+                  "title": "Response List Prices Api V1 Admin Prices Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/prices/{model}": {
+      "put": {
+        "tags": [
+          "Admin: configuration"
+        ],
+        "summary": "Set Price",
+        "description": "Set a model's price; applies to calls recorded from now on.",
+        "operationId": "set_price_api_v1_admin_prices__model__put",
+        "parameters": [
+          {
+            "name": "model",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100,
+              "pattern": "^[A-Za-z0-9._:/\\-]+$",
+              "title": "Model"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Authorization"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelPriceIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelPriceOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Admin: configuration"
+        ],
+        "summary": "Delete Price",
+        "description": "Remove a model's price.",
+        "operationId": "delete_price_api_v1_admin_prices__model__delete",
+        "parameters": [
+          {
+            "name": "model",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Model"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Authorization"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/tools": {
+      "get": {
+        "tags": [
+          "Admin: configuration"
+        ],
+        "summary": "List Tools",
+        "description": "SQL tools of this deployment (empty without a business database).",
+        "operationId": "list_tools_api_v1_admin_tools_get",
+        "parameters": [
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Authorization"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SqlToolOut"
+                  },
+                  "title": "Response List Tools Api V1 Admin Tools Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/tools/{name}": {
+      "patch": {
+        "tags": [
+          "Admin: configuration"
+        ],
+        "summary": "Update Tool",
+        "description": "Enable or disable a tool without a deploy; applies to the next turn.",
+        "operationId": "update_tool_api_v1_admin_tools__name__patch",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Authorization"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SqlToolUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SqlToolOut"
                 }
               }
             }
@@ -2929,6 +4689,16 @@
               "default": "",
               "title": "Authorization"
             }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Api-Key"
+            }
           }
         ],
         "responses": {
@@ -2938,6 +4708,556 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Page_AuditEntryOut_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/conversations/{conversation_id}/legal-hold": {
+      "put": {
+        "tags": [
+          "Admin: privacy"
+        ],
+        "summary": "Hold Conversation",
+        "description": "Keep a conversation past its retention period (or release it).",
+        "operationId": "hold_conversation_api_v1_admin_conversations__conversation_id__legal_hold_put",
+        "parameters": [
+          {
+            "name": "conversation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Conversation Id"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Authorization"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LegalHoldUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LegalHoldOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/handoffs/{handoff_id}/legal-hold": {
+      "put": {
+        "tags": [
+          "Admin: privacy"
+        ],
+        "summary": "Hold Ticket",
+        "description": "Keep a ticket (and its conversation) past its retention period (or release it).",
+        "operationId": "hold_ticket_api_v1_admin_handoffs__handoff_id__legal_hold_put",
+        "parameters": [
+          {
+            "name": "handoff_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Handoff Id"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Authorization"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LegalHoldUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LegalHoldOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/data-subjects/export": {
+      "post": {
+        "tags": [
+          "Admin: privacy"
+        ],
+        "summary": "Export Subject",
+        "description": "A copy of everything stored about one person (conversations with ratings, tickets with contact).",
+        "operationId": "export_subject_api_v1_admin_data_subjects_export_post",
+        "parameters": [
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Authorization"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DataSubjectQuery"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataSubjectExport"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/data-subjects/delete": {
+      "post": {
+        "tags": [
+          "Admin: privacy"
+        ],
+        "summary": "Delete Subject",
+        "description": "Delete one person's data now, overriding retention; items under legal hold are kept.",
+        "operationId": "delete_subject_api_v1_admin_data_subjects_delete_post",
+        "parameters": [
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Authorization"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DataSubjectQuery"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataSubjectDeleted"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/messages/{message_id}/eval-case": {
+      "post": {
+        "tags": [
+          "Admin: evaluation"
+        ],
+        "summary": "Add Eval Case",
+        "description": "Copy an answer and its question into the eval set, without any link back to the conversation.",
+        "operationId": "add_eval_case_api_v1_admin_messages__message_id__eval_case_post",
+        "parameters": [
+          {
+            "name": "message_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Message Id"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Authorization"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EvalCaseCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EvalCaseOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/eval-cases": {
+      "get": {
+        "tags": [
+          "Admin: evaluation"
+        ],
+        "summary": "List Eval Cases",
+        "description": "The eval set, newest first.",
+        "operationId": "list_eval_cases_api_v1_admin_eval_cases_get",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Authorization"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_EvalCaseOut_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/eval-cases/export": {
+      "get": {
+        "tags": [
+          "Admin: evaluation"
+        ],
+        "summary": "Export Eval Cases",
+        "description": "The whole set as ``golden_queries.json`` for ``scripts/eval/rag.py``.",
+        "operationId": "export_eval_cases_api_v1_admin_eval_cases_export_get",
+        "parameters": [
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Authorization"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": true
+                  },
+                  "title": "Response Export Eval Cases Api V1 Admin Eval Cases Export Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/eval-cases/{case_id}": {
+      "delete": {
+        "tags": [
+          "Admin: evaluation"
+        ],
+        "summary": "Delete Eval Case",
+        "description": "Remove a case from the eval set.",
+        "operationId": "delete_eval_case_api_v1_admin_eval_cases__case_id__delete",
+        "parameters": [
+          {
+            "name": "case_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Case Id"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Authorization"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageResponse"
                 }
               }
             }
@@ -3085,6 +5405,17 @@
             ],
             "title": "Guard Reason"
           },
+          "answered_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Answered By"
+          },
           "request_id": {
             "anyOf": [
               {
@@ -3212,14 +5543,49 @@
             "maxLength": 128,
             "minLength": 1,
             "title": "Name"
+          },
+          "scopes": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "chat",
+                "documents:write",
+                "conversations:read",
+                "admin:read"
+              ]
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Scopes"
+          },
+          "rate_limit_per_minute": {
+            "type": "integer",
+            "maximum": 10000.0,
+            "minimum": 1.0,
+            "title": "Rate Limit Per Minute",
+            "default": 60
+          },
+          "expires_in_days": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 3650.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires In Days"
           }
         },
         "type": "object",
         "required": [
-          "name"
+          "name",
+          "scopes"
         ],
         "title": "ApiKeyCreate",
-        "description": "New API key for a frontend."
+        "description": "New server-to-server API key."
       },
       "ApiKeyCreated": {
         "properties": {
@@ -3272,6 +5638,34 @@
             ],
             "title": "Revoked At"
           },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "rate_limit_per_minute": {
+            "type": "integer",
+            "title": "Rate Limit Per Minute"
+          },
+          "rotated_from_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rotated From Id"
+          },
           "key": {
             "type": "string",
             "title": "Key"
@@ -3284,6 +5678,7 @@
           "key_prefix",
           "scopes",
           "created_at",
+          "rate_limit_per_minute",
           "key"
         ],
         "title": "ApiKeyCreated",
@@ -3339,6 +5734,34 @@
               }
             ],
             "title": "Revoked At"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "rate_limit_per_minute": {
+            "type": "integer",
+            "title": "Rate Limit Per Minute"
+          },
+          "rotated_from_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rotated From Id"
           }
         },
         "type": "object",
@@ -3347,10 +5770,25 @@
           "name",
           "key_prefix",
           "scopes",
-          "created_at"
+          "created_at",
+          "rate_limit_per_minute"
         ],
         "title": "ApiKeyOut",
         "description": "An API key without its secret."
+      },
+      "ApiKeyRotate": {
+        "properties": {
+          "grace_days": {
+            "type": "integer",
+            "maximum": 90.0,
+            "minimum": 0.0,
+            "title": "Grace Days",
+            "default": 7
+          }
+        },
+        "type": "object",
+        "title": "ApiKeyRotate",
+        "description": "Replace a key; the old one keeps working for ``grace_days`` (0 = revoke it now)."
       },
       "AuditEntryOut": {
         "properties": {
@@ -3538,6 +5976,209 @@
           "source"
         ],
         "title": "Body_upload_document_api_v1_admin_knowledge_documents_upload_post"
+      },
+      "BundleChunk": {
+        "properties": {
+          "content": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Content"
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Metadata"
+          },
+          "edited": {
+            "type": "boolean",
+            "title": "Edited",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "content"
+        ],
+        "title": "BundleChunk",
+        "description": "One retrievable passage; its position is its index in the document's list."
+      },
+      "BundleDocument": {
+        "properties": {
+          "source": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_\\-]{1,64}$",
+            "title": "Source"
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Title"
+          },
+          "original_filename": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 512
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Original Filename"
+          },
+          "file_type": {
+            "type": "string",
+            "maxLength": 16,
+            "title": "File Type"
+          },
+          "content_hash": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Content Hash"
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Metadata"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled",
+            "default": true
+          },
+          "chunking": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Chunking"
+          },
+          "extracted_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Extracted Text"
+          },
+          "extraction_method": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 16
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Extraction Method"
+          },
+          "access_tier": {
+            "type": "string",
+            "maxLength": 16,
+            "title": "Access Tier",
+            "default": "anonymous"
+          },
+          "language": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 8
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Language"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 32
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          },
+          "effective_from": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective From"
+          },
+          "effective_to": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective To"
+          },
+          "chunks": {
+            "items": {
+              "$ref": "#/components/schemas/BundleChunk"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Chunks"
+          }
+        },
+        "type": "object",
+        "required": [
+          "source",
+          "title",
+          "file_type",
+          "content_hash",
+          "chunks"
+        ],
+        "title": "BundleDocument",
+        "description": "A ready document with its chunks."
+      },
+      "BundleSource": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_\\-]{1,64}$",
+            "title": "Name"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description",
+            "default": ""
+          },
+          "priority": {
+            "type": "number",
+            "title": "Priority",
+            "default": 1.0
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled",
+            "default": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "BundleSource",
+        "description": "A source category and its retrieval settings."
       },
       "ChatAnswer": {
         "properties": {
@@ -3923,6 +6564,17 @@
             ],
             "title": "Url"
           },
+          "section": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Section"
+          },
           "score": {
             "type": "number",
             "title": "Score"
@@ -3938,6 +6590,38 @@
         ],
         "title": "Citation",
         "description": "A knowledge document the answer is based on."
+      },
+      "CitingAnswer": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "conversation_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Conversation Id"
+          },
+          "content": {
+            "type": "string",
+            "title": "Content"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "conversation_id",
+          "content",
+          "created_at"
+        ],
+        "title": "CitingAnswer",
+        "description": "An answer that cited a document."
       },
       "ConversationDetail": {
         "properties": {
@@ -3961,6 +6645,11 @@
           "message_count": {
             "type": "integer",
             "title": "Message Count"
+          },
+          "legal_hold": {
+            "type": "boolean",
+            "title": "Legal Hold",
+            "default": false
           },
           "created_at": {
             "type": "string",
@@ -4106,6 +6795,11 @@
             "type": "integer",
             "title": "Message Count"
           },
+          "legal_hold": {
+            "type": "boolean",
+            "title": "Legal Hold",
+            "default": false
+          },
           "created_at": {
             "type": "string",
             "format": "date-time",
@@ -4129,6 +6823,108 @@
         ],
         "title": "ConversationSummary",
         "description": "A conversation in the admin list."
+      },
+      "DataSubjectDeleted": {
+        "properties": {
+          "conversations": {
+            "type": "integer",
+            "title": "Conversations"
+          },
+          "tickets": {
+            "type": "integer",
+            "title": "Tickets"
+          },
+          "token_usage": {
+            "type": "integer",
+            "title": "Token Usage"
+          },
+          "kept_on_hold": {
+            "type": "integer",
+            "title": "Kept On Hold"
+          }
+        },
+        "type": "object",
+        "required": [
+          "conversations",
+          "tickets",
+          "token_usage",
+          "kept_on_hold"
+        ],
+        "title": "DataSubjectDeleted",
+        "description": "What a deletion removed, and what legal hold kept."
+      },
+      "DataSubjectExport": {
+        "properties": {
+          "conversations": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Conversations"
+          },
+          "tickets": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Tickets"
+          }
+        },
+        "type": "object",
+        "required": [
+          "conversations",
+          "tickets"
+        ],
+        "title": "DataSubjectExport",
+        "description": "Everything stored about the person."
+      },
+      "DataSubjectQuery": {
+        "properties": {
+          "user_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Id"
+          },
+          "visitor_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Visitor Id"
+          },
+          "email": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 320,
+                "pattern": "^[^@\\s]{1,64}@[^@\\s]{1,255}\\.[^@\\s]{2,}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          }
+        },
+        "type": "object",
+        "title": "DataSubjectQuery",
+        "description": "Who the request is about; give at least one identifier."
       },
       "DocumentDetail": {
         "properties": {
@@ -4179,6 +6975,44 @@
             "type": "boolean",
             "title": "Enabled"
           },
+          "review_status": {
+            "type": "string",
+            "title": "Review Status"
+          },
+          "reviewed_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewed By"
+          },
+          "reviewed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewed At"
+          },
+          "review_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Note"
+          },
           "chunk_count": {
             "type": "integer",
             "title": "Chunk Count"
@@ -4220,6 +7054,69 @@
             "format": "date-time",
             "title": "Updated At"
           },
+          "access_tier": {
+            "type": "string",
+            "title": "Access Tier",
+            "default": "anonymous"
+          },
+          "language": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Language"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          },
+          "effective_from": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective From"
+          },
+          "effective_to": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective To"
+          },
+          "supersedes_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supersedes Id"
+          },
           "chunks": {
             "items": {
               "$ref": "#/components/schemas/ChunkOut"
@@ -4236,6 +7133,7 @@
           "file_type",
           "status",
           "enabled",
+          "review_status",
           "chunk_count",
           "metadata",
           "created_at",
@@ -4294,6 +7192,44 @@
             "type": "boolean",
             "title": "Enabled"
           },
+          "review_status": {
+            "type": "string",
+            "title": "Review Status"
+          },
+          "reviewed_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewed By"
+          },
+          "reviewed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewed At"
+          },
+          "review_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Note"
+          },
           "chunk_count": {
             "type": "integer",
             "title": "Chunk Count"
@@ -4334,6 +7270,69 @@
             "type": "string",
             "format": "date-time",
             "title": "Updated At"
+          },
+          "access_tier": {
+            "type": "string",
+            "title": "Access Tier",
+            "default": "anonymous"
+          },
+          "language": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Language"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          },
+          "effective_from": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective From"
+          },
+          "effective_to": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective To"
+          },
+          "supersedes_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supersedes Id"
           }
         },
         "type": "object",
@@ -4344,6 +7343,7 @@
           "file_type",
           "status",
           "enabled",
+          "review_status",
           "chunk_count",
           "metadata",
           "created_at",
@@ -4401,11 +7401,189 @@
               }
             ],
             "title": "Enabled"
+          },
+          "access_tier": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 16,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Access Tier"
+          },
+          "language": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "vi",
+                  "en",
+                  "mixed"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Language"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 32
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          },
+          "effective_from": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective From"
+          },
+          "effective_to": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective To"
+          },
+          "supersedes_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supersedes Id"
           }
         },
         "type": "object",
         "title": "DocumentUpdate",
         "description": "Partial document update."
+      },
+      "EvalCaseCreate": {
+        "properties": {
+          "expected_answer": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 5000,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Answer"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 1000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "type": "object",
+        "title": "EvalCaseCreate",
+        "description": "Optional corrections when adding an answer to the eval set."
+      },
+      "EvalCaseOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "question": {
+            "type": "string",
+            "title": "Question"
+          },
+          "expected_answer": {
+            "type": "string",
+            "title": "Expected Answer"
+          },
+          "expected_sources": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Expected Sources"
+          },
+          "document_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Document Ids"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "created_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "question",
+          "expected_answer",
+          "expected_sources",
+          "document_ids",
+          "created_at"
+        ],
+        "title": "EvalCaseOut",
+        "description": "One golden question (personal data already masked)."
       },
       "FeedbackItem": {
         "properties": {
@@ -4469,6 +7647,34 @@
               }
             ],
             "title": "Outcome"
+          },
+          "reviewed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewed At"
+          },
+          "reviewed_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewed By"
+          },
+          "in_eval_set": {
+            "type": "boolean",
+            "title": "In Eval Set",
+            "default": false
           }
         },
         "type": "object",
@@ -4544,6 +7750,46 @@
         "title": "FeedbackRequest",
         "description": "A visitor's rating of one assistant message."
       },
+      "FeedbackResult": {
+        "properties": {
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "handoff_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Handoff Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "message"
+        ],
+        "title": "FeedbackResult",
+        "description": "Feedback stored; ``handoff_id`` when repeated thumbs-down opened a ticket."
+      },
+      "FeedbackReview": {
+        "properties": {
+          "reviewed": {
+            "type": "boolean",
+            "title": "Reviewed"
+          }
+        },
+        "type": "object",
+        "required": [
+          "reviewed"
+        ],
+        "title": "FeedbackReview",
+        "description": "Mark a rating reviewed (``true``) or back to unreviewed."
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -4556,6 +7802,122 @@
         },
         "type": "object",
         "title": "HTTPValidationError"
+      },
+      "HandoffAnswer": {
+        "properties": {
+          "text": {
+            "type": "string",
+            "maxLength": 5000,
+            "minLength": 1,
+            "title": "Text"
+          }
+        },
+        "type": "object",
+        "required": [
+          "text"
+        ],
+        "title": "HandoffAnswer",
+        "description": "The support team's reply to the visitor."
+      },
+      "HandoffContact": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "email": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          },
+          "phone": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 32
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone"
+          },
+          "details": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Details"
+          },
+          "consent": {
+            "type": "boolean",
+            "title": "Consent",
+            "default": false
+          }
+        },
+        "type": "object",
+        "title": "HandoffContact",
+        "description": "How the visitor wants to be answered (HND-13); anonymous visitors need an e-mail or phone."
+      },
+      "HandoffContactOut": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          },
+          "phone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone"
+          }
+        },
+        "type": "object",
+        "title": "HandoffContactOut",
+        "description": "Unmasked contact details (owners only; audit-logged)."
       },
       "HandoffOut": {
         "properties": {
@@ -4600,6 +7962,134 @@
             ],
             "title": "Note"
           },
+          "signed_in": {
+            "type": "boolean",
+            "title": "Signed In"
+          },
+          "contact_email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contact Email"
+          },
+          "contact_phone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contact Phone"
+          },
+          "has_contact": {
+            "type": "boolean",
+            "title": "Has Contact"
+          },
+          "consent_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Consent At"
+          },
+          "details": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Details"
+          },
+          "assigned_to": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assigned To"
+          },
+          "answer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Answer"
+          },
+          "answered_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Answered At"
+          },
+          "emailed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Emailed At"
+          },
+          "due_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Due At"
+          },
+          "closed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Closed At"
+          },
+          "legal_hold": {
+            "type": "boolean",
+            "title": "Legal Hold",
+            "default": false
+          },
           "created_at": {
             "type": "string",
             "format": "date-time",
@@ -4617,20 +8107,30 @@
           "conversation_id",
           "reason",
           "status",
+          "signed_in",
+          "has_contact",
           "created_at",
           "updated_at"
         ],
         "title": "HandoffOut",
-        "description": "A transfer-to-human request."
+        "description": "A support ticket; contact details are masked (ADM-06)."
       },
       "HandoffUpdate": {
         "properties": {
           "status": {
-            "type": "string",
-            "enum": [
-              "pending",
-              "in_progress",
-              "resolved"
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "open",
+                  "assigned",
+                  "answered",
+                  "closed"
+                ]
+              },
+              {
+                "type": "null"
+              }
             ],
             "title": "Status"
           },
@@ -4645,14 +8145,23 @@
               }
             ],
             "title": "Note"
+          },
+          "assigned_to": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Assigned To"
           }
         },
         "type": "object",
-        "required": [
-          "status"
-        ],
         "title": "HandoffUpdate",
-        "description": "Status change of a handoff request."
+        "description": "Assign, re-open or close a ticket, or change its internal note."
       },
       "HeadingChunking": {
         "properties": {
@@ -4684,6 +8193,35 @@
           "strategy"
         ],
         "title": "HeadingChunking"
+      },
+      "ImportResultOut": {
+        "properties": {
+          "sources_created": {
+            "type": "integer",
+            "title": "Sources Created"
+          },
+          "documents_imported": {
+            "type": "integer",
+            "title": "Documents Imported"
+          },
+          "documents_skipped": {
+            "type": "integer",
+            "title": "Documents Skipped"
+          },
+          "chunks_imported": {
+            "type": "integer",
+            "title": "Chunks Imported"
+          }
+        },
+        "type": "object",
+        "required": [
+          "sources_created",
+          "documents_imported",
+          "documents_skipped",
+          "chunks_imported"
+        ],
+        "title": "ImportResultOut",
+        "description": "What a knowledge import changed."
       },
       "IngestionQueueStatus": {
         "properties": {
@@ -4717,6 +8255,33 @@
         ],
         "title": "IngestionQueueStatus",
         "description": "Uploads waiting for or being processed by the ingestion worker."
+      },
+      "KnowledgeBundle": {
+        "properties": {
+          "version": {
+            "type": "integer",
+            "const": 1,
+            "title": "Version",
+            "default": 1
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/BundleSource"
+            },
+            "type": "array",
+            "title": "Sources"
+          },
+          "documents": {
+            "items": {
+              "$ref": "#/components/schemas/BundleDocument"
+            },
+            "type": "array",
+            "title": "Documents"
+          }
+        },
+        "type": "object",
+        "title": "KnowledgeBundle",
+        "description": "Everything ``export-knowledge`` writes and ``import-knowledge`` reads."
       },
       "LegalArticleChunking": {
         "properties": {
@@ -4757,6 +8322,39 @@
           "strategy"
         ],
         "title": "LegalArticleChunking"
+      },
+      "LegalHoldOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "legal_hold": {
+            "type": "boolean",
+            "title": "Legal Hold"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "legal_hold"
+        ],
+        "title": "LegalHoldOut",
+        "description": "The item's hold after the change."
+      },
+      "LegalHoldUpdate": {
+        "properties": {
+          "held": {
+            "type": "boolean",
+            "title": "Held"
+          }
+        },
+        "type": "object",
+        "required": [
+          "held"
+        ],
+        "title": "LegalHoldUpdate",
+        "description": "Set (``true``) or clear (``false``) a legal hold."
       },
       "LogEntry": {
         "properties": {
@@ -4839,6 +8437,255 @@
         ],
         "title": "MessageResponse",
         "description": "A plain confirmation message."
+      },
+      "MessageTraceOut": {
+        "properties": {
+          "message_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Message Id"
+          },
+          "route": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Route"
+          },
+          "intent": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Intent"
+          },
+          "confidence": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confidence"
+          },
+          "rewritten_query": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rewritten Query"
+          },
+          "filters": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Filters",
+            "default": {}
+          },
+          "chunks": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Chunks",
+            "default": []
+          },
+          "tool_calls": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Tool Calls",
+            "default": []
+          },
+          "prompt_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt Version"
+          },
+          "steps_ms": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Steps Ms",
+            "default": {}
+          },
+          "calls": {
+            "items": {
+              "$ref": "#/components/schemas/TraceCall"
+            },
+            "type": "array",
+            "title": "Calls",
+            "default": []
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "message_id",
+          "created_at"
+        ],
+        "title": "MessageTraceOut",
+        "description": "How one answer was produced: route, retrieval, tools, prompt and per-step timings (ADM-05)."
+      },
+      "ModelPriceIn": {
+        "properties": {
+          "input_usd_per_million": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 10000.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d{0,6}0*$"
+              }
+            ],
+            "title": "Input Usd Per Million"
+          },
+          "output_usd_per_million": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 10000.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d{0,6}0*$"
+              }
+            ],
+            "title": "Output Usd Per Million"
+          }
+        },
+        "type": "object",
+        "required": [
+          "input_usd_per_million",
+          "output_usd_per_million"
+        ],
+        "title": "ModelPriceIn",
+        "description": "What one model costs, in USD per million tokens."
+      },
+      "ModelPriceOut": {
+        "properties": {
+          "model": {
+            "type": "string",
+            "title": "Model"
+          },
+          "input_usd_per_million": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Input Usd Per Million"
+          },
+          "output_usd_per_million": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Output Usd Per Million"
+          },
+          "updated_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "model",
+          "input_usd_per_million",
+          "output_usd_per_million",
+          "updated_at"
+        ],
+        "title": "ModelPriceOut",
+        "description": "A model's price as stored."
+      },
+      "ModelServerLoad": {
+        "properties": {
+          "running": {
+            "type": "integer",
+            "title": "Running",
+            "description": "Model calls executing now"
+          },
+          "chat_waiting": {
+            "type": "integer",
+            "title": "Chat Waiting",
+            "description": "Chat calls queued for the GPU; staying above 0 means chats are slowed down"
+          },
+          "ingestion_waiting": {
+            "type": "integer",
+            "title": "Ingestion Waiting",
+            "description": "Ingestion calls queued behind chat"
+          },
+          "gpu_free_mb": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gpu Free Mb",
+            "description": "Free VRAM on GPU 0 (None without CUDA)"
+          },
+          "gpu_total_mb": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gpu Total Mb",
+            "description": "Total VRAM on GPU 0 (None without CUDA)"
+          }
+        },
+        "type": "object",
+        "required": [
+          "running",
+          "chat_waiting",
+          "ingestion_waiting"
+        ],
+        "title": "ModelServerLoad",
+        "description": "The model-server's GPU memory and scheduler queues at this moment."
       },
       "Page_AuditEntryOut_": {
         "properties": {
@@ -4932,6 +8779,37 @@
           "offset"
         ],
         "title": "Page[DocumentOut]"
+      },
+      "Page_EvalCaseOut_": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/EvalCaseOut"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          },
+          "offset": {
+            "type": "integer",
+            "title": "Offset"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "Page[EvalCaseOut]"
       },
       "Page_FeedbackItem_": {
         "properties": {
@@ -5117,6 +8995,56 @@
         "title": "RechunkRequest",
         "description": "Replace a document's chunks with its stored text split by a strategy."
       },
+      "ReviewCounts": {
+        "properties": {
+          "pending": {
+            "type": "integer",
+            "title": "Pending"
+          },
+          "approved": {
+            "type": "integer",
+            "title": "Approved"
+          },
+          "rejected": {
+            "type": "integer",
+            "title": "Rejected"
+          }
+        },
+        "type": "object",
+        "required": [
+          "pending",
+          "approved",
+          "rejected"
+        ],
+        "title": "ReviewCounts",
+        "description": "Documents per review status."
+      },
+      "ReviewDecision": {
+        "properties": {
+          "approve": {
+            "type": "boolean",
+            "title": "Approve"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 1000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "type": "object",
+        "required": [
+          "approve"
+        ],
+        "title": "ReviewDecision",
+        "description": "A reviewer's verdict on a pending document."
+      },
       "SettingsUpdate": {
         "properties": {
           "fallback_mode": {
@@ -5289,19 +9217,6 @@
             ],
             "title": "Light Model"
           },
-          "similarity_threshold": {
-            "anyOf": [
-              {
-                "type": "number",
-                "maximum": 1.0,
-                "minimum": 0.0
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Similarity Threshold"
-          },
           "semantic_weight": {
             "anyOf": [
               {
@@ -5340,6 +9255,245 @@
               }
             ],
             "title": "Max Context Chunks"
+          },
+          "limit_anonymous_per_minute": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 100000.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Limit Anonymous Per Minute"
+          },
+          "limit_anonymous_per_hour": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 100000.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Limit Anonymous Per Hour"
+          },
+          "tokens_anonymous_per_day": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1000000000.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tokens Anonymous Per Day"
+          },
+          "limit_user_per_minute": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 100000.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Limit User Per Minute"
+          },
+          "limit_user_per_hour": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 100000.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Limit User Per Hour"
+          },
+          "tokens_user_per_day": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1000000000.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tokens User Per Day"
+          },
+          "tokens_ip_per_day": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1000000000.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tokens Ip Per Day"
+          },
+          "spend_cap_monthly_usd": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 1000000.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Spend Cap Monthly Usd"
+          },
+          "spend_anonymous_cutoff_ratio": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 1.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Spend Anonymous Cutoff Ratio"
+          },
+          "support_hours": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Support Hours"
+          },
+          "support_holidays": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array",
+                "maxItems": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Support Holidays"
+          },
+          "ticket_reply_hours": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 240.0,
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ticket Reply Hours"
+          },
+          "handoff_topics": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array",
+                "maxItems": 100
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Handoff Topics"
+          },
+          "retention_chat_days": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 3650.0,
+                "minimum": 7.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retention Chat Days"
+          },
+          "retention_anonymous_chat_days": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 3650.0,
+                "minimum": 7.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retention Anonymous Chat Days"
+          },
+          "retention_trace_days": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 3650.0,
+                "minimum": 7.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retention Trace Days"
+          },
+          "retention_ticket_days": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 3650.0,
+                "minimum": 7.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retention Ticket Days"
+          },
+          "retention_audit_days": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 3650.0,
+                "minimum": 365.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retention Audit Days"
           }
         },
         "type": "object",
@@ -5501,6 +9655,92 @@
         "title": "SourceUpdate",
         "description": "Partial source update."
       },
+      "SqlToolOut": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "required_tier": {
+            "type": "string",
+            "title": "Required Tier"
+          },
+          "sql_template": {
+            "type": "string",
+            "title": "Sql Template"
+          },
+          "allowed_columns": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Allowed Columns"
+          },
+          "masked_columns": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Masked Columns"
+          },
+          "row_limit": {
+            "type": "integer",
+            "title": "Row Limit"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          },
+          "updated_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "description",
+          "required_tier",
+          "sql_template",
+          "allowed_columns",
+          "masked_columns",
+          "row_limit",
+          "enabled",
+          "updated_at"
+        ],
+        "title": "SqlToolOut",
+        "description": "A SQL tool as the admin web lists it (its SQL is shown for review, never edited here)."
+      },
+      "SqlToolUpdate": {
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          }
+        },
+        "type": "object",
+        "required": [
+          "enabled"
+        ],
+        "title": "SqlToolUpdate",
+        "description": "Switch a tool on or off (TOOL-08)."
+      },
       "SystemStatus": {
         "properties": {
           "version": {
@@ -5557,6 +9797,17 @@
           },
           "ingestion_queue": {
             "$ref": "#/components/schemas/IngestionQueueStatus"
+          },
+          "model_server": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ModelServerLoad"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "None when models run in-process or the model-server is unreachable"
           }
         },
         "type": "object",
@@ -5712,6 +9963,40 @@
         ],
         "title": "TokenResponse",
         "description": "A new admin session."
+      },
+      "TraceCall": {
+        "properties": {
+          "purpose": {
+            "type": "string",
+            "title": "Purpose"
+          },
+          "model": {
+            "type": "string",
+            "title": "Model"
+          },
+          "prompt_tokens": {
+            "type": "integer",
+            "title": "Prompt Tokens"
+          },
+          "completion_tokens": {
+            "type": "integer",
+            "title": "Completion Tokens"
+          },
+          "cost_micro_usd": {
+            "type": "integer",
+            "title": "Cost Micro Usd"
+          }
+        },
+        "type": "object",
+        "required": [
+          "purpose",
+          "model",
+          "prompt_tokens",
+          "completion_tokens",
+          "cost_micro_usd"
+        ],
+        "title": "TraceCall",
+        "description": "One LLM call of an answer."
       },
       "TranscriptionResponse": {
         "properties": {
