@@ -31,9 +31,11 @@
   # below for the GPU build to enable PaddleOCR-VL (the engine selector
   # auto-detects which one is installed via
   # paddle.device.is_compiled_with_cuda(), independent of the torch build
-  # above). Re-verify the oneDNN bug is fixed before bumping past 3.2.x:
+  # above). Re-verify the oneDNN bug is fixed before bumping past 3.2.x.
+  # The CPU wheel comes from PyPI: Paddle's own index (paddlepaddle.org.cn) went
+  # down on 2026-11-10 and failed every build. The GPU build is only published there:
   #   RUN pip install --no-cache-dir paddlepaddle-gpu==3.2.0 -i https://www.paddlepaddle.org.cn/packages/stable/cu126/
-  RUN pip install --no-cache-dir paddlepaddle==3.2.0 -i https://www.paddlepaddle.org.cn/packages/stable/cpu/
+  RUN pip install --no-cache-dir paddlepaddle==3.2.0
   RUN pip install --no-cache-dir -r requirements.txt
   
   # ---------- Runtime stage ----------
