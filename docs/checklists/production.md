@@ -3,6 +3,7 @@
 Purpose: definition of done for a closed-source RAG chatbot product. We build every component (widget, BFF, API, model-server, admin web). Each client gets its own deployment on its own VPS/VM, embedded via iframe on ONE host website.
 Audience: engineers and coding agents. Each item has an ID; reference IDs in commits/PRs (e.g. `feat(tools): TOOL-04`).
 Status convention: `[ ]` todo, `[x]` done, `[~]` partial, `[-]` intentionally skipped (add reason).
+Engineering checklists (code quality, testing, app security, CI/supply chain, optimization) sit beside this file; see [README.md](README.md).
 
 ---
 
@@ -430,8 +431,8 @@ Any code change breaking one is a blocker.
 - [x] OPS-05 Rebuild runbook: fresh VM → `setup` → restore → `preflight` — docs/deployment.md
 
 ### Development workflow (vendor side)
-- [~] OPS-06 Git, protected main, PR review — PRs used; main not protected
-- [~] OPS-07 CI: lint, type-check, unit tests, EVAL-09 hard gates, fast eval subset, image build + scan — EVAL-09 gates in CI; no Python type-check, fast eval subset or image scan
+- [x] OPS-06 Git, protected main, PR review — `main` ruleset: no deletion or force-push, pull request with one approval, `Lint (ruff)` and `Tests (pytest)` required (frontend and ops jobs not required: SUP-09 in [ci-supply-chain.md](ci-supply-chain.md))
+- [~] OPS-07 CI: lint, type-check, unit tests, EVAL-09 hard gates, fast eval subset, image build + scan — EVAL-09 gates and the router eval gate in CI, image build on `main`; no Python type-check (CQ-08) or image scan (SUP-12)
 - [x] OPS-08 Alembic migrations only; no manual SQL on production
 
 ---
