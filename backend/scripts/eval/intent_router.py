@@ -3,8 +3,8 @@
 intent_router.py
 
 Measures real routing accuracy for IntentRouter against a labeled golden set,
-using the exact same tool registry the live chatbot registers (see
-``ChatbotService.__init__`` in core/agent/chatbot.py) and a real LLM provider
+using the same built-in tools the live chatbot registers (see
+``AppContainer.start`` in app/api/container.py; SQL tools are left out) and a real LLM provider
 call per query (``Config.LLM.ACTIVE_LIGHT_MODEL()``).
 
 Exits 1 when any classification fell back to RAG without an LLM answer (a
@@ -140,7 +140,7 @@ def print_report(report: Dict[str, Any]) -> None:
 async def _run(args: argparse.Namespace) -> Dict[str, Any]:
     golden_set = load_golden_set(args.golden_set)
 
-    # Same registry the live ChatbotService registers (see chatbot.py __init__)
+    # Same built-in tools the live registry has (see AppContainer.start in app/api/container.py)
     # so this measures the exact routing behaviour a real chat turn gets.
     tool_registry = ToolRegistry(tools=[CurrentTimeTool()])
     router = IntentRouter(LLMProviderFactory.create(), tool_registry)
