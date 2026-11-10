@@ -6,7 +6,7 @@ markdown, then chunks by markdown headings. PDFs with no usable text layer
 (scanned/image-only, or gibberish from a broken font encoding) are routed
 around Docling, whose own OCR is disabled: pages are
 rendered to images and run through a separate OCR engine (see
-core/document_processing/ocr/), then chunked as plain text instead of
+``engine_selector.py`` and the ``*_engine.py`` files beside it), then chunked as plain text instead of
 markdown headings, since OCR output has no heading structure.
 """
 
@@ -55,7 +55,7 @@ class DoclingProcessor:
           formats: normal Docling conversion (no OCR).
         - PDFs with no extractable text layer (or ``OCR_FORCE_ALL_PDFS``):
           routed through the configured OCR engine instead of Docling's own
-          OCR — see ``core/document_processing/ocr``.
+          OCR — see ``engine_selector.py``.
 
         Args:
             enable_ocr: Deprecated — OCR is applied automatically based on
@@ -211,7 +211,7 @@ class DoclingProcessor:
 
         Args:
             pdf_path: Path to the PDF on disk.
-            engine: The OCR engine to use (see ``core/document_processing/ocr``).
+            engine: The OCR engine to use (see ``engine_selector.py``).
 
         Returns:
             Extracted text for all pages, concatenated with page markers.

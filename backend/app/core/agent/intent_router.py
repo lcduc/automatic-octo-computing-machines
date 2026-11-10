@@ -2,7 +2,7 @@
 Classifies a chat turn as a RAG lookup or an action/tool-calling command.
 
 Runs before either engine, so the two structurally different pipelines
-(``ChatbotService``'s retrieval + generation vs ``ToolCallingAgent``'s
+(``KnowledgeAnswerer``'s retrieval + generation vs ``ToolCallingAgent``'s
 tool-calling) never both have to run for the same turn.
 """
 

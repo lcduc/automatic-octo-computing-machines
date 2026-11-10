@@ -17,7 +17,7 @@ router and the retriever as in the chat pipeline: chat shorthands written out fi
 - how many questions would trigger the LLM accent-restoring rewrite (``looks_like_unaccented_vietnamese``),
   which this eval does not run (no LLM calls are made).
 
-Usage (from the repository root, with the venv active and the demo knowledge base seeded)::
+Usage (from backend/, with the venv active and the demo knowledge base seeded)::
 
     python -m scripts.eval.robustness
     python -m scripts.eval.robustness --only router --out logs/robustness_router.json

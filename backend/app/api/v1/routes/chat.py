@@ -1,7 +1,8 @@
 """
 Public chat API (v1): used by client frontends through their own server.
 
-Every route needs ``X-API-Key``; visitor-scoped routes also need ``X-End-User-Id``.
+Every route needs ``X-Service-Token`` (the chat widget's own server) or ``X-API-Key`` (see
+``api/dependencies.py``); visitor-scoped routes also need ``X-End-User-Id``.
 """
 
 # Standard library imports

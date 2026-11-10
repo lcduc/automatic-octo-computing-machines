@@ -1,7 +1,7 @@
 """
 Regression baselines for the eval scripts: committed numbers, the tolerance, and the pass/fail check.
 
-``eval_router`` and ``eval_rag`` compare their report with ``demo_data/eval_baseline.json`` when run with
+``scripts.eval.router`` and ``scripts.eval.rag`` compare their report with ``demo_data/eval_baseline.json`` when run with
 ``--check`` (CI), and write it with ``--write-baseline``. The file only moves through an explicit
 commit, so a regression cannot quietly become the new normal. Baselines have to be re-recorded when
 the golden sets change: a different question set is not comparable.

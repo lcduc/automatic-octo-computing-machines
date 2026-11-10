@@ -12,7 +12,7 @@ Steps, in order (each drop is counted in ``filter_report.json``):
 5. at most ``MAX_KEPT_PER_CHUNK`` per chunk, taken style by style in reranker order;
 6. split: one question of every chunk with at least ``MIN_KEPT_FOR_VALIDATION`` goes to validation.
 
-Usage (from the repository root, with the venv active; needs the embedding model and the reranker)::
+Usage (from backend/, with the venv active; needs the embedding model and the reranker)::
 
     python -m scripts.eval.filter_synthetic_queries
 """

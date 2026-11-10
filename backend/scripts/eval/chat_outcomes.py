@@ -9,7 +9,7 @@ question, and reports where each kind of question ends up:
 - ``unanswerable`` questions (on topic, not in the knowledge base) should not be answered, and should reach staff;
 - ``off_topic`` questions should be refused.
 
-This calls the LLM (a few cents for ~60 questions). Usage (from the repository root, venv active)::
+This calls the LLM (a few cents for ~60 questions). Usage (from backend/, venv active)::
 
     python -m scripts.eval.chat_outcomes
     python -m scripts.eval.chat_outcomes --golden-set scripts/demo_data/golden_colloquial_holdout.json --out logs/outcomes.json

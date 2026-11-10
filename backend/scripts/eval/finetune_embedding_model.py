@@ -11,7 +11,7 @@ A plain PyTorch loop rather than ``SentenceTransformerTrainer``: the trainer nee
 package, which this project does not install for ~250 pairs.
 
 The saved model keeps the E5 query/passage prompts in its config, so ``EMBEDDING_MODEL=<output dir>``
-loads it with the right prompts. Usage (from the repository root, with the venv active)::
+loads it with the right prompts. Usage (from backend/, with the venv active)::
 
     python -m scripts.eval.finetune_embedding_model --output model_weights/finetuned/e5-small-synthetic
 """

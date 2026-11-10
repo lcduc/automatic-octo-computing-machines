@@ -4,7 +4,7 @@ Single owner of the Google Gen AI SDK client used by the application.
 Uses the stable ``client.models.generate_content`` surface (and its ``.aio``
 async counterpart) rather than the newer, stateful Interactions API: this
 app resends the full conversation history on every request (see
-``api/routes/chat.py``), which is exactly the stateless shape
+``api/v1/routes/chat.py``), which is exactly the stateless shape
 ``generate_content`` is built for, whereas the Interactions API is designed
 around server-side ``previous_interaction_id`` continuation.
 """

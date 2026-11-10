@@ -1,7 +1,7 @@
 """Serve a throw-away host page that embeds the chat widget, to test it from this machine.
 
-    python -m scripts.embed_test                      # the VPS demo widget on http://localhost:8080
-    python -m scripts.embed_test --widget http://localhost:3000 --port 9000
+    python -m scripts.embed_test                      # the local widget dev server, page on http://localhost:8080
+    python -m scripts.embed_test --widget https://chat.example.com --port 9000
 
 The widget only lets sites listed in its WIDGET_ALLOWED_PARENTS frame it, so that
 list must contain the origin printed below (scheme, host and port must match).
@@ -10,7 +10,7 @@ list must contain the origin printed below (scheme, host and port must match).
 import argparse
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
-DEFAULT_WIDGET_URL = "https://chat.tringhiatech.vn:5010"
+DEFAULT_WIDGET_URL = "http://localhost:3000"
 DEFAULT_PORT = 8080
 LAUNCHER_LABEL = "Trợ lý ảo"
 LAUNCHER_COLOR = "#0B5FFF"

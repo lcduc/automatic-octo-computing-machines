@@ -23,7 +23,7 @@
   # machine without an NVIDIA GPU. Versions are pinned in requirements-torch.txt.
   ARG TORCH_INDEX=cu126
   RUN pip install --no-cache-dir -r requirements-torch.txt --index-url https://download.pytorch.org/whl/${TORCH_INDEX}
-  # PaddlePaddle backs the OCR engines (app/core/document_processing/ocr). Pinned
+  # PaddlePaddle backs the OCR engines (app/core/document_processing/*_engine.py). Pinned
   # to 3.2.0, NOT the latest 3.3.x: paddlepaddle 3.3.0's oneDNN/PIR CPU
   # executor is broken for text detection (upstream bug, PaddlePaddle/Paddle
   # #77340 — confirmed by actually running OCR inference against this repo's

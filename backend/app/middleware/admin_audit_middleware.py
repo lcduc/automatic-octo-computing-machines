@@ -14,7 +14,7 @@ from .asgi_helpers import header_value
 
 logger = logging.getLogger(__name__)
 
-#: The admin API mounted by api/routes (``/api/v1`` + ``/admin``).
+#: The admin API mounted by api/v1/routes (``/api/v1`` + ``/admin``).
 ADMIN_API_PREFIX = "/api/v1/admin/"
 #: Methods that change state and are therefore audited.
 AUDITED_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
@@ -26,7 +26,7 @@ LOGIN_PATH_SUFFIX = "/auth/login"
 
 class AdminAuditMiddleware:
     """
-    Records every admin write (POST/PATCH/DELETE under the admin API) and every
+    Records every admin write (POST/PUT/PATCH/DELETE under the admin API) and every
     sign-in attempt in the append-only audit log, after the response is sent.
 
     The actor is the principal ``require_admin`` stored on the request state;

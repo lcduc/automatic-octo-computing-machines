@@ -1,7 +1,7 @@
 """
 Demo data: a Vietnam → Germany labour-migration knowledge base and real chats through it.
 
-Usage (from the repository root, with the venv active):
+Usage (from backend/, with the venv active):
 
     python -m scripts.seed_demo documents   # create the demo source + documents (skips existing titles)
     # restart the API so its search index picks the new documents up

@@ -13,7 +13,7 @@ settings the chat path uses, with the relevance gates switched off, and reports:
 Golden set: a JSON list of ``{"query": ..., "expected_document": <document title> | null}``;
 ``null`` marks a question the knowledge base cannot answer, which the bot should refuse.
 
-No LLM calls are made. Usage (from the repository root, with the venv active)::
+No LLM calls are made. Usage (from backend/, with the venv active)::
 
     python -m scripts.eval.rag
     python -m scripts.eval.rag --golden-set my_set.json --out logs/eval_report.json

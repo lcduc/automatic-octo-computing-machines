@@ -10,7 +10,7 @@ the router with the real embedding model, and reports:
   their on-topic score is below ``ROUTE_OFF_TOPIC_LEAD`` (refused after an empty retrieval) or above (handed to staff);
 - the score ranges per route, to tune the thresholds.
 
-No LLM calls are made. Usage (from the repository root, with the venv active)::
+No LLM calls are made. Usage (from backend/, with the venv active)::
 
     python -m scripts.eval.router
     python -m scripts.eval.router --eval-set my_set.json --out logs/router_report.json

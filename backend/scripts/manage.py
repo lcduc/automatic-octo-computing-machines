@@ -1,7 +1,7 @@
 """
 Operator CLI for first-time setup.
 
-Usage (from the repository root, with the venv active, or inside the api container):
+Usage (from backend/, with the venv active, or inside the api container):
 
     python -m scripts.manage create-admin --email you@example.com --role owner
     python -m scripts.manage create-api-key --name "client backend"

@@ -6,7 +6,7 @@ chunk alone answers. The output feeds ``scripts.eval.filter_synthetic_queries`` 
 training scripts; the human golden sets are never shown to the LLM.
 
 The provider, key and model come from the usual settings (``LLM_PROVIDER``, ``OPENAI_API_KEY`` /
-``ANTHROPIC_API_KEY`` / ``GEMINI_API_KEY``, ``--model``). Usage (from the repository root)::
+``ANTHROPIC_API_KEY`` / ``GEMINI_API_KEY``, ``--model``). Usage (from backend/)::
 
     python -m scripts.eval.generate_synthetic_queries --dry-run            # export the corpus, show one prompt
     python -m scripts.eval.generate_synthetic_queries --model <model> --limit 3   # pilot on three chunks

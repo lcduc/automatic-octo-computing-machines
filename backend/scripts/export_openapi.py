@@ -1,7 +1,7 @@
 """
 Write the API's OpenAPI schema to docs/openapi.json (the machine-readable twin of docs/API.md).
 
-Usage (from the repository root, with the venv active):
+Usage (from backend/, with the venv active):
 
     python -m scripts.export_openapi
 
