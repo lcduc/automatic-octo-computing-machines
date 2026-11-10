@@ -22,7 +22,7 @@ from typing import Optional
 
 # Local imports
 from config.settings import Config
-from .request_context import current_request_id
+from utils.request_context import current_request_id
 
 #: Name of the JSON log file inside ``LOG_DIR`` (rotated copies get ``.1``, ``.2``…).
 JSON_LOG_FILENAME = "app.jsonl"

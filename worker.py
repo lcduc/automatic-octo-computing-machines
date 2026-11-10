@@ -40,7 +40,7 @@ from services.rate_limit_service import RateLimitService, TimeBuckets  # noqa: E
 from services.retention_service import RetentionService  # noqa: E402
 from services.settings_service import SettingsService  # noqa: E402
 from services.usage_service import UsageService  # noqa: E402
-from utils.logging_setup import configure_logging  # noqa: E402
+from core.infrastructure.logging_setup import configure_logging  # noqa: E402
 
 logger = logging.getLogger(__name__)
 

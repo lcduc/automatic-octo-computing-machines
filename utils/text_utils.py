@@ -1,6 +1,6 @@
 """
-Text processing utilities for document content manipulation and analysis.
-Provides text cleaning, keyword extraction, and quality assessment functions.
+Text processing utilities: extraction quality checks (OCR fallback), Vietnamese chat
+normalisation, search tokenisation and sentence-based chunking.
 """
 
 # Standard library imports
@@ -40,166 +40,8 @@ _SHORTHAND_PATTERN = re.compile(
 
 class TextUtils:
     """
-    Utility functions for text processing, cleaning, and analysis.
-    Provides comprehensive text manipulation capabilities for document processing.
+    Stateless text helpers shared by document processing, retrieval and routing.
     """
-
-    @staticmethod
-    def clean_text(text: str) -> str:
-        """
-        Clean and normalize text by removing excessive whitespace and normalizing line endings.
-        Improves text quality for processing and storage.
-        """
-        if not text:
-            return ""
-
-        # Normalize line endings across different platforms
-        text = text.replace("\r\n", "\n").replace("\r", "\n")
-
-        # Remove excessive whitespace and normalize spacing
-        text = re.sub(r"\n\s*\n\s*\n", "\n\n", text)  # Multiple newlines to double
-        text = re.sub(r"[ \t]+", " ", text)  # Multiple spaces/tabs to single space
-
-        # Strip leading/trailing whitespace
-        return text.strip()
-
-    @staticmethod
-    def extract_sentences(text: str) -> List[str]:
-        """
-        Extract sentences from text using simple punctuation-based splitting.
-        Filters out very short fragments to improve quality.
-        """
-        if not text:
-            return []
-
-        # Simple sentence splitting (can be improved with NLTK if needed)
-        sentences = re.split(r"[.!?]+", text)
-
-        # Clean and filter sentences for quality
-        cleaned_sentences = []
-        for sentence in sentences:
-            sentence = sentence.strip()
-            if len(sentence) > 10:  # Filter out very short fragments
-                cleaned_sentences.append(sentence)
-
-        return cleaned_sentences
-
-    @staticmethod
-    def truncate_text(text: str, max_length: int, suffix: str = "...") -> str:
-        """
-        Truncate text to maximum length with optional suffix.
-        Handles edge cases where suffix is longer than max_length.
-        """
-        if not text or len(text) <= max_length:
-            return text
-
-        if len(suffix) >= max_length:
-            return text[:max_length]
-
-        return text[: max_length - len(suffix)] + suffix
-
-    @staticmethod
-    def count_words(text: str) -> int:
-        """
-        Count words in text using regex pattern matching.
-        Provides accurate word count for text analysis.
-        """
-        if not text:
-            return 0
-
-        # Simple word counting using regex
-        words = re.findall(r"\b\w+\b", text)
-        return len(words)
-
-    @staticmethod
-    def extract_keywords(text: str, max_keywords: int = 10) -> List[str]:
-        """
-        Extract potential keywords from text using frequency analysis.
-        Filters out common stop words and short words for better quality.
-        """
-        if not text:
-            return []
-
-        # Convert to lowercase and extract words
-        words = re.findall(r"\b\w{3,}\b", text.lower())
-
-        # Filter out common stop words (basic list)
-        stop_words = {
-            "the",
-            "and",
-            "or",
-            "but",
-            "in",
-            "on",
-            "at",
-            "to",
-            "for",
-            "of",
-            "with",
-            "by",
-            "from",
-            "up",
-            "about",
-            "into",
-            "through",
-            "during",
-            "before",
-            "after",
-            "above",
-            "below",
-            "between",
-            "among",
-            "this",
-            "that",
-            "these",
-            "those",
-            "was",
-            "were",
-            "been",
-            "have",
-            "has",
-            "had",
-            "will",
-            "would",
-            "could",
-            "should",
-            "may",
-            "might",
-            "can",
-            "must",
-            "shall",
-            "are",
-            "is",
-        }
-
-        # Count word frequencies for keyword extraction
-        word_freq = {}
-        for word in words:
-            if word not in stop_words and len(word) > 3:
-                word_freq[word] = word_freq.get(word, 0) + 1
-
-        # Sort by frequency and return top keywords
-        sorted_words = sorted(word_freq.items(), key=lambda x: x[1], reverse=True)
-        return [word for word, freq in sorted_words[:max_keywords]]
-
-    @staticmethod
-    def is_meaningful_text(text: str, min_length: int = 20) -> bool:
-        """
-        Check if text contains meaningful content based on length and character ratio.
-        Helps filter out low-quality or empty content.
-        """
-        if not text or len(text.strip()) < min_length:
-            return False
-
-        # Check if text has a reasonable ratio of letters to other characters
-        letters = sum(1 for c in text if c.isalpha())
-        total_chars = len(text)
-
-        if total_chars == 0:
-            return False
-
-        letter_ratio = letters / total_chars
-        return letter_ratio > 0.5  # At least 50% letters
 
     @staticmethod
     def is_probably_gibberish(text: str, threshold: float = 0.3) -> bool:
@@ -235,45 +77,6 @@ class TextUtils:
             or not text.strip()  # Only whitespace
             or TextUtils.is_probably_gibberish(text)  # Gibberish content
         )
-
-    @staticmethod
-    def normalize_whitespace(text: str) -> str:
-        """
-        Normalize whitespace in text by replacing multiple whitespace with single space.
-        Improves text consistency for processing.
-        """
-        if not text:
-            return ""
-
-        # Replace multiple whitespace characters with single space
-        normalized = re.sub(r"\s+", " ", text)
-        return normalized.strip()
-
-    @staticmethod
-    def remove_urls(text: str) -> str:
-        """
-        Remove URLs from text using regex pattern matching.
-        Useful for cleaning text content for analysis.
-        """
-        if not text:
-            return ""
-
-        # Simple URL pattern for removal
-        url_pattern = r'https?://[^\s<>"{}|\\^`\[\]]+'
-        return re.sub(url_pattern, "", text)
-
-    @staticmethod
-    def extract_urls(text: str) -> List[str]:
-        """
-        Extract URLs from text using regex pattern matching.
-        Useful for web content analysis and link extraction.
-        """
-        if not text:
-            return []
-
-        # Simple URL pattern for extraction
-        url_pattern = r'https?://[^\s<>"{}|\\^`\[\]]+'
-        return re.findall(url_pattern, text)
 
     @staticmethod
     def strip_vietnamese_accents(text: str) -> str:
