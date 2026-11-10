@@ -30,6 +30,24 @@ jobs:
       - name: Run ruff
         run: ruff check --output-format=github .
 
+  ops:
+    name: Ops CLI tests (pytest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+
+      # The ops CLI (deploy/ops) is stdlib-only, like the image it ships in, so only pytest is needed.
+      - name: Install pytest
+        run: pip install pytest
+
+      - name: Run tests
+        run: python -m pytest deploy/ops/tests
+
   test:
     name: Tests (pytest)
     runs-on: ubuntu-latest

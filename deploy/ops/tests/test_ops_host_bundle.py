@@ -7,7 +7,7 @@ from deploy.ops.host_bundle import PRIVATE_KEY_NAME, HostIntegrationBundle
 from deploy.ops.layout import InstallLayout
 from deploy.ops.runner import CommandResult
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = Path(__file__).resolve().parents[3]
 FAKE_PRIVATE = "-----BEGIN PRIVATE KEY-----\r\nAAAA\r\n-----END PRIVATE KEY-----\r\n"
 FAKE_PUBLIC = "-----BEGIN PUBLIC KEY-----\r\r\nBBBB\r\r\n-----END PUBLIC KEY-----\r\r\n"
 
