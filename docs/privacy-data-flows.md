@@ -35,7 +35,7 @@ is for the client's lawyer to assess. The questions to settle are listed at the 
 | Eval cases | Copied by staff from answers | `eval_cases`, masked again, no link to the conversation | Until deleted by staff |
 
 Retention periods are set per client by an owner in the admin web. Items under
-legal hold are kept past them. See "Privacy and retention" in [DEPLOYMENT.md](DEPLOYMENT.md).
+legal hold are kept past them. See "Privacy and retention" in [deployment.md](deployment.md).
 
 ## Where data travels
 

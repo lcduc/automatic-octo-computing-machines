@@ -1,6 +1,6 @@
 # Performance: the chat pipeline under load
 
-First measured numbers for the chat path (CAP-03, RES-03 in [PRODUCTION_CHECKLIST.md](PRODUCTION_CHECKLIST.md)).
+First measured numbers for the chat path (CAP-03, RES-03 in [the production checklist](checklists/production.md)).
 The LLM is replaced by a stub with fixed timing, so these numbers are this application's own cost:
 auth, quotas, routing, retrieval and reranking on the GPU, streaming and persistence. A real provider's
 latency adds to them.

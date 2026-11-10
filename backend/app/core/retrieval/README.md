@@ -94,7 +94,7 @@ ruff check .                  # from the repo root
   refuses to write a losing adapter without `--force`, because the app and the router load
   `QUERY_ADAPTER_PATH` at start-up (lcduc/automatic-octo-computing-machines#55, 7b055c6, 2026-10-24).
 - Load test: retrieval + rerank p95 483 ms at 1 user; at 20+ concurrent users TTFT p50 is 2.4 s because
-  turns wait for the reranker ([`docs/PERFORMANCE.md`](../../../../docs/PERFORMANCE.md) lists what would move the knee).
+  turns wait for the reranker ([`docs/performance.md`](../../../../docs/performance.md) lists what would move the knee).
 - Backend moved under `backend/app`; this folder used to be `core/retrieval/`
   (lcduc/automatic-octo-computing-machines#76, 06f0477, 2026-11-10).
 - `context_builder.py` renamed to `context_assembler.py` to match its class `ContextAssembler`

@@ -109,11 +109,11 @@ query_adapter or synthetic or threshold or perturber"`.
 - Synthetic experiment (#55, 7b055c6): fine-tuned e5-small raised dense-only Recall@1 70.4% → 81.5% but the
   router dropped to 79–82% (thresholds calibrated on the base model); the ridge adapter was worse at every
   lambda; full stack stayed at 97.5%. Hence `build_query_adapter.py --force`. Write-up:
-  [`docs/reports/SYNTHETIC_FINETUNE_RESULTS.md`](../../../docs/reports/SYNTHETIC_FINETUNE_RESULTS.md).
+  [`docs/reports/synthetic-finetune-results.md`](../../../docs/reports/synthetic-finetune-results.md).
 - Robustness (#57, b937ee8): missing accents is the costliest perturbation, only for the embedding model
   (dense Recall@1 57 → 13 of 81). Logistic regression doubled off-topic coverage on clean input but stole real
   questions on messy input, so the nearest-example rule stays. Write-up:
-  [`docs/reports/EVAL_ROBUSTNESS.md`](../../../docs/reports/EVAL_ROBUSTNESS.md).
+  [`docs/reports/eval-robustness.md`](../../../docs/reports/eval-robustness.md).
 - `hardware_divergence.py` defaulted to a golden set that does not exist; the default is now
   `scripts/demo_data/golden_queries.json` (branch `refactor/structure-fixes`, 2026-11-10).
 - Windows: Vietnamese output raises `UnicodeEncodeError` (cp1252) when redirected → `PYTHONIOENCODING=utf-8`.

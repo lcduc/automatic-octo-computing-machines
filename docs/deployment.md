@@ -173,7 +173,7 @@ and expiring certificates.
 
 ## Privacy and retention
 
-Where personal data goes is mapped in [PRIVACY_DATA_FLOWS.md](PRIVACY_DATA_FLOWS.md)
+Where personal data goes is mapped in [privacy-data-flows.md](privacy-data-flows.md)
 (for the client's legal review).
 
 **Retention** (Admin → Cấu hình → Quyền riêng tư, owners only). The worker's daily

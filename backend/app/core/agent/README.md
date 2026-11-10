@@ -139,7 +139,7 @@ ruff check .                                # from the repo root
 - OpenAI-compatible local servers need no key -> `OPENAI_BASE_URL` with `LOCAL_SERVER_API_KEY`
   placeholder (lcduc/automatic-octo-computing-machines#63, 56f1039, 2026-10-27).
 - `IntentRouter` makes an LLM call per message when tools are offered; the routing spec allows this only
-  as deviation DV1 (see [`docs/CHATBOT_ROUTING_SPEC.md`](../../../../docs/CHATBOT_ROUTING_SPEC.md) §0.1).
+  as deviation DV1 (see [`docs/chatbot-routing-spec.md`](../../../../docs/chatbot-routing-spec.md) §0.1).
   It returns RAG without a call when no tool is offered to the caller.
 - `gemini_client.py` and `intent_router.py` docstrings pointed at the old layout (`api/routes/`,
   retrieval in `ChatbotService`); fixed, and the `chatbot.py` ceiling now names its trigger

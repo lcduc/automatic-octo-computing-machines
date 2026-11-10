@@ -152,7 +152,7 @@ chunk editing, index sync, ingestion worker), `test_knowledge_transfer.py`, `tes
 ## Status
 - Last reviewed: 2026-11-10
 - Open issues / follow-ups: ARC-11 is partial — `LISTEN/NOTIFY` carries only the admin live feed, not
-  config reloads (docs/PRODUCTION_CHECKLIST.md); `ingestion_worker.py` and `business_calendar.py` /
+  config reloads (docs/checklists/production.md); `ingestion_worker.py` and `business_calendar.py` /
   `sql_tool_catalog.py` do not follow the `<name>_service.py` naming.
 - Ceilings (`# ceiling:` markers in this folder):
   - `chat_service.py:276` — "unhelpful" turn is an outcome + confidence heuristic — replace with a router

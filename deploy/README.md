@@ -68,6 +68,6 @@ The stdlib-only ops CLI and its image. See [`ops/README.md`](ops/README.md).
 
 ## Status
 - Last reviewed: 2026-11-10
-- Open issues / follow-ups: none recorded. `docs/DEPLOYMENT.md` still describes VPS deployment, which is out
+- Open issues / follow-ups: none recorded. `docs/deployment.md` still describes VPS deployment, which is out
   of scope now.
 - Ceilings (`# ceiling:` markers in this folder): none.

@@ -1,5 +1,5 @@
 # Production stack for one client box, installed and driven by the ops CLI
-# (`chatbot install | deploy | backup | rollback`; see docs/DEPLOYMENT.md).
+# (`chatbot install | deploy | backup | rollback`; see docs/deployment.md).
 # Local development: docker-compose.override.yml (merged automatically in this
 # checkout, never copied to a client box) builds the images from source.
 #

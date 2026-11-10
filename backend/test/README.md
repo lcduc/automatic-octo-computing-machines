@@ -142,5 +142,5 @@ CI order (job `test`): migrations check -> `pytest -m hard_gate -v` -> `pytest -
 ## Status
 - Last reviewed: 2026-11-10
 - Open issues / follow-ups: EVAL-09 SEC-11 impersonation and ADM-01a role tests are not yet `hard_gate`
-  (docs/PRODUCTION_CHECKLIST.md).
+  (docs/checklists/production.md).
 - Ceilings (`# ceiling:` markers in this folder): none.

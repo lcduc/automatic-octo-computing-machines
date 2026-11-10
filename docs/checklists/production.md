@@ -47,7 +47,7 @@ Implication: concurrency is trivial; Postgres handles all counters and pub/sub. 
 
 - [ ] CAP-01 Measure real $T_{\text{in}}$/$T_{\text{out}}$ per call type from traces after first week; update cost estimate
 - [ ] CAP-02 Verify provider TPM/RPM tier covers 5× $\lambda_{\text{LLM}}$
-- [~] CAP-03 Load test (Locust/k6) at 3–5× peak on staging; record p95 latency and ceiling — Locust + stub LLM on a dev box (RTX 3060), not staging: knee ≈ 10 concurrent turns / 4.7 turns/s, bottleneck = GPU reranking; see [PERFORMANCE.md](PERFORMANCE.md)
+- [~] CAP-03 Load test (Locust/k6) at 3–5× peak on staging; record p95 latency and ceiling — Locust + stub LLM on a dev box (RTX 3060), not staging: knee ≈ 10 concurrent turns / 4.7 turns/s, bottleneck = GPU reranking; see [performance.md](../performance.md)
 
 ### 0.2 Resource budgets (estimates — verify with `docker stats` / `nvidia-smi`)
 
@@ -56,7 +56,7 @@ VRAM (12 GB): OCR ~2 GB · embed ~2.3 GB · rerank ~1.1 GB (fp16) + activations.
 
 - [x] RES-01 All GPU models loaded once, in model-server only, kept resident. No other service loads models — model-server loads them once at start-up; api and worker hold no models
 - [x] RES-02 model-server priority queue: chat path (query embed, rerank) before ingestion (bulk embed, OCR). OCR concurrency = 1 — two-lane scheduler in the model-server; ingestion lane limited to 1
-- [~] RES-03 Measure peak VRAM + RAM under chat load while OCR job runs; document numbers here — chat load only, no OCR job yet: API ≈ 3.4 GB VRAM flat to 50 users (1.3 GB weights, ~1.6 GB allocator cache from fp32 reranker loading), RSS 1.74 GB; see [PERFORMANCE.md](PERFORMANCE.md#memory-res-03)
+- [~] RES-03 Measure peak VRAM + RAM under chat load while OCR job runs; document numbers here — chat load only, no OCR job yet: API ≈ 3.4 GB VRAM flat to 50 users (1.3 GB weights, ~1.6 GB allocator cache from fp32 reranker loading), RSS 1.74 GB; see [performance.md](../performance.md#memory-res-03)
 - [x] RES-04 Do NOT add Redis, ClickHouse, Elasticsearch, Langfuse v3, second vector DB, or Kubernetes
 - [~] RES-05 GPU-less client VM: only model-server changes (CPU mode with smaller models, or external embedding API). API/worker/BFF unchanged — model-server falls back to CPU without CUDA (same models); no smaller-model preset, untested on a GPU-less VM
 
@@ -335,7 +335,7 @@ Any code change breaking one is a blocker.
 - [x] OBS-02 Structured JSON logs with request ID; PII redacted
 - [~] OBS-03 Metrics: latency p50/p95, TTFT, error rate, tokens/day, cost/day, ingestion failures, GPU VRAM, disk — `metrics_daily` rollup + monthly history; VRAM only on model-server `/ready`, not charted; no TTFT
 - [x] OBS-04 Alerts via `ALERT_CHANNEL` (Telegram/Slack/SMTP): service down, error spike, spend threshold, disk > 80%, ingestion failure, handoff queue waiting > N min, purge/backup failure — worker `alert_checks` every 5 min, de-duplicated; failed jobs (incl. the purge) and backups alert
-- [~] OBS-05 External uptime check (vendor-side monitor pinging each client's `/health`) — Uptime Kuma setup documented in `docs/DEPLOYMENT.md`; vendor monitor not set up
+- [~] OBS-05 External uptime check (vendor-side monitor pinging each client's `/health`) — Uptime Kuma setup documented in `docs/deployment.md`; vendor monitor not set up
 
 ---
 
@@ -378,11 +378,11 @@ Any code change breaking one is a blocker.
 
 ## 16. Privacy (Vietnam)
 
-- [~] PRV-01 Map personal data flows against Law 91/2025/QH15 on Personal Data Protection (effective 1 Jan 2026). Chat content + private tool results sent to a foreign LLM API = cross-border transfer; document assessment. VERIFY current implementing decree before launch — data-flow map in `docs/PRIVACY_DATA_FLOWS.md`; legal assessment and decree check by the client's lawyer
+- [~] PRV-01 Map personal data flows against Law 91/2025/QH15 on Personal Data Protection (effective 1 Jan 2026). Chat content + private tool results sent to a foreign LLM API = cross-border transfer; document assessment. VERIFY current implementing decree before launch — data-flow map in `docs/privacy-data-flows.md`; legal assessment and decree check by the client's lawyer
 - [x] PRV-02 Consent notice in widget (esp. anonymous ticket contact info) — `consent_at` stored; contact refused without it
 - [x] PRV-03 Data-subject requests: admin export/delete of one user's conversations + tickets — Admin → Cấu hình → Quyền riêng tư: export JSON / delete by user id, visitor id or ticket e-mail
 - [x] PRV-04 Retention: §14 — owner-editable periods in settings; daily purge (RET-R1)
-- [x] PRV-05 LLM provider configured for no training, minimal/zero retention where available — per-client OpenAI settings in `docs/DEPLOYMENT.md` (no training, ZDR request, no `store`, optional residency)
+- [x] PRV-05 LLM provider configured for no training, minimal/zero retention where available — per-client OpenAI settings in `docs/deployment.md` (no training, ZDR request, no `store`, optional residency)
 - [x] PRV-06 AI disclaimer in widget — always shown; contrast fixed (WID-10)
 
 ---
@@ -427,7 +427,7 @@ Any code change breaking one is a blocker.
 - [x] OPS-02 Daily Postgres dump (incl. vectors) to `BACKUP_TARGET` (off-server) — `chatbot backup` via cron, also before every deploy
 - [x] OPS-03 Original uploaded files backed up to `BACKUP_TARGET` — originals kept and archived with each backup
 - [~] OPS-04 Restore tested; record RTO here: `____` — `chatbot restore` verified on a scratch stack; RTO from a staging drill pending
-- [x] OPS-05 Rebuild runbook: fresh VM → `setup` → restore → `preflight` — docs/DEPLOYMENT.md
+- [x] OPS-05 Rebuild runbook: fresh VM → `setup` → restore → `preflight` — docs/deployment.md
 
 ### Development workflow (vendor side)
 - [~] OPS-06 Git, protected main, PR review — PRs used; main not protected

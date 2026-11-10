@@ -11,7 +11,7 @@ retriever's embedding model and compares it with example messages per route. Whe
 question. What to do with each route (canned reply, clarify, handoff) is decided by `ChatbotService`
 in [`../agent/`](../agent/); rule-based screening is in [`../guardrails/`](../guardrails/).
 
-Spec: [`docs/CHATBOT_ROUTING_SPEC.md`](../../../../docs/CHATBOT_ROUTING_SPEC.md) (stage S3, rules
+Spec: [`docs/chatbot-routing-spec.md`](../../../../docs/chatbot-routing-spec.md) (stage S3, rules
 `R*`, fast-path rule `F3`, deviation `DV1` for the LLM `IntentRouter`).
 
 ## Files
@@ -68,7 +68,7 @@ e5-small model (cached in CI), no LLM and no secrets. Re-run it after every `rou
 - A fine-tuned e5-small embedder dropped router accuracy to 79-82% because the cosine thresholds are
   calibrated on the base model -> changing `EMBEDDING_MODEL` means recalibrating thresholds
   (lcduc/automatic-octo-computing-machines#55, 7b055c6, 2026-10-24;
-  [`docs/reports/SYNTHETIC_FINETUNE_RESULTS.md`](../../../../docs/reports/SYNTHETIC_FINETUNE_RESULTS.md)).
+  [`docs/reports/synthetic-finetune-results.md`](../../../../docs/reports/synthetic-finetune-results.md)).
 - Eval scripts moved from `scripts/` to `scripts/eval/` (imports must be `from scripts.eval import x`);
   backend moved under `backend/app`, this folder used to be `core/routing/`
   (lcduc/automatic-octo-computing-machines#76, 30cfa1c and 06f0477, 2026-11-10).

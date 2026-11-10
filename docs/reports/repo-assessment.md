@@ -76,7 +76,7 @@ ingestion-worker ─────────────────▶ postgres
 
 | Item | Rating | Justification |
 | --- | --- | --- |
-| Setup and installation | Partial | The installer and preflight exist, but preflight has never run on a real box (PRODUCTION_CHECKLIST.md:411). NVIDIA driver setup isn't documented. The Windows demo path isn't documented or reproducible. README install claim fixed in #47 |
+| Setup and installation | Partial | The installer and preflight exist, but preflight has never run on a real box (checklists/production.md:411). NVIDIA driver setup isn't documented. The Windows demo path isn't documented or reproducible. README install claim fixed in #47 |
 | Containerization | Readywas Partial | Multi-stage build, non-root user, healthchecks, memory limits, tagged images. Torch is now pinned with the rest. Fixed in #47 The image build for the merged commit hadn't finished when this was written. |
 | Config and secrets | Ready | The installer generates `.env` and `secrets/`, and production refuses unsafe config (config/settings.py:556-571). `.env` has never been committed. *Inferred:* backups leave out `secrets/`. |
 | Hardware vs constraints | Partial | The GPU load is light, and OCR actually runs on CPU in the shipped image. Docs corrected in #47 There is no load test (CAP-03) and no VRAM measurement (RES-03), and throughput is only an estimate. Each answer makes 2–3 cloud calls, and latency hasn't been measured. |
@@ -103,7 +103,7 @@ ingestion-worker ─────────────────▶ postgres
 ### Mid-level signals
 
 - Evaluation rigour trails the engineering: the benchmark is saturated, there's no faithfulness metric, the confidence score is uncalibrated, and the nightly gate times out.
-- Nothing is measured: no load test, no VRAM figure. `docs/SCALING_AUDIT.md` is a prompt template for an AI audit of a different stack, not a set of results.
+- Nothing is measured: no load test, no VRAM figure. `docs/reports/scaling-audit.md` is a prompt template for an AI audit of a different stack, not a set of results.
 - Doc drift in five places, plus an outdated reason for ignoring the CVEs. Fixed in #47
 - Uneven module quality: a dict cache used across threads without a lock in embeddings.py:44, and dead code in Reranker.rerank().
 - Scope: host SDKs in 3 languages, visitor tiers and a live feed were built while the real-box install, restore drill and load test are still open.
@@ -131,7 +131,7 @@ ingestion-worker ─────────────────▶ postgres
 | 3 | Do a dry run on matching hardware: preflight, a load test, p95 and VRAM figures, and a restore drill with a measured RTO. Back up `secrets/`. | 3–4 d | Open |
 | 4 | Pin torch, move to transformers 5.x, drop the CVE ignores. | 0.5–1 d | Done #47 |
 | 5 | Add an answer-quality eval (LLM judge plus about 50 human labels), and calibrate or replace the confidence score. | 3–5 d | Open |
-| 6 | Fix doc drift; replace `SCALING_AUDIT.md` with measured numbers; add an uptime check that doesn't depend on the worker. | 1 d | Doc drift done |
+| 6 | Fix doc drift; replace `scaling-audit.md` with measured numbers; add an uptime check that doesn't depend on the worker. | 1 d | Doc drift done |
 | 7 | Make the nightly retrieval eval finish: raise or split the 45-minute budget, or run it on a GPU runner. | 0.5 d | New |
 | 8 | Feature freeze until 1–3 are done; clean up `embeddings.py` and the dead reranker code. | 0.5 d | Open |
 | 9 | Pin `pillow>=13` and drop its 8 ignores once docling and streamlit allow it. | 0.5 h | Waiting upstream |

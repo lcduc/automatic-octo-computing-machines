@@ -1,5 +1,5 @@
 """
-Write the API's OpenAPI schema to docs/openapi.json (the machine-readable twin of docs/API.md).
+Write the API's OpenAPI schema to docs/openapi.json (the machine-readable twin of docs/api.md).
 
 Usage (from backend/, with the venv active):
 

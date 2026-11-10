@@ -8,7 +8,7 @@ It covers the three ways instructions reach the model:
 - returned by a tool: they arrive only as a ``tool`` message, the system prompt says
   they are data, and a model obeying them still cannot reach a private tool or name a user.
 
-The model itself is not tested here (see SEC-01 in docs/PRODUCTION_CHECKLIST.md); the
+The model itself is not tested here (see SEC-01 in docs/checklists/production.md); the
 point is that nothing it does can widen what the caller may see.
 """
 

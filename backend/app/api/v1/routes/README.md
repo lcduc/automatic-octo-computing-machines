@@ -134,7 +134,7 @@ pytest test/integration/test_api_keys.py test/integration/test_eval_cases_api.py
        test/integration/test_usage_limits_api.py test/integration/test_document_review.py
 ```
 All need `TEST_DATABASE_URL` (pgvector/pgvector:pg17); they are skipped otherwise. Swagger UI:
-`http://localhost:8500/docs` when `APP_ENV` is not production. Reference docs: `docs/API.md`.
+`http://localhost:8500/docs` when `APP_ENV` is not production. Reference docs: `docs/api.md`.
 
 ## Known problems and history
 - Routes lived in `api/routes/` until they moved to `api/v1/routes/` with the backend move
