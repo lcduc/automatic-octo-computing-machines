@@ -1,13 +1,12 @@
 """
-RAG chat pipeline: answers one user message as a stream of events.
+Chat pipeline: decides how one user message is answered and streams the answer as events.
 
 Order of work, cheapest first, so tokens are only spent when they can help:
 
-1. Guardrails (rules + free moderation): block / small talk / human request.
-2. Query rewrite with history (light model) and hybrid retrieval.
-3. No relevant knowledge -> configured fallback (deny text or handoff), no LLM call.
-4. Answer cache.
-5. Grounded answer streamed from the LLM, then confidence and citations.
+1. Staff takeover, guardrails (rules + free moderation) and sensitive topics.
+2. Embedding router: small talk, handoff requests, off-topic and vague messages get canned replies.
+3. Intent router: action requests go to the tool-calling agent.
+4. Everything else is answered from the knowledge base by :class:`KnowledgeAnswerer`.
 
 The pipeline knows nothing about HTTP or the database; ``ChatService``
 persists what it yields.
@@ -15,18 +14,13 @@ persists what it yields.
 
 # Standard library imports
 import asyncio
-import hashlib
 import logging
-from datetime import datetime
-from zoneinfo import ZoneInfo
-from typing import Any, AsyncIterator, Callable, Dict, List, Optional, Union
+from typing import AsyncIterator, Dict, List, Optional
 
 # Local imports
 from config.settings import Config
-from core.document_processing.chunking.chunker import section_label
 from core.guardrails.input_guard import GuardAction, InputGuard
 from core.guardrails.topic_matcher import matching_topic
-from core.retrieval.context_builder import ContextAssembler
 from core.retrieval.knowledge_index import KnowledgeIndex
 from core.retrieval.retriever import ContextRetriever
 from core.routing.embedding_router import EmbeddingRouter, RouteDecision, RouteIntent
@@ -35,62 +29,45 @@ from models.chat_turn import (
     ChatPolicy,
     HandoffReason,
     TurnDelta,
+    TurnEvent,
     TurnOutcome,
     TurnRequest,
     TurnResult,
     TurnUsage,
+    or_default,
 )
 from models.intent import IntentType
-from models.knowledge import RetrievalResults, RetrievedChunk
-from models.llm import StreamDelta
-from models.tool_context import ToolContext
 from models.turn_trace import (
-    ROUTE_CACHE,
     ROUTE_CLARIFY,
-    ROUTE_FALLBACK,
     ROUTE_GUARD,
     ROUTE_HUMAN,
     ROUTE_LOGIN,
     ROUTE_OFF_TOPIC,
-    ROUTE_RAG,
     ROUTE_SMALLTALK,
     ROUTE_STAFF,
     ROUTE_TOOL,
     ROUTE_TOPIC,
 )
 from utils.text_utils import TextUtils
-from .answer_marker import NoAnswerFilter
 from .base_llm_provider import BaseLLMProvider
-from .confidence import ConfidenceScorer
 from .history import recent_history
 from .intent_router import IntentRouter
-from .prompts import AutoReplies, PromptManager, SystemPrompts
-from .query_rewriter import QueryRewriter
+from .knowledge_answerer import KnowledgeAnswerer
+from .prompts import AutoReplies
 from .response_cache import ResponseCache
 from .tool_calling_agent import ToolCallingAgent
+from .turn_deadline import TurnDeadline
 
 logger = logging.getLogger(__name__)
 
-TurnEvent = Union[TurnDelta, TurnUsage, TurnResult]
-
-
-def _or_default(value, default: Callable[[], Any]):
-    """An admin-set policy value, or the env default when none was saved."""
-    return default() if value is None else value
-
-
-#: User-facing failure texts (Vietnamese, like the rest of the conversation).
-
 #: Usage purposes recorded with token usage.
-PURPOSE_ANSWER = "answer"
-PURPOSE_REWRITE = "rewrite"
 PURPOSE_INTENT = "intent"
 PURPOSE_TOOL = "tool"
 
 
 class ChatbotService:
     """
-    Stateless-per-turn orchestrator shared by all requests.
+    Stateless-per-turn router shared by all requests.
 
     Heavy collaborators (models, provider clients, the index) are injected and
     shared; per-turn state lives only in local variables of :meth:`run`.
@@ -120,21 +97,12 @@ class ChatbotService:
             router: Embedding router for small talk, handoff requests, off-topic and vague
                 messages; ``None`` sends everything the guard allows to retrieval.
         """
-        self._llm = llm_provider
-        self._retriever = retriever
-        self._index = index
         self._guard = guard
         self._cache = cache
         self._intent_router = intent_router
         self._tool_agent = tool_agent
         self._router = router
-        self._rewriter = QueryRewriter(llm_provider)
-        self._prompts = PromptManager()
-        self._assembler = ContextAssembler()
-        self._confidence = ConfidenceScorer()
-        # Retrieval (embedding + BM25 + cross-encoder) is GPU/CPU-bound; this
-        # bounds concurrent runs so a burst cannot exhaust GPU memory.
-        self._retrieval_slots = asyncio.Semaphore(Config.RAG.RETRIEVAL_MAX_CONCURRENCY())
+        self._answerer = KnowledgeAnswerer(llm_provider, retriever, index, cache)
 
     # ------------------------------------------------------------------
     # Public API
@@ -154,7 +122,7 @@ class ChatbotService:
             final ``TurnResult``. Never raises for provider/retrieval failures:
             they end the stream with an ``ERROR`` result carrying a safe message.
         """
-        deadline = asyncio.get_running_loop().time() + Config.LLM.TURN_TIMEOUT_SECONDS()
+        deadline = TurnDeadline.after(Config.LLM.TURN_TIMEOUT_SECONDS())
         streamed: List[str] = []
         try:
             async for event in self._run(request, deadline):
@@ -170,14 +138,14 @@ class ChatbotService:
             yield TurnResult(TurnOutcome.ERROR, "".join(streamed) or message, guard_reason="error")
 
     # ------------------------------------------------------------------
-    # Stages
+    # Routing
     # ------------------------------------------------------------------
 
-    async def _run(self, request: TurnRequest, deadline: float) -> AsyncIterator[TurnEvent]:
-        """The pipeline proper; exceptions are mapped by :meth:`run`."""
+    async def _run(self, request: TurnRequest, deadline: TurnDeadline) -> AsyncIterator[TurnEvent]:
+        """Route the message to a canned reply, the tool agent or the knowledge base; exceptions are mapped by :meth:`run`."""
         policy = request.policy
-        chat_model = _or_default(policy.chat_model, Config.LLM.ACTIVE_MODEL)
-        light_model = _or_default(policy.light_model, Config.LLM.ACTIVE_LIGHT_MODEL)
+        chat_model = or_default(policy.chat_model, Config.LLM.ACTIVE_MODEL)
+        light_model = or_default(policy.light_model, Config.LLM.ACTIVE_LIGHT_MODEL)
         history = recent_history(request.history, Config.Chat.MAX_HISTORY_TURNS() * 2)
         trace = request.trace
 
@@ -249,100 +217,20 @@ class ChatbotService:
                     yield event
                 return
 
-        trace.route = ROUTE_RAG
-        with trace.step("rewrite"):
-            search_query, rewrite_usage = await self._rewriter.rewrite(search_text, history, light_model)
-        if rewrite_usage is not None:
-            yield TurnUsage(PURPOSE_REWRITE, rewrite_usage)
-        rewritten = search_query if search_query != search_text else None
-
-        with trace.step("retrieval"):
-            results = await self._retrieve(search_query, request.sources, policy, deadline, request.context, trace)
-            matched = [item for item in results if item.matched]
-            if not matched and rewritten is not None:
-                # A bad rewrite (e.g. the light model replied instead of rewriting) must not
-                # hide knowledge the user's own words would find.
-                logger.info("Rewritten query matched nothing; retrying retrieval with the original query")
-                results = await self._retrieve(search_text, request.sources, policy, deadline, request.context, trace)
-                matched = [item for item in results if item.matched]
-                if matched:
-                    rewritten = None
-        trace.record_chunks(results)
-        if not matched:
-            yield self._unanswered(request, decision, rewritten, results.best_rerank)
-            return
-
-        documents_block = self._assembler.build(results, Config.LLM.MAX_CONTEXT_LENGTH())
-        system_prompt = self._prompts.get_system_prompt(policy.assistant_instructions)
-        trace.prompt_version = self._prompt_digest(system_prompt)
-        cache_key = ResponseCache.build_key(
-            request.query, documents_block, history, self._cache_namespace(chat_model, system_prompt)
-        )
-        citations = self._citations(matched)
-
-        cached_answer = self._cache.get(cache_key)
-        if cached_answer is not None:
-            trace.route = ROUTE_CACHE
-            yield TurnDelta(cached_answer)
-            yield TurnResult(
-                TurnOutcome.ANSWERED,
-                cached_answer,
-                citations=citations,
-                confidence=self._score(cached_answer, request.query, documents_block, matched),
-                cached=True,
-                model=chat_model,
-                rewritten_query=rewritten,
-            )
-            return
-
-        blocked = await self._moderation_block(moderation, request)
-        if blocked is not None:
-            yield blocked
-            return
-
-        messages = [
-            {"role": "system", "content": system_prompt},
-            *history,
-            {"role": "user", "content": self._prompts.build_user_turn(request.query, documents_block)},
-        ]
-        pieces: List[str] = []
-        no_answer = NoAnswerFilter()
-        with trace.step("generation"):
-            async for delta in self._with_deadline(self._llm.stream(messages, model=chat_model), deadline):
-                if delta.usage is not None:
-                    yield TurnUsage(PURPOSE_ANSWER, delta.usage)
-                shown = no_answer.feed(delta.text) if delta.text else ""
-                if shown:
-                    pieces.append(shown)
-                    yield TurnDelta(shown)
-            tail = no_answer.finish()
-            if tail:
-                pieces.append(tail)
-                yield TurnDelta(tail)
-
-        answer = "".join(pieces).strip()
-        if no_answer.no_answer or SystemPrompts.NO_ANSWER_MARKER in answer:
-            # The documents did not answer the question: staff take it, nothing hedged is shown.
-            logger.info("The model found no answer in the retrieved documents")
-            yield self._unanswered(request, decision, rewritten, results.best_rerank)
-            return
-        if not answer:
-            # An empty completion (e.g. a provider-side safety block) is no answer.
-            trace.route = ROUTE_FALLBACK
-            yield self._fallback(request, rewritten)
-            return
-        self._cache.set(cache_key, answer)
-        yield TurnResult(
-            TurnOutcome.ANSWERED,
-            answer,
-            citations=citations,
-            confidence=self._score(answer, request.query, documents_block, matched),
-            model=chat_model,
-            rewritten_query=rewritten,
-        )
+        async for event in self._answerer.answer(
+            request,
+            history=history,
+            search_text=search_text,
+            decision=decision,
+            deadline=deadline,
+            chat_model=chat_model,
+            light_model=light_model,
+            before_generation=lambda: self._moderation_block(moderation, request),
+        ):
+            yield event
 
     async def _run_tool_agent(
-        self, request: TurnRequest, history: List[Dict[str, str]], deadline: float, chat_model: str, light_model: str
+        self, request: TurnRequest, history: List[Dict[str, str]], deadline: TurnDeadline, chat_model: str, light_model: str
     ) -> AsyncIterator[TurnEvent]:
         """Answer an action request through the tool-calling agent (never cached: results may be private)."""
         pieces: List[str] = []
@@ -350,7 +238,7 @@ class ChatbotService:
         # The tool agent always answers through OpenAI, so an admin-chosen chat model (which may be
         # another provider's) is not passed; its query rewrite runs on the chat provider's light model.
         stream = self._tool_agent.stream(request.query, history, light_model=light_model, context=request.context)
-        async for delta in self._with_deadline(stream, deadline):
+        async for delta in deadline.guard(stream):
             tool_failed |= delta.tool_failed
             if delta.tool_call is not None:
                 request.trace.tool_calls.append(delta.tool_call)
@@ -361,47 +249,6 @@ class ChatbotService:
                 yield TurnDelta(delta.text)
         handoff = HandoffReason.TOOL_ERROR if tool_failed and request.policy.fallback_mode == FALLBACK_MODE_HANDOFF else None
         yield TurnResult(TurnOutcome.ANSWERED, "".join(pieces).strip(), model=chat_model, handoff_reason=handoff)
-
-    async def _retrieve(
-        self, query: str, sources, policy: ChatPolicy, deadline: float, context: ToolContext, trace=None
-    ) -> RetrievalResults:
-        """
-        Run hybrid search in a worker thread, bounded by the retrieval slots and the deadline.
-
-        Tuning comes from the turn's policy (admin-editable), falling back to the env defaults.
-        The filters in force are noted on ``trace`` (ADM-05).
-        """
-        snapshot = self._index.snapshot
-        top_k = _or_default(policy.retrieval_top_k, Config.RAG.RETRIEVAL_TOP_K)
-        threshold = Config.RAG.SIMILARITY_THRESHOLD()
-        semantic_threshold = Config.RAG.SEMANTIC_THRESHOLD()
-        today = datetime.now(ZoneInfo(Config.Server.APP_TIMEZONE())).date()
-        if trace is not None:
-            trace.filters = {
-                "access_level": context.tier_level, "today": today.isoformat(), "sources": list(sources) if sources else None,
-                "threshold": threshold, "semantic_threshold": semantic_threshold, "top_k": top_k,
-                "knowledge_version": snapshot.version,
-            }
-        if snapshot.is_empty:
-            return RetrievalResults()
-        async with self._retrieval_slots:
-            return await asyncio.wait_for(
-                asyncio.to_thread(
-                    self._retriever.search,
-                    query,
-                    snapshot,
-                    top_k=top_k,
-                    semantic_weight=_or_default(policy.semantic_weight, Config.RAG.SEMANTIC_WEIGHT),
-                    threshold=threshold,
-                    semantic_threshold=semantic_threshold,
-                    max_context_chunks=_or_default(policy.max_context_chunks, Config.RAG.MAX_CONTEXT_CHUNKS),
-                    expansion_radius=Config.RAG.CONTEXT_EXPANSION_RADIUS(),
-                    sources=sources,
-                    access_level=context.tier_level,
-                    today=today,
-                ),
-                timeout=self._remaining(deadline),
-            )
 
     # ------------------------------------------------------------------
     # Helpers
@@ -469,95 +316,6 @@ class ChatbotService:
                 )
             return TurnResult(TurnOutcome.DENIED, policy.deny_message)
         return None
-
-    def _unanswered(
-        self, request: TurnRequest, decision: Optional[RouteDecision], rewritten: Optional[str],
-        best_rerank: Optional[float],
-    ) -> TurnResult:
-        """
-        Reply when nothing in the knowledge base answers the question.
-
-        A message that is off topic (see :meth:`RouteDecision.is_off_topic`) is refused and opens no
-        ticket; anything else is on topic, so it takes the configured fallback (handoff or deny).
-        """
-        if decision is not None and decision.is_off_topic(best_rerank):
-            request.trace.route = ROUTE_OFF_TOPIC
-            return TurnResult(TurnOutcome.DENIED, AutoReplies.OFF_TOPIC, rewritten_query=rewritten)
-        request.trace.route = ROUTE_FALLBACK
-        return self._fallback(request, rewritten)
-
-    @staticmethod
-    def _fallback(request: TurnRequest, rewritten: Optional[str]) -> TurnResult:
-        """The configured no-knowledge reply: deny text or a handoff."""
-        policy = request.policy
-        if policy.fallback_mode == FALLBACK_MODE_HANDOFF:
-            return TurnResult(
-                TurnOutcome.HANDOFF,
-                policy.handoff_message,
-                rewritten_query=rewritten,
-                handoff_reason=HandoffReason.NO_KNOWLEDGE,
-            )
-        return TurnResult(TurnOutcome.DENIED, policy.deny_message, rewritten_query=rewritten)
-
-    @staticmethod
-    def _prompt_digest(system_prompt: str) -> str:
-        """Short, stable id of a system prompt (the trace's prompt version)."""
-        return hashlib.sha256(system_prompt.encode("utf-8")).hexdigest()[:16]
-
-    def _cache_namespace(self, model: str, system_prompt: str) -> str:
-        """Model + prompt + knowledge version, so a model switch or an edit never serves a stale answer."""
-        return f"{model}|{self._prompt_digest(system_prompt)}|kb{self._index.snapshot.version}"
-
-    @staticmethod
-    def _citations(matched: List[RetrievedChunk]) -> List[Dict[str, object]]:
-        """One citation per matched document, best first."""
-        best: Dict[str, RetrievedChunk] = {}
-        for item in matched:
-            current = best.get(item.chunk.document_id)
-            if current is None or item.relevance > current.relevance:
-                best[item.chunk.document_id] = item
-        ranked = sorted(best.values(), key=lambda item: item.relevance, reverse=True)
-        return [
-            {
-                "document_id": item.chunk.document_id,
-                "chunk_id": item.chunk.chunk_id,
-                "title": item.chunk.document_title,
-                "source": item.chunk.source,
-                "url": item.chunk.metadata.get("url"),
-                "section": section_label(item.chunk.metadata),
-                "score": round(item.relevance, 3),
-            }
-            for item in ranked
-        ]
-
-    def _score(self, answer: str, query: str, context: str, matched: List[RetrievedChunk]) -> Optional[float]:
-        """Heuristic answer confidence in [0, 1]; ``None`` if scoring failed."""
-        try:
-            breakdown = self._confidence.calculate_confidence(
-                answer, query, context, [{"combined_score": item.relevance} for item in matched]
-            )
-            return round(float(breakdown.overall_score), 3)
-        except Exception:
-            logger.exception("Confidence scoring failed")
-            return None
-
-    @staticmethod
-    def _remaining(deadline: float) -> float:
-        """Seconds left before the turn deadline (raises when already passed)."""
-        remaining = deadline - asyncio.get_running_loop().time()
-        if remaining <= 0:
-            raise asyncio.TimeoutError()
-        return remaining
-
-    async def _with_deadline(self, stream: AsyncIterator[StreamDelta], deadline: float) -> AsyncIterator[StreamDelta]:
-        """Re-yield ``stream``, failing with ``TimeoutError`` if the next item misses the deadline."""
-        iterator = stream.__aiter__()
-        while True:
-            try:
-                item = await asyncio.wait_for(iterator.__anext__(), timeout=self._remaining(deadline))
-            except StopAsyncIteration:
-                return
-            yield item
 
     @staticmethod
     def _is_rate_limit(exc: Exception) -> bool:
