@@ -67,7 +67,7 @@ def main():
     print("Setup completed successfully!")
     print("Don't forget to:")
     print("   1. Update your .env file with API keys")
-    print("   2. Run 'python main.py' to start the server")
+    print("   2. Run 'python -m app.main' (from backend/) to start the server")
     print("   3. Run 'streamlit run app.py' to start the UI")
 
 

@@ -20,8 +20,8 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
 # Local imports
-from .model_host import ModelHost
-from .scheduler import Lane, PriorityScheduler, SchedulerBusyError
+from app.core.infrastructure.model_server.model_host import ModelHost
+from app.core.infrastructure.model_server.scheduler import Lane, PriorityScheduler, SchedulerBusyError
 
 logger = logging.getLogger(__name__)
 

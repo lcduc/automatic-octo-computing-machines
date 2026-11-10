@@ -12,10 +12,10 @@ from pydantic import BaseModel, Field, field_validator
 
 # Local imports
 from app.core.document_processing.chunking import MAX_CHUNK_CHARS
+from app.models.knowledge_bundle import SOURCE_NAME_PATTERN
 from .chunking import AutoChunking, ChunkingConfig
 from .common import ApiModel, validate_metadata
 
-SOURCE_NAME_PATTERN = r"^[A-Za-z0-9_\-]{1,64}$"
 #: Largest hand-written document accepted, in characters.
 MAX_TEXT_DOCUMENT_LENGTH = 200_000
 MAX_CHUNK_LENGTH = MAX_CHUNK_CHARS

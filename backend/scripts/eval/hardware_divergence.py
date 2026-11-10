@@ -13,8 +13,8 @@ divergence between the two outputs. Requires a CUDA GPU to be available;
 otherwise there is no GPU path to compare against.
 
 Usage:
-  python scripts/eval/hardware_divergence.py
-  python scripts/eval/hardware_divergence.py --golden-set data/eval/golden_queries.json --out data/logs/hardware_divergence_report.json
+  python -m scripts.eval.hardware_divergence
+  python -m scripts.eval.hardware_divergence --golden-set scripts/demo_data/golden_queries.json --out data/logs/hardware_divergence_report.json
 """
 import argparse
 import json
@@ -30,7 +30,7 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_GOLDEN_SET_PATH = "data/eval/golden_queries.json"
+DEFAULT_GOLDEN_SET_PATH = "scripts/demo_data/golden_queries.json"
 
 
 class HardwareDivergenceEvaluator:

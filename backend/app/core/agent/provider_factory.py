@@ -10,7 +10,8 @@ This is the one place in the codebase that knows about every concrete
 import logging
 
 # Local imports
-from app.config.settings import STUB_PROVIDER, Config
+from app.config.llm_settings import STUB_PROVIDER
+from app.config.settings import Config
 from .anthropic_client import AnthropicClientProvider
 from .base_llm_provider import BaseLLMProvider
 from .gemini_client import GeminiClientProvider

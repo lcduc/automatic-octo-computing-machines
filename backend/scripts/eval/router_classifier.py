@@ -12,7 +12,7 @@ accent-free copies the router adds (``with_accent_free_forms``):
   it; anything else is a question. ``C`` and ``min_probability`` are chosen per outer fold by an inner
   stratified CV on clean input: fewest stolen questions first, then accuracy.
 
-No LLM calls are made. Usage (from the repository root, with the venv active)::
+No LLM calls are made. Usage (from backend/, with the venv active)::
 
     python -m scripts.eval.router_classifier
     python -m scripts.eval.router_classifier --out logs/router_classifier.json

@@ -8,6 +8,9 @@ import json
 import logging
 from typing import Any, AsyncIterator, Dict
 
+# Local imports
+from app.core.agent.prompts import AutoReplies
+
 logger = logging.getLogger(__name__)
 
 #: Seconds of silence after which a comment line is sent so proxies keep the stream open.
@@ -48,7 +51,7 @@ async def sse_stream(events: AsyncIterator[Dict[str, Any]]) -> AsyncIterator[str
             yield encode_event(event)
     except Exception:
         logger.exception("Chat stream failed")
-        yield encode_event({"type": "error", "message": "Xin lỗi, hệ thống đang gặp sự cố."})
+        yield encode_event({"type": "error", "message": AutoReplies.ERROR})
     finally:
         if pending is not None and not pending.done():
             pending.cancel()

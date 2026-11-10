@@ -1,5 +1,5 @@
 """
-Configuration package. Use ``from config.settings import Config``.
+Configuration package. Use ``from app.config.settings import Config``.
 """
 
 from .settings import Config

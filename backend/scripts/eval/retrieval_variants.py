@@ -13,7 +13,7 @@ The variant under test is whatever the environment configures: ``EMBEDDING_MODEL
 model differs from ``EMBEDDING_MODEL``, so the run refuses a database embedded with another model
 unless ``--allow-reembed`` is given (point ``DATABASE_URL`` at a copy, never at the live database).
 
-No LLM calls are made. Usage (from the repository root, with the venv active)::
+No LLM calls are made. Usage (from backend/, with the venv active)::
 
     python -m scripts.eval.retrieval_variants --label baseline --out logs/variants/baseline.json
 """

@@ -6,7 +6,7 @@ Wiring only. Run it next to the API with ``INGESTION_WORKER=external`` set for
 the API (docker-compose does this), so Docling/OCR get their own CPU and
 memory limits and a crash while parsing cannot take the API down::
 
-    python worker.py
+    python -m app.worker        # from backend/
 """
 
 # Standard library imports

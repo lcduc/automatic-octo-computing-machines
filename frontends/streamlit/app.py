@@ -149,7 +149,7 @@ class ChatApp:
         if not os.getenv("CHATBOT_API_KEY"):
             st.warning("Set CHATBOT_API_KEY (create one in the admin web) to chat.")
         if not is_backend_ready():
-            st.error(f"Backend not ready at {api_base_url()}. Start it with `python main.py`.")
+            st.error(f"Backend not ready at {api_base_url()}. Start it from backend/ with `python -m app.main`.")
 
         if st.button("Cuộc trò chuyện mới"):
             st.session_state.chat_history = []

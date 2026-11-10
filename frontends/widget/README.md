@@ -36,3 +36,36 @@ List the embedding sites in `WIDGET_ALLOWED_PARENTS`; the widget refuses to be f
 widget there (look, texts, extra pages), set that client's `.env` values, and deploy the branch. Keep
 backend and admin changes on `main` and merge them into client branches, so each branch differs only in
 `frontends/widget` and its configuration.
+
+## Files
+
+| Path | What it holds |
+|---|---|
+| `public/embed.js` | Loader for host pages: adds the launcher, opens `/widget` in an iframe on first click, exposes `Chatbot.login()` / `Chatbot.logout()` and the host token callback. Never talks to the API. |
+| `src/proxy.ts` | Runs before every page/route: `frame-ancestors` from `WIDGET_ALLOWED_PARENTS` on `/widget`, `DENY` framing elsewhere, other security headers (HSTS in production). |
+| `src/app/widget/page.tsx` | The chat page loaded in the iframe. `src/app/embed-demo/page.tsx` shows the widget on a sample page; `page.tsx`, `layout.tsx`, `globals.css`, `favicon.ico` are the app shell. |
+| `src/app/api/chat/` | Server routes the browser calls: `stream/` (SSE relay), `config/`, `feedback/`, `conversations/[id]/`, `handoffs/[id]/contact/`. |
+| `src/lib/server/` | Server-only: `backend.ts` (calls the backend with the service token, visitor id, forwarded IP, request id), `config.ts` (env), `visitor.ts` (signed HttpOnly `chat_vid` cookie), `same-origin.ts` (CSRF guard). |
+| `src/lib/` | `host-bridge.ts` (exact-origin postMessage channel with `embed.js`), `sse.ts`, `markdown.tsx`, `types.ts`; tests `embed.test.ts`, `host-bridge.test.ts`. |
+| `src/components/widget/` | `ChatWidget.tsx`, `Composer.tsx`, `MessageBubble.tsx`, `TicketForm.tsx`, hooks `use-chat.ts` (+ test) and `use-host-session.ts`. |
+| `Dockerfile`, `.dockerignore`, `.gitignore` | Three-stage Node 24 image (deps, build, runtime on port 3000). |
+| `.env.example` | `BACKEND_URL`, `BFF_SERVICE_TOKEN`, `VISITOR_COOKIE_SECRET`, `WIDGET_ALLOWED_PARENTS`. |
+| `next.config.ts`, `tsconfig.json`, `eslint.config.mjs`, `postcss.config.mjs`, `vitest.config.mts`, `package.json` | Build, types, lint, styles, tests. |
+| `AGENTS.md`, `CLAUDE.md` | Agent notes: this Next.js version differs from training data; read `node_modules/next/dist/docs/`. |
+| `.claude/`, `.mcp.json` | Project-level agent skills and Chrome DevTools MCP with `--isolated`. |
+
+## Known problems and history
+- Created 2026-09-28 as the generic widget in `frontends/widget` (0e7554e); the widget server authenticates with
+  a generated service token (61c64d1); vitest added and run in CI (16ae9c7).
+- 2026-09-28/29: exact-origin host bridge with an in-memory host token (a4c2e18), host page API in `embed.js`
+  (7c32dfc), host token relay and GET-route guard (87cc4d4), login button (f8fdfe1), ticket contact form with
+  consent (c956f6f), cited section next to each source (3197f67).
+- AI disclaimer and citation sources failed AA contrast → fixed (cfe5bda, 2026-09-29).
+- The chat load effect looped and re-fetched the widget config on every re-render → fixed, with a regression test
+  in `use-chat.test.ts` (a79201f, 2026-09-30).
+- `next dev` re-adds the Next.js block in `AGENTS.md`; commit it rather than removing it from a diff.
+
+## Status
+- Last reviewed: 2026-11-10
+- Open issues / follow-ups: none recorded.
+- Ceilings (`# ceiling:` markers in this folder): none.

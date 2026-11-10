@@ -11,7 +11,7 @@ answerable questions). The configurations, each against the one before:
 - ``hybrid_rerank_adapter``: that plus the query adapter, when ``QUERY_ADAPTER_PATH`` holds one.
 
 No LLM calls are made. Needs the database and the in-process models: leave ``MODEL_SERVER_URL``
-empty, because a model-server applies its own query adapter. Usage (from the repository root,
+empty, because a model-server applies its own query adapter. Usage (from backend/,
 with the venv active)::
 
     python -m scripts.eval.compare_configs

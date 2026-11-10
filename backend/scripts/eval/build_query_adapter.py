@@ -6,7 +6,7 @@ and writes it to the configured adapter path. With a validation file, the ridge
 strength is chosen first: each candidate is fitted on the training pairs and
 scored by the chunk-level MRR@10 of the validation questions over the corpus.
 
-Usage (from the repository root, with the venv active)::
+Usage (from backend/, with the venv active)::
 
     python -m scripts.eval.build_query_adapter                       # synthetic train/val, lambda grid
     python -m scripts.eval.build_query_adapter --lambdas 0.1 --output data/query_adapter.npy

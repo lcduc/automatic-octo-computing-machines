@@ -192,7 +192,8 @@ class ChatbotService:
 
         # Moderation is a network call: it overlaps routing, rewrite and retrieval, and is only
         # awaited right before an answer is generated. Canned replies above never pay for it.
-        # ceiling: an un-awaited call still completes in the background on paths that need no answer.
+        # ceiling: an un-awaited call still completes in the background on paths that need no answer;
+        # cancel it on those paths if moderation API cost or rate limits start to matter.
         moderation = asyncio.create_task(self._guard.is_flagged(request.query)) if self._guard.moderates else None
 
         if self._intent_router is not None and self._tool_agent is not None:
