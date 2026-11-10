@@ -2,7 +2,7 @@
 Retrieval config comparison: one golden set through several retrieval configurations in one process.
 
 Runs against the live knowledge base, scored by the same ``RetrievalEvaluator`` and
-``build_report`` as ``scripts/eval_rag.py`` (document-level recall@k and MRR over the
+``build_report`` as ``scripts/eval/rag.py`` (document-level recall@k and MRR over the
 answerable questions). The configurations, each against the one before:
 
 - ``dense_only``: embedding search alone (fusion weight 1.0), no re-ranker;
@@ -14,8 +14,8 @@ No LLM calls are made. Needs the database and the in-process models: leave ``MOD
 empty, because a model-server applies its own query adapter. Usage (from the repository root,
 with the venv active)::
 
-    python -m scripts.eval_compare_configs
-    python -m scripts.eval_compare_configs --golden-set scripts/demo_data/golden_colloquial_holdout.json --k 10 --out logs/config_comparison.json
+    python -m scripts.eval.compare_configs
+    python -m scripts.eval.compare_configs --golden-set scripts/demo_data/golden_colloquial_holdout.json --k 10 --out logs/config_comparison.json
 """
 
 # Standard library imports
@@ -38,7 +38,7 @@ from app.config.settings import Config  # noqa: E402
 from app.core.retrieval.embeddings import EmbeddingService  # noqa: E402
 from app.core.retrieval.knowledge_index import KnowledgeSnapshot  # noqa: E402
 from app.core.retrieval.retriever import ContextRetriever  # noqa: E402
-from scripts.eval_rag import (  # noqa: E402
+from scripts.eval.rag import (  # noqa: E402
     ANONYMOUS_ACCESS_LEVEL, DEFAULT_GOLDEN_SET_PATH, RetrievalEvaluator, build_report, load_golden_set,
 )
 

@@ -11,7 +11,7 @@ import { useApi } from "../../lib/use-api";
 
 const PAGE_SIZE = 20;
 
-/** The golden eval set built from real answers (ADM-12); export feeds scripts/eval_rag.py. `onRemoved` lets the feedback list re-enable "add". */
+/** The golden eval set built from real answers (ADM-12); export feeds backend/scripts/eval/rag.py. `onRemoved` lets the feedback list re-enable "add". */
 export function EvalCasesCard({ onRemoved }: { onRemoved: () => void }) {
   const { t, formatDateTime } = useI18n();
   const { canWrite } = useSession();

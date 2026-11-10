@@ -42,7 +42,7 @@ class RouteIntent(str, Enum):
     RAG_QUESTION = "rag_question"
 
 
-#: Calibrated with ``python -m scripts.eval_router`` for the default embedding model; override per environment.
+#: Calibrated with ``python -m scripts.eval.router`` for the default embedding model; override per environment.
 DEFAULT_THRESHOLDS: Dict[RouteIntent, float] = {
     RouteIntent.GREETING: 0.90,
     RouteIntent.THANKS: 0.90,
@@ -53,7 +53,7 @@ DEFAULT_THRESHOLDS: Dict[RouteIntent, float] = {
 #: Routes that only act on short messages.
 SHORT_ONLY = frozenset({RouteIntent.GREETING, RouteIntent.THANKS, RouteIntent.AMBIGUOUS})
 #: Routes whose examples are also matched with their accents stripped, for messages typed without them
-#: (``scripts/eval_robustness``: off topic caught 0 -> 19 of 40 then). Handoff requests are left out: the
+#: (``scripts/eval/robustness``: off topic caught 0 -> 19 of 40 then). Handoff requests are left out: the
 #: guard's accent-free patterns already catch them, and their stripped examples pulled long unaccented
 #: questions into a handoff.
 ACCENT_FREE_ROUTES = frozenset(route for route in RouteIntent if route != RouteIntent.HANDOFF_REQUEST)

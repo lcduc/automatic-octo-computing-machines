@@ -335,7 +335,7 @@ class RAGConfig:
         (best 0.032, between the highest off-topic score 0.022 and the lowest answerable 0.042) and
         checked on ``golden_colloquial_holdout.json``. The earlier 0.3 came from questions that
         restate an FAQ title and refused real, colloquial questions that scored 0.01 to 0.2.
-        Re-run ``python -m scripts.eval_rag`` on both sets after any model or document change.
+        Re-run ``python -m scripts.eval.rag`` on both sets after any model or document change.
         """
         return env_float("SIMILARITY_THRESHOLD", 0.03)
 
@@ -478,7 +478,7 @@ class RoutingConfig:
 
         Cosine scores sit on the embedding model's scale (E5: nearly every pair in 0.7-1.0), so
         the defaults in ``EmbeddingRouter`` are calibrated per ``EMBEDDING_MODEL`` with
-        ``python -m scripts.eval_router``.
+        ``python -m scripts.eval.router``.
         """
         return env_float(f"ROUTE_{route.upper()}_THRESHOLD", default)
 

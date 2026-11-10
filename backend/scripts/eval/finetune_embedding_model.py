@@ -13,7 +13,7 @@ package, which this project does not install for ~250 pairs.
 The saved model keeps the E5 query/passage prompts in its config, so ``EMBEDDING_MODEL=<output dir>``
 loads it with the right prompts. Usage (from the repository root, with the venv active)::
 
-    python -m scripts.finetune_embedding_model --output model_weights/finetuned/e5-small-synthetic
+    python -m scripts.eval.finetune_embedding_model --output model_weights/finetuned/e5-small-synthetic
 """
 
 # Standard library imports
@@ -36,7 +36,7 @@ from transformers import get_linear_schedule_with_warmup
 # Local imports
 from app.config.settings import Config
 from app.core.retrieval.embeddings import MODEL_PROMPTS
-from scripts.synthetic_dataset import CORPUS_FILE, TRAIN_FILE, VAL_FILE, chunk_mrr, read_jsonl
+from scripts.eval.synthetic_dataset import CORPUS_FILE, TRAIN_FILE, VAL_FILE, chunk_mrr, read_jsonl
 
 logger = logging.getLogger(__name__)
 

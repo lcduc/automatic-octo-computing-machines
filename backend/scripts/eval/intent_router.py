@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-eval_intent_router.py
+intent_router.py
 
 Measures real routing accuracy for IntentRouter against a labeled golden set,
 using the exact same tool registry the live chatbot registers (see
@@ -12,8 +12,8 @@ failed or unauthorised provider call), because those would otherwise score as
 correct "rag" predictions.
 
 Usage:
-  python scripts/eval_intent_router.py
-  python scripts/eval_intent_router.py --golden-set scripts/demo_data/golden_intents.json --out logs/intent_eval_report.json
+  python scripts/eval/intent_router.py
+  python scripts/eval/intent_router.py --golden-set scripts/demo_data/golden_intents.json --out logs/intent_eval_report.json
 """
 import argparse
 import asyncio
@@ -24,7 +24,7 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from app.core.agent.intent_router import IntentRouter
 from app.core.agent.provider_factory import LLMProviderFactory
@@ -34,7 +34,7 @@ from app.models.intent import IntentType
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_GOLDEN_SET_PATH = Path(__file__).parent / "demo_data" / "golden_intents.json"
+DEFAULT_GOLDEN_SET_PATH = Path(__file__).parent.parent / "demo_data" / "golden_intents.json"
 
 
 class IntentRoutingEvaluator:

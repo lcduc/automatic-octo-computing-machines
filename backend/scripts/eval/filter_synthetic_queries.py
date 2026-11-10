@@ -14,7 +14,7 @@ Steps, in order (each drop is counted in ``filter_report.json``):
 
 Usage (from the repository root, with the venv active; needs the embedding model and the reranker)::
 
-    python -m scripts.filter_synthetic_queries
+    python -m scripts.eval.filter_synthetic_queries
 """
 
 # Standard library imports
@@ -36,14 +36,14 @@ load_dotenv()
 
 # Local imports
 from app.config.settings import Config  # noqa: E402
-from scripts.synthetic_dataset import (  # noqa: E402
+from scripts.eval.synthetic_dataset import (  # noqa: E402
     CORPUS_FILE, FILTER_REPORT_FILE, RAW_QUESTIONS_FILE, TRAIN_FILE, VAL_FILE, read_jsonl, write_jsonl,
 )
 from app.utils.text_utils import TextUtils  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
-GOLDEN_SET_FILES = sorted((Path(__file__).parent / "demo_data").glob("golden_*.json"))
+GOLDEN_SET_FILES = sorted((Path(__file__).parent.parent / "demo_data").glob("golden_*.json"))
 #: e5 cosine of two questions asking the same thing in nearly the same words.
 NEAR_DUPLICATE_COSINE = 0.95
 #: Stricter than within-chunk duplicates: any golden question this close is treated as leaked.

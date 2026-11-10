@@ -2,8 +2,8 @@
 Robustness eval: how the router and retrieval hold up on messy Vietnamese input.
 
 Every case of the router eval (``router_eval.json`` plus the three golden sets, labelled as in
-``eval_router``) and every answerable golden question is run clean and under each perturbation of
-``scripts/vietnamese_perturber.py`` (seeded, so every run sees the same variants). Messages reach the
+``router``) and every answerable golden question is run clean and under each perturbation of
+``scripts/eval/vietnamese_perturber.py`` (seeded, so every run sees the same variants). Messages reach the
 router and the retriever as in the chat pipeline: chat shorthands written out first
 (``TextUtils.expand_chat_abbreviations``). Reports:
 
@@ -19,8 +19,8 @@ router and the retriever as in the chat pipeline: chat shorthands written out fi
 
 Usage (from the repository root, with the venv active and the demo knowledge base seeded)::
 
-    python -m scripts.eval_robustness
-    python -m scripts.eval_robustness --only router --out logs/robustness_router.json
+    python -m scripts.eval.robustness
+    python -m scripts.eval.robustness --only router --out logs/robustness_router.json
 """
 
 # Standard library imports
@@ -43,15 +43,15 @@ load_dotenv()
 
 # Local imports
 from app.core.routing.embedding_router import EmbeddingRouter, RouteIntent  # noqa: E402
-from scripts import vietnamese_perturber  # noqa: E402
-from scripts.eval_rag import ANONYMOUS_ACCESS_LEVEL, RetrievalEvaluator  # noqa: E402
-from scripts.eval_router import DEFAULT_EVAL_SET_PATH, golden_to_router_cases  # noqa: E402
-from scripts.vietnamese_perturber import VietnamesePerturber  # noqa: E402
+from scripts.eval import vietnamese_perturber  # noqa: E402
+from scripts.eval.rag import ANONYMOUS_ACCESS_LEVEL, RetrievalEvaluator  # noqa: E402
+from scripts.eval.router import DEFAULT_EVAL_SET_PATH, golden_to_router_cases  # noqa: E402
+from scripts.eval.vietnamese_perturber import VietnamesePerturber  # noqa: E402
 from app.utils.text_utils import TextUtils  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
-DEMO_DATA = Path(__file__).parent / "demo_data"
+DEMO_DATA = Path(__file__).parent.parent / "demo_data"
 GOLDEN_SET_PATHS = tuple(
     DEMO_DATA / name for name in ("golden_queries.json", "golden_colloquial_dev.json", "golden_colloquial_holdout.json")
 )
@@ -122,7 +122,7 @@ class RetrievalRobustness:
             snapshot: The knowledge snapshot to search.
             embedding: The retriever's embedding service.
             reranker: The live reranker, or ``None`` when it is not available (``full`` is then skipped).
-            access_level: Caller access level, as in ``eval_rag``.
+            access_level: Caller access level, as in ``rag``.
         """
         from app.core.retrieval.retriever import ContextRetriever
 
@@ -174,7 +174,7 @@ def variants(perturber: VietnamesePerturber, names: Sequence[str], texts: List[s
 
 
 async def score_retrieval(items: List[Dict[str, str]], texts: Dict[str, List[str]]) -> Dict[str, Any]:
-    """Start the app services (as ``eval_rag``) and score every variant under every config."""
+    """Start the app services (as ``rag``) and score every variant under every config."""
     from app.api.container import AppContainer
 
     container = AppContainer()

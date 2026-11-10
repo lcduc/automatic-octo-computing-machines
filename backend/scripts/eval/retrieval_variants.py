@@ -15,7 +15,7 @@ unless ``--allow-reembed`` is given (point ``DATABASE_URL`` at a copy, never at 
 
 No LLM calls are made. Usage (from the repository root, with the venv active)::
 
-    python -m scripts.eval_retrieval_variants --label baseline --out logs/variants/baseline.json
+    python -m scripts.eval.retrieval_variants --label baseline --out logs/variants/baseline.json
 """
 
 # Standard library imports
@@ -35,11 +35,11 @@ load_dotenv()
 
 # Local imports
 from app.core.retrieval.retriever import ContextRetriever  # noqa: E402
-from scripts.eval_rag import ANONYMOUS_ACCESS_LEVEL, QueryResult, RetrievalEvaluator, load_golden_set  # noqa: E402
+from scripts.eval.rag import ANONYMOUS_ACCESS_LEVEL, QueryResult, RetrievalEvaluator, load_golden_set  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
-DEMO_DATA_DIR = Path(__file__).parent / "demo_data"
+DEMO_DATA_DIR = Path(__file__).parent.parent / "demo_data"
 #: Golden sets per group; the holdout group is never looked at while tuning.
 GROUPS = {
     "dev": ("golden_queries", "golden_colloquial_dev"),

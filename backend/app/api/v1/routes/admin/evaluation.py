@@ -44,7 +44,7 @@ async def list_eval_cases(
 
 @router.get("/eval-cases/export", dependencies=[Depends(require_admin(READ_ROLES))])
 async def export_eval_cases(container: AppContainer = Depends(get_container)) -> List[Dict[str, Any]]:
-    """The whole set as ``golden_queries.json`` for ``scripts/eval_rag.py``."""
+    """The whole set as ``golden_queries.json`` for ``scripts/eval/rag.py``."""
     return await container.eval_cases.export()
 
 

@@ -118,7 +118,7 @@ class EvalCaseService:
         logger.info("Eval case %s deleted", case_id)
 
     async def export(self) -> List[Dict[str, Any]]:
-        """Every case in the ``golden_queries.json`` format read by ``scripts/eval_rag.py``."""
+        """Every case in the ``golden_queries.json`` format read by ``scripts/eval/rag.py``."""
         async with self._database.session() as session:
             cases = (await session.execute(select(EvalCase).order_by(EvalCase.created_at))).scalars().all()
         return [

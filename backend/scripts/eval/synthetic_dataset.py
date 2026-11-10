@@ -8,7 +8,7 @@ Layout under ``scripts/demo_data/synthetic/`` (JSON lines, UTF-8):
   (``chunk_id``, ``document_title``, ``position``, ``content``);
 - ``raw_questions.jsonl``: every LLM-generated question (``chunk_id``, ``style``, ``question``, ``model``);
 - ``train.jsonl`` / ``val.jsonl``: the questions kept by the filter, as ``query`` / ``positive``
-  pairs (the format ``scripts.build_query_adapter`` reads) plus ``chunk_id``, ``style`` and ``rerank_rank``.
+  pairs (the format ``scripts.eval.build_query_adapter`` reads) plus ``chunk_id``, ``style`` and ``rerank_rank``.
 
 The human golden sets in ``scripts/demo_data/golden_*.json`` are evaluation-only and never written here.
 """
@@ -21,7 +21,7 @@ from typing import Any, Dict, Iterable, List, Sequence
 # Third-party imports
 import numpy as np
 
-DATASET_DIR = Path(__file__).parent / "demo_data" / "synthetic"
+DATASET_DIR = Path(__file__).parent.parent / "demo_data" / "synthetic"
 CORPUS_FILE = DATASET_DIR / "corpus.jsonl"
 RAW_QUESTIONS_FILE = DATASET_DIR / "raw_questions.jsonl"
 TRAIN_FILE = DATASET_DIR / "train.jsonl"

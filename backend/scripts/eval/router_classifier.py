@@ -1,7 +1,7 @@
 """
 Router classifier comparison: the nearest-example rule vs logistic regression on the same e5 embeddings.
 
-Nested, stratified cross-validation over the 189 labelled router messages of ``eval_robustness``. Each
+Nested, stratified cross-validation over the 189 labelled router messages of ``robustness``. Each
 outer fold trains on ``routes.json`` plus the other folds and tests on the held-out fold, clean and under
 every perturbation of ``vietnamese_perturber`` (shorthands written out, as the pipeline does). Both methods see exactly the same examples, including the
 accent-free copies the router adds (``with_accent_free_forms``):
@@ -14,8 +14,8 @@ accent-free copies the router adds (``with_accent_free_forms``):
 
 No LLM calls are made. Usage (from the repository root, with the venv active)::
 
-    python -m scripts.eval_router_classifier
-    python -m scripts.eval_router_classifier --out logs/router_classifier.json
+    python -m scripts.eval.router_classifier
+    python -m scripts.eval.router_classifier --out logs/router_classifier.json
 """
 
 # Standard library imports
@@ -41,9 +41,9 @@ load_dotenv()
 from app.core.routing.embedding_router import (  # noqa: E402
     ROUTES_FILE, SHORT_MESSAGE_MAX_CHARS, SHORT_ONLY, EmbeddingRouter, RouteIntent, with_accent_free_forms,
 )
-from scripts import vietnamese_perturber  # noqa: E402
-from scripts.eval_robustness import as_searched, load_router_cases, router_metrics, variants  # noqa: E402
-from scripts.vietnamese_perturber import VietnamesePerturber  # noqa: E402
+from scripts.eval import vietnamese_perturber  # noqa: E402
+from scripts.eval.robustness import as_searched, load_router_cases, router_metrics, variants  # noqa: E402
+from scripts.eval.vietnamese_perturber import VietnamesePerturber  # noqa: E402
 
 logger = logging.getLogger(__name__)
 

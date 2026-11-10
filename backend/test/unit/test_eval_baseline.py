@@ -2,7 +2,7 @@
 
 import pytest
 
-from scripts.eval_baseline import EvalBaseline
+from scripts.eval.baseline import EvalBaseline
 
 
 @pytest.fixture

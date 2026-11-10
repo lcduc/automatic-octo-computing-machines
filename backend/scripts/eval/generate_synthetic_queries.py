@@ -2,15 +2,15 @@
 Generate synthetic Vietnamese questions for every knowledge chunk with the configured LLM.
 
 For each chunk the LLM writes questions in three styles (formal, colloquial, unaccented) that the
-chunk alone answers. The output feeds ``scripts.filter_synthetic_queries`` and then the retrieval
+chunk alone answers. The output feeds ``scripts.eval.filter_synthetic_queries`` and then the retrieval
 training scripts; the human golden sets are never shown to the LLM.
 
 The provider, key and model come from the usual settings (``LLM_PROVIDER``, ``OPENAI_API_KEY`` /
 ``ANTHROPIC_API_KEY`` / ``GEMINI_API_KEY``, ``--model``). Usage (from the repository root)::
 
-    python -m scripts.generate_synthetic_queries --dry-run            # export the corpus, show one prompt
-    python -m scripts.generate_synthetic_queries --model <model> --limit 3   # pilot on three chunks
-    python -m scripts.generate_synthetic_queries --model <model>
+    python -m scripts.eval.generate_synthetic_queries --dry-run            # export the corpus, show one prompt
+    python -m scripts.eval.generate_synthetic_queries --model <model> --limit 3   # pilot on three chunks
+    python -m scripts.eval.generate_synthetic_queries --model <model>
 """
 
 # Standard library imports
@@ -32,7 +32,7 @@ load_dotenv()
 from app.config.settings import Config  # noqa: E402
 from app.core.storage.database import Database  # noqa: E402
 from app.core.storage.knowledge_repository import KnowledgeRepository  # noqa: E402
-from scripts.synthetic_dataset import CORPUS_FILE, RAW_QUESTIONS_FILE, read_jsonl, write_jsonl  # noqa: E402
+from scripts.eval.synthetic_dataset import CORPUS_FILE, RAW_QUESTIONS_FILE, read_jsonl, write_jsonl  # noqa: E402
 
 logger = logging.getLogger(__name__)
 

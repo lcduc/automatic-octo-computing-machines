@@ -15,8 +15,8 @@ Golden set: a JSON list of ``{"query": ..., "expected_document": <document title
 
 No LLM calls are made. Usage (from the repository root, with the venv active)::
 
-    python -m scripts.eval_rag
-    python -m scripts.eval_rag --golden-set my_set.json --out logs/eval_report.json
+    python -m scripts.eval.rag
+    python -m scripts.eval.rag --golden-set my_set.json --out logs/eval_report.json
 """
 
 # Standard library imports
@@ -39,12 +39,12 @@ load_dotenv()
 from app.core.retrieval.knowledge_index import KnowledgeSnapshot  # noqa: E402
 from app.core.retrieval.retriever import ContextRetriever  # noqa: E402
 from app.models.knowledge import RetrievedChunk  # noqa: E402
-from scripts.eval_baseline import EvalBaseline  # noqa: E402
-from scripts.threshold_calibrator import ThresholdCalibrator  # noqa: E402
+from scripts.eval.baseline import EvalBaseline  # noqa: E402
+from scripts.eval.threshold_calibrator import ThresholdCalibrator  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_GOLDEN_SET_PATH = Path(__file__).parent / "demo_data" / "golden_queries.json"
+DEFAULT_GOLDEN_SET_PATH = Path(__file__).parent.parent / "demo_data" / "golden_queries.json"
 #: Score of a question whose expected document (or any chunk) was not retrieved at all.
 NO_MATCH = -math.inf
 #: Access level of an anonymous widget visitor, which the eval asks as by default.

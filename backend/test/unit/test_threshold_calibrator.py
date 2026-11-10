@@ -2,7 +2,7 @@ import math
 
 import pytest
 
-from scripts.threshold_calibrator import ThresholdCalibrator
+from scripts.eval.threshold_calibrator import ThresholdCalibrator
 
 
 def test_separated_groups_get_the_midpoint_of_the_gap():

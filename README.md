@@ -70,11 +70,11 @@ To reproduce, seed a fresh database (settings changed in the admin web override 
 defaults), then run once per golden set and configuration:
 
 ```bash
-RETRIEVAL_TOP_K=10 SEMANTIC_WEIGHT=1.0 RERANKING_ENABLED=false python -m scripts.eval_rag --golden-set scripts/demo_data/golden_queries.json --out logs/rag_dense_only.json
-python -m scripts.eval_router --golden-set scripts/demo_data/golden_colloquial_dev.json --golden-set scripts/demo_data/golden_colloquial_holdout.json --golden-set scripts/demo_data/golden_queries.json
+RETRIEVAL_TOP_K=10 SEMANTIC_WEIGHT=1.0 RERANKING_ENABLED=false python -m scripts.eval.rag --golden-set scripts/demo_data/golden_queries.json --out logs/rag_dense_only.json
+python -m scripts.eval.router --golden-set scripts/demo_data/golden_colloquial_dev.json --golden-set scripts/demo_data/golden_colloquial_holdout.json --golden-set scripts/demo_data/golden_queries.json
 ```
 
-`eval_rag` prints Recall@k at `RETRIEVAL_TOP_K` and MRR; Recall@1 and Recall@5 come from the
+`scripts.eval.rag` prints Recall@k at `RETRIEVAL_TOP_K` and MRR; Recall@1 and Recall@5 come from the
 per-question `rank` in its `--out` report.
 
 ## Knowledge from multiple sources

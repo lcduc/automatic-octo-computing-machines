@@ -4,7 +4,7 @@ import asyncio
 import json
 
 from app.models.intent import IntentType
-from scripts.eval_intent_router import DEFAULT_GOLDEN_SET_PATH, IntentRoutingEvaluator
+from scripts.eval.intent_router import DEFAULT_GOLDEN_SET_PATH, IntentRoutingEvaluator
 
 #: Stands in for the ``LLMUsage`` of a call that got an answer; only its presence matters here.
 ANSWERED = object()

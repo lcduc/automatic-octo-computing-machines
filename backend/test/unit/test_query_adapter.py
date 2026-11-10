@@ -19,7 +19,7 @@ def test_fits_fp16_embeddings_from_the_gpu_embedder():
 def test_build_refuses_an_adapter_that_loses_to_the_unadapted_model(monkeypatch):
     # The app and the router load QUERY_ADAPTER_PATH at start-up, so writing a
     # worse adapter there would silently degrade both.
-    from scripts import build_query_adapter
+    from scripts.eval import build_query_adapter
 
     written = []
     monkeypatch.setattr(

@@ -1,7 +1,7 @@
 """
 End-to-end outcome eval: what the chat pipeline actually does with a labelled question set.
 
-Runs golden sets (``[{"query", "expected_document", "kind"?}]``, the same files as ``eval_rag``)
+Runs golden sets (``[{"query", "expected_document", "kind"?}]``, the same files as ``rag``)
 through the real pipeline with the real models and the configured LLM, one fresh conversation per
 question, and reports where each kind of question ends up:
 
@@ -11,8 +11,8 @@ question, and reports where each kind of question ends up:
 
 This calls the LLM (a few cents for ~60 questions). Usage (from the repository root, venv active)::
 
-    python -m scripts.eval_chat_outcomes
-    python -m scripts.eval_chat_outcomes --golden-set scripts/demo_data/golden_colloquial_holdout.json --out logs/outcomes.json
+    python -m scripts.eval.chat_outcomes
+    python -m scripts.eval.chat_outcomes --golden-set scripts/demo_data/golden_colloquial_holdout.json --out logs/outcomes.json
 """
 
 # Standard library imports
@@ -36,8 +36,8 @@ from app.models.chat_turn import ChatPolicy, TurnOutcome, TurnRequest, TurnResul
 logger = logging.getLogger(__name__)
 
 DEFAULT_GOLDEN_SETS = [
-    Path(__file__).parent / "demo_data" / "golden_colloquial_dev.json",
-    Path(__file__).parent / "demo_data" / "golden_colloquial_holdout.json",
+    Path(__file__).parent.parent / "demo_data" / "golden_colloquial_dev.json",
+    Path(__file__).parent.parent / "demo_data" / "golden_colloquial_holdout.json",
 ]
 KIND_ANSWERABLE = "answerable"
 KIND_UNANSWERABLE = "unanswerable"

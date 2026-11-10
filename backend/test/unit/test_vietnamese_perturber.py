@@ -1,6 +1,6 @@
 from collections import Counter
 
-from scripts.vietnamese_perturber import VietnamesePerturber, telex_keys
+from scripts.eval.vietnamese_perturber import VietnamesePerturber, telex_keys
 
 QUESTION = "Học nghề ở Đức có được trả lương không vậy anh, chi phí bao nhiêu?"
 

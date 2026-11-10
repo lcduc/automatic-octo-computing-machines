@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "description": "Example messages per route for the embedding router. Edit the examples, never the thresholds, to change what a route catches; re-run `python -m scripts.eval_router` after every edit.",
+  "description": "Example messages per route for the embedding router. Edit the examples, never the thresholds, to change what a route catches; re-run `python -m scripts.eval.router` after every edit.",
   "routes": {
     "greeting": [
       "xin chào", "chào bạn", "chào ad", "chào anh chị", "chào bot", "hello", "hi", "hey bạn ơi",

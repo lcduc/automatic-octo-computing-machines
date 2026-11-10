@@ -21,7 +21,7 @@ from typing import Any, Dict, List
 
 logger = logging.getLogger(__name__)
 
-BASELINE_PATH = Path(__file__).parent / "demo_data" / "eval_baseline.json"
+BASELINE_PATH = Path(__file__).parent.parent / "demo_data" / "eval_baseline.json"
 ROUTER_SECTION = "router"
 ROUTER_MAX_ACCURACY_DROP = 0.02
 ROUTER_MAX_MESSAGES_LOST = 2

@@ -1,6 +1,6 @@
 """Unit tests for the retrieval config comparison (no database, no models)."""
 
-from scripts.eval_compare_configs import ConfigComparisonRunner, comparison_configs
+from scripts.eval.compare_configs import ConfigComparisonRunner, comparison_configs
 
 
 def test_each_config_adds_one_component_and_the_adapter_only_when_fitted():

@@ -3,12 +3,12 @@ import random
 import numpy as np
 import pytest
 
-from scripts.eval_rag import QueryResult
-from scripts.eval_retrieval_variants import metrics
-from scripts.filter_synthetic_queries import MAX_KEPT_PER_CHUNK, SyntheticQueryFilter, normalized, split
-from scripts.finetune_embedding_model import no_duplicate_batches
-from scripts.generate_synthetic_queries import parse_questions
-from scripts.synthetic_dataset import chunk_mrr
+from scripts.eval.rag import QueryResult
+from scripts.eval.retrieval_variants import metrics
+from scripts.eval.filter_synthetic_queries import MAX_KEPT_PER_CHUNK, SyntheticQueryFilter, normalized, split
+from scripts.eval.finetune_embedding_model import no_duplicate_batches
+from scripts.eval.generate_synthetic_queries import parse_questions
+from scripts.eval.synthetic_dataset import chunk_mrr
 
 
 def test_parse_questions_reads_fenced_json_and_drops_unknown_styles():

@@ -12,9 +12,9 @@ the router with the real embedding model, and reports:
 
 No LLM calls are made. Usage (from the repository root, with the venv active)::
 
-    python -m scripts.eval_router
-    python -m scripts.eval_router --eval-set my_set.json --out logs/router_report.json
-    python -m scripts.eval_router --golden-set scripts/demo_data/golden_colloquial_dev.json
+    python -m scripts.eval.router
+    python -m scripts.eval.router --eval-set my_set.json --out logs/router_report.json
+    python -m scripts.eval.router --golden-set scripts/demo_data/golden_colloquial_dev.json
 
 ``--golden-set`` adds a retrieval golden set (``[{"query", "expected_document", "kind"?}]``): answerable and
 ``unanswerable`` questions must stay ``rag_question``, the rest must be ``off_topic``.
@@ -38,11 +38,11 @@ load_dotenv()
 from app.config.settings import Config  # noqa: E402
 from app.core.retrieval.embeddings import get_embedding_service  # noqa: E402
 from app.core.routing.embedding_router import EmbeddingRouter, RouteIntent  # noqa: E402
-from scripts.eval_baseline import ROUTER_SECTION, EvalBaseline  # noqa: E402
+from scripts.eval.baseline import ROUTER_SECTION, EvalBaseline  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_EVAL_SET_PATH = Path(__file__).parent / "demo_data" / "router_eval.json"
+DEFAULT_EVAL_SET_PATH = Path(__file__).parent.parent / "demo_data" / "router_eval.json"
 
 
 class RouterEvaluator:

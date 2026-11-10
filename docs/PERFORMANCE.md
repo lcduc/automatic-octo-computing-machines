@@ -121,7 +121,7 @@ The 5-user row being faster than the 1-user row (retrieval 367 vs 449 ms) is mos
 
 ## What would move the knee
 
-These are not done here, and each needs `scripts/eval_rag.py` to confirm retrieval quality holds. Cheapest first:
+These are not done here, and each needs `scripts/eval/rag.py` to confirm retrieval quality holds. Cheapest first:
 
 1. **A smaller rerank pool.** Lower `MIN_RERANK_POOL` from 30 to 16, or cap the reranker at 256 tokens instead of 512 (the demo chunks are FAQ-sized). Either roughly halves the GPU work per turn.
 2. **Batch reranking across concurrent turns** in one forward pass. The model-server's queue is the natural place for it.

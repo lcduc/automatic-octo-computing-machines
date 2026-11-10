@@ -1,7 +1,7 @@
 """
 Seeded, deterministic perturbations that make clean Vietnamese look like real chat input.
 
-Used by ``scripts/eval_robustness.py`` to build synthetic messy variants of the existing eval sets,
+Used by ``scripts/eval/robustness.py`` to build synthetic messy variants of the existing eval sets,
 so robustness is measured without any real visitor data:
 
 - ``no_diacritics``: every accent dropped, ``đ`` -> ``d`` ("chi phí" -> "chi phi");

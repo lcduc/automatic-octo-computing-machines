@@ -8,8 +8,8 @@ scored by the chunk-level MRR@10 of the validation questions over the corpus.
 
 Usage (from the repository root, with the venv active)::
 
-    python -m scripts.build_query_adapter                       # synthetic train/val, lambda grid
-    python -m scripts.build_query_adapter --lambdas 0.1 --output data/query_adapter.npy
+    python -m scripts.eval.build_query_adapter                       # synthetic train/val, lambda grid
+    python -m scripts.eval.build_query_adapter --lambdas 0.1 --output data/query_adapter.npy
 """
 
 # Standard library imports
@@ -24,7 +24,7 @@ from typing import Dict, List, Optional, Sequence, Tuple
 from app.config.settings import Config
 from app.core.retrieval.embeddings import get_embedding_service
 from app.core.retrieval.query_adapter import build_from_evals, compute_query_adapter, save_query_adapter
-from scripts.synthetic_dataset import CORPUS_FILE, TRAIN_FILE, VAL_FILE, chunk_mrr, read_jsonl
+from scripts.eval.synthetic_dataset import CORPUS_FILE, TRAIN_FILE, VAL_FILE, chunk_mrr, read_jsonl
 
 logger = logging.getLogger(__name__)
 

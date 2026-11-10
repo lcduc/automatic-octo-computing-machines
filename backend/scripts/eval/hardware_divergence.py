@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-eval_hardware_divergence.py
+hardware_divergence.py
 
 Verifies that the embedding model's GPU path and CPU path produce the same
 output for the same input -- i.e. that hardware-adaptive device selection
@@ -13,8 +13,8 @@ divergence between the two outputs. Requires a CUDA GPU to be available;
 otherwise there is no GPU path to compare against.
 
 Usage:
-  python scripts/eval_hardware_divergence.py
-  python scripts/eval_hardware_divergence.py --golden-set data/eval/golden_queries.json --out data/logs/hardware_divergence_report.json
+  python scripts/eval/hardware_divergence.py
+  python scripts/eval/hardware_divergence.py --golden-set data/eval/golden_queries.json --out data/logs/hardware_divergence_report.json
 """
 import argparse
 import json
@@ -24,7 +24,7 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 import numpy as np
 

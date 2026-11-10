@@ -389,10 +389,10 @@ Any code change breaking one is a blocker.
 
 ## 17. Evaluation (CI on changes to prompts, chunking, retrieval, models, tools)
 
-- [~] EVAL-01 Golden set: 50–200 real questions with expected answer + expected source docs. Vendor base set + per-client set built from client documents at go-live — harness exists (`scripts/eval_rag.py`), no set
+- [~] EVAL-01 Golden set: 50–200 real questions with expected answer + expected source docs. Vendor base set + per-client set built from client documents at go-live — harness exists (`scripts/eval/rag.py`), no set
 - [~] EVAL-02 Retrieval: recall@k, MRR — separately for VI→VI, EN→EN, cross-lingual, no-diacritic — overall and per source only
 - [ ] EVAL-03 Answer: faithfulness, relevance, correctness (RAGAS/DeepEval + human spot-check)
-- [~] EVAL-04 Intent routing: labeled set, all intents, both languages; confusion matrix — `scripts/eval_intent_router.py`, rag/action only
+- [~] EVAL-04 Intent routing: labeled set, all intents, both languages; confusion matrix — `scripts/eval/intent_router.py`, rag/action only
 - [ ] EVAL-05 Tool selection + argument accuracy (against fake business DB, TOOL-11)
 - [x] EVAL-06 Effective-date correctness — superseded/scheduled versions tested end to end
 - [ ] EVAL-07 Handoff trigger precision/recall
