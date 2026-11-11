@@ -9,7 +9,7 @@ httpx==0.28.1
 aiofiles==24.1.0
 
 # --- Database (PostgreSQL + pgvector) ---
-sqlalchemy[asyncio]==2.0.54
+sqlalchemy[asyncio]==2.1.8
 asyncpg==0.32.0
 alembic==1.20.1
 pgvector==0.5.1
@@ -22,7 +22,7 @@ cryptography==50.0.2
 # --- LLM providers --- (select via LLM_PROVIDER=openai|anthropic|gemini)
 openai==1.109.1
 anthropic==0.121.0
-google-genai==2.33.0
+google-genai==2.34.0
 
 # --- Retrieval / embeddings ---
 sentence-transformers==5.7.0
@@ -43,7 +43,7 @@ pillow==13.0.0
 python-docx==1.2.0
 openpyxl==3.1.5
 requests==2.34.2
-chardet<6.0.0
+chardet<7.0.0
 nltk==3.10.4
 pandas==3.0.6
 PyMuPDF==1.28.2
@@ -54,8 +54,8 @@ paddleocr==3.7.0
 # --- Runtime / config ---
 python-dotenv==1.2.4
 psutil==6.1.1
-tzdata==2026.3
+tzdata==2026.6
 
 # --- Testing ---
-pytest==9.1.1
+pytest==9.2.0
 pytest-asyncio==1.4.1.post1

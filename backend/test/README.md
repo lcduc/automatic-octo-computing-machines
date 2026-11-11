@@ -70,13 +70,14 @@ Marked tests also run in the plain `pytest` step. Async tests need an explicit `
 | `test_vietnamese_perturber.py` | `scripts.eval.vietnamese_perturber`: telex typos, missing diacritics, abbreviations. |
 
 ### integration/
-All skip when `TEST_DATABASE_URL` is unset.
+All skip when `TEST_DATABASE_URL` is unset, except `test_document_parsing.py`, which needs no database.
 
 | File | Covers |
 |---|---|
 | `conftest.py` | Fixture `database` (fresh schema + default sources per test), `TEST_DATABASE_URL`, `DEFAULT_SOURCES`, `FakeEmbeddingService` (bag-of-words via `zlib.crc32`), `FakeReranker`, `FakeProcessor` (splits text on blank lines; `.bad` files fail). |
 | `test_api.py` | Real FastAPI app via `create_app(FakeContainer)` (an `AppContainer` with fake models/LLM); defines the `client` fixture and helpers (`_admin_headers`, `_approve`, `BFF_TOKEN`) the API tests below import. Includes `test_rate_limit_and_roles`. |
 | `test_api_keys.py` | Server-to-server API keys: scopes per endpoint, session-only routes, browser refusal, expiry, rotation, per-key limits, audit attribution. |
+| `test_document_parsing.py` | The real upload path: `MainDocumentProcessor` with real Docling (DOCX, XLSX, CSV, MD) and the local extractors (TXT, PDF fallback when Docling fails); empty and disallowed files rejected. The Docling PDF case skips unless its layout model is cached (TST-07). |
 | `test_document_lifecycle.py` | `hard_gate`: access tier, validity dates, superseding versions, citing answers, disabled documents never cited. |
 | `test_document_review.py` | New documents wait for owner/editor approval before the assistant may answer from them. |
 | `test_eval_cases_api.py` | Feedback review and the golden eval set through the admin API (ADM-12, RET-R3). |
