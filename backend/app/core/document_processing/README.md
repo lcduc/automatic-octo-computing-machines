@@ -123,12 +123,16 @@ Integration (needs `TEST_DATABASE_URL` to a pgvector database): `test/integratio
 - Datalab's `/api/v1/ocr` is the only endpoint that documents itself as Surya; revisit if Datalab removes
   it (`datalab_surya_engine.py` comment).
 - pip-audit flagged pypdf 6.21.2 CVEs -> bumped to 6.21.4 (Dependabot #78, 2026-11-10).
+- No test ran the real parsers: every test injected a fake processor, so `main_processor.py` and
+  `processors.py` sat at 0% coverage -> `test/integration/test_document_parsing.py` runs real Docling and
+  the local extractors (TST-07, 2026-11-11). Writing it showed that, without Docling's layout model
+  (not baked into the image), a text-layer PDF quietly falls back to pypdf instead of failing (ING-13).
 
 ## Status
-- Last reviewed: 2026-11-10
+- Last reviewed: 2026-11-11
 - Open issues / follow-ups:
   - RES-03 (chat load measured while an OCR job runs) is still open (`docs/performance.md`).
-  - TST-07: `main_processor.py` and `processors.py` are at 0% coverage — every test injects a fake processor (docs/checklists/testing.md).
+  - ING-13: Docling's PDF layout model is not baked into the image; without network every PDF falls back to pypdf text (docs/checklists/production.md).
   - PRIV-05: `docling_processor.py:241` logs OCR error text, which can contain document content (docs/checklists/privacy.md).
 - Ceilings (`# ceiling:` markers in this folder):
   - `docling_processor.py:135` — Docling parsing shares the process's torch thread pool — move it to a

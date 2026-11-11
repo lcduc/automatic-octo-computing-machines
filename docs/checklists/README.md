@@ -6,9 +6,9 @@ criteria once; when an item fails inside one folder, that folder's `README.md` l
 
 | Checklist | IDs | Covers | `[x]` / items |
 |---|---|---|---|
-| [production.md](production.md) | `CAP` `RES` `ARC` … `POST` | The product's definition of done: architecture, identity, ingestion, retrieval, generation, admin, observability, retention, OWASP LLM security (§15), Vietnam privacy (§16), evaluation, operations | 131 / 204 |
+| [production.md](production.md) | `CAP` `RES` `ARC` … `POST` | The product's definition of done: architecture, identity, ingestion, retrieval, generation, admin, observability, retention, OWASP LLM security (§15), Vietnam privacy (§16), evaluation, operations | 132 / 205 |
 | [code-quality.md](code-quality.md) | `CQ` | Layering, file size, linting, typing, error handling, dead code, repository docs | 8 / 18 |
-| [testing.md](testing.md) | `TST` | What CI runs, coverage, untested critical paths, flaky tests, frontend tests | 5 / 12 |
+| [testing.md](testing.md) | `TST` | What CI runs, coverage, untested critical paths, flaky tests, frontend tests | 6 / 12 |
 | [security.md](security.md) | `APPSEC` | Web/API security of the code and containers (auth, sessions, limits, headers, secrets, SSRF/SQLi) | 12 / 15 |
 | [privacy.md](privacy.md) | `PRIV` | Engineering-side handling of personal data (builds, logs, masking, deletion) | 7 / 8 |
 | [ci-supply-chain.md](ci-supply-chain.md) | `SUP` | Pinning, audits, Dependabot, required checks, workflow permissions, images, licence | 9 / 15 |
