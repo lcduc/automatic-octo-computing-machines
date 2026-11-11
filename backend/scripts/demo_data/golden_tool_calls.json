@@ -1,0 +1,41 @@
+[
+  {"query": "Áo thun cotton giá bao nhiêu?", "caller": "anonymous", "lang": "vi", "expected": "get_product_price", "expected_arguments": {"query": ["áo thun cotton", "áo thun"]}},
+  {"query": "Giày chạy bộ bên mình bán bao nhiêu tiền vậy?", "caller": "anonymous", "lang": "vi", "expected": "get_product_price", "expected_arguments": {"query": ["giày chạy bộ", "giày"]}},
+  {"query": "ao so mi linen gia bao nhieu", "caller": "anonymous", "lang": "vi_unaccented", "expected": "get_product_price", "expected_arguments": {"query": ["áo sơ mi linen", "áo sơ mi", "sơ mi linen"]}},
+  {"query": "Mã TS-02 giá nhiêu?", "caller": "anonymous", "lang": "vi", "expected": "get_product_price", "expected_arguments": {"query": "TS-02"}},
+  {"query": "SH-01 bao nhiêu tiền", "caller": "anonymous", "lang": "vi", "expected": "get_product_price", "expected_arguments": {"query": "SH-01"}},
+  {"query": "cho mình hỏi giá áo thun", "caller": "user", "lang": "vi", "expected": "get_product_price", "expected_arguments": {"query": "áo thun"}},
+  {"query": "How much are the running shoes?", "caller": "anonymous", "lang": "en", "expected": "get_product_price", "expected_arguments": {"query": ["running shoes", "running shoe", "giày chạy bộ"]}},
+  {"query": "What's the price of SKU TS-01?", "caller": "anonymous", "lang": "en", "expected": "get_product_price", "expected_arguments": {"query": "TS-01"}},
+
+  {"query": "Tháng trước mình đặt những đơn nào?", "caller": "user", "lang": "vi", "expected": "list_my_orders", "expected_arguments": {"period": "tháng trước"}},
+  {"query": "Đơn hàng của tôi trong quý 3", "caller": "user", "lang": "vi", "expected": "list_my_orders", "expected_arguments": {"period": "quý 3"}},
+  {"query": "Liệt kê đơn hàng 30 ngày qua của tôi", "caller": "user", "lang": "vi", "expected": "list_my_orders", "expected_arguments": {"period": "30 ngày qua"}},
+  {"query": "Tháng này tôi có đơn nào đã giao chưa?", "caller": "user", "lang": "vi", "expected": "list_my_orders", "expected_arguments": {"period": "tháng này", "status": "shipped"}},
+  {"query": "Các đơn bị hủy năm nay của mình", "caller": "user", "lang": "vi", "expected": "list_my_orders", "expected_arguments": {"period": "năm nay", "status": "cancelled"}},
+  {"query": "Đơn nào của tôi tháng này chưa thanh toán?", "caller": "user", "lang": "vi", "expected": "list_my_orders", "expected_arguments": {"period": "tháng này", "status": "pending"}},
+  {"query": "Đơn đã thanh toán của tôi trong 7 ngày qua", "caller": "user", "lang": "vi", "expected": "list_my_orders", "expected_arguments": {"period": "7 ngày qua", "status": "paid"}},
+  {"query": "Tuần trước tôi có đặt đơn nào không?", "caller": "user", "lang": "vi", "expected": "list_my_orders", "expected_arguments": {"period": "tuần trước"}},
+  {"query": "Cho xem các đơn tháng 10 của tôi", "caller": "user", "lang": "vi", "expected": "list_my_orders", "expected_arguments": {"period": "tháng 10"}},
+  {"query": "don hang thang truoc cua toi", "caller": "user", "lang": "vi_unaccented", "expected": "list_my_orders", "expected_arguments": {"period": "tháng trước"}},
+  {"query": "Show my orders from last month", "caller": "user", "lang": "en", "expected": "list_my_orders", "expected_arguments": {"period": "last month"}},
+  {"query": "Which of my orders were shipped this week?", "caller": "user", "lang": "en", "expected": "list_my_orders", "expected_arguments": {"period": "this week", "status": "shipped"}},
+
+  {"query": "Tháng trước tôi đặt những đơn nào?", "caller": "anonymous", "lang": "vi", "expected": "login_required"},
+  {"query": "Đơn hàng của tôi trong quý 3 thế nào rồi?", "caller": "anonymous", "lang": "vi", "expected": "login_required"},
+  {"query": "Show my orders from last month", "caller": "anonymous", "lang": "en", "expected": "login_required"},
+
+  {"query": "Bây giờ là mấy giờ?", "caller": "anonymous", "lang": "vi", "expected": "get_current_time"},
+  {"query": "Hôm nay là ngày bao nhiêu?", "caller": "user", "lang": "vi", "expected": "get_current_time"},
+  {"query": "What time is it in New York right now?", "caller": "anonymous", "lang": "en", "expected": "get_current_time", "expected_arguments": {"timezone": "America/New_York"}},
+  {"query": "Ở Berlin bây giờ là mấy giờ?", "caller": "anonymous", "lang": "vi", "expected": "get_current_time", "expected_arguments": {"timezone": "Europe/Berlin"}},
+
+  {"query": "Chính sách đổi trả của shop như thế nào?", "caller": "anonymous", "lang": "vi", "expected": "no_tool"},
+  {"query": "Shop có giao hàng ra Hà Nội không?", "caller": "anonymous", "lang": "vi", "expected": "no_tool"},
+  {"query": "Chi phí du học nghề ở Đức khoảng bao nhiêu?", "caller": "anonymous", "lang": "vi", "expected": "no_tool"},
+  {"query": "Học tiếng Đức đến B1 mất bao lâu?", "caller": "user", "lang": "vi", "expected": "no_tool"},
+  {"query": "Làm sao để đổi mật khẩu tài khoản?", "caller": "user", "lang": "vi", "expected": "no_tool"},
+  {"query": "Thời tiết Hà Nội hôm nay thế nào?", "caller": "user", "lang": "vi", "expected": "no_tool"},
+  {"query": "What documents do I need for a German work visa?", "caller": "anonymous", "lang": "en", "expected": "no_tool"},
+  {"query": "Xin chào, bạn giúp được gì cho mình?", "caller": "anonymous", "lang": "vi", "expected": "no_tool"}
+]

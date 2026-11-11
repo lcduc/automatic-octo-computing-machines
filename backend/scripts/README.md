@@ -51,6 +51,7 @@ the labelled sets the evals and CI read. Not code; nothing here is real visitor 
 | `golden_colloquial_dev.json` | 39 colloquial retrieval questions, the dev split. CI router gate + nightly retrieval eval. |
 | `golden_colloquial_holdout.json` | 26 colloquial retrieval questions, the holdout split. CI router gate + nightly retrieval eval. |
 | `golden_intents.json` | 60 labelled queries `{query, expected_intent}` (40 rag, 20 action) for `eval/intent_router.py`. |
+| `golden_tool_calls.json` | 35 labelled questions `{query, caller, lang, expected, expected_arguments?}` for `eval/tool_selection.py` (EVAL-05): 8 `get_product_price`, 12 `list_my_orders`, 4 `get_current_time`, 3 `login_required`, 8 `no_tool`. A list in `expected_arguments` means any of its values. |
 | `router_eval.json` | 73 labelled messages `{text, intent}` for the embedding router (`eval/router.py`, `eval/robustness.py`). |
 | `eval_baseline.json` | Committed regression baselines: one `router` section and one per golden set (recall@k, MRR). Written only by `--write-baseline` and an explicit commit. |
 | `synthetic/corpus.jsonl` | The 66 knowledge chunks the synthetic questions were generated from. |
