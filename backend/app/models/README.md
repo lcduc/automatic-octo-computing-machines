@@ -55,5 +55,6 @@ pytest test/unit/test_knowledge_bundle.py test/unit/test_chat_turn_recovery.py t
 
 ## Status
 - Last reviewed: 2026-11-10
-- Open issues / follow-ups: none.
+- Open issues / follow-ups:
+  - CQ-11: `metadata.py:36` uses Pydantic's deprecated class-based `Config` (warns on every test run; removed in Pydantic v3) (docs/checklists/code-quality.md).
 - Ceilings (`# ceiling:` markers in this folder): none.

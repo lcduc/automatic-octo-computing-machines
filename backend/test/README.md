@@ -141,6 +141,9 @@ CI order (job `test`): migrations check -> `pytest -m hard_gate -v` -> `pytest -
 
 ## Status
 - Last reviewed: 2026-11-10
-- Open issues / follow-ups: EVAL-09 SEC-11 impersonation and ADM-01a role tests are not yet `hard_gate`
-  (docs/PRODUCTION_CHECKLIST.md).
+- Open issues / follow-ups:
+  - EVAL-09 SEC-11 impersonation and ADM-01a role tests are not yet `hard_gate`
+    (docs/checklists/production.md).
+  - TST-06: coverage (83% of `app/` lines on 2026-11-10) is measured only locally, not in CI (docs/checklists/testing.md).
+  - TST-10: `integration/test_api.py::test_rate_limit_and_roles` is timing-flaky (see Known problems) (docs/checklists/testing.md).
 - Ceilings (`# ceiling:` markers in this folder): none.

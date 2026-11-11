@@ -12,7 +12,7 @@ A knowledge-grounded chatbot product, Vietnamese-first (it answers in the user's
   tool calling and voice transcription always use OpenAI, so they need an OpenAI key.
 
 Everything runs on one GPU box. It is installed with `deploy/install.sh` and run with the
-`chatbot` ops CLI (see [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)); a plain
+`chatbot` ops CLI (see [docs/deployment.md](docs/deployment.md)); a plain
 `docker compose up -d` refuses to start without the secrets the installer generates.
 
 ## How a question is answered
@@ -133,15 +133,17 @@ frontends/widget/                   chat widget (Next.js); client deployments cu
 frontends/admin/                    admin web shared by every deployment (Vite + React)
 frontends/streamlit/                internal Streamlit demo of the chat API
 deploy/                             installer, ops CLI (deploy/ops) and its compose assets
-docs/DEPLOYMENT.md          VPS deployment, embedding, backups, operations
-docs/API.md                 API reference (public chat + admin); docs/openapi.json is its schema
-docs/PERFORMANCE.md         load test of the chat pipeline (scripts/loadtest/): latency, ceiling, VRAM
+docs/README.md              index of the docs folder
+docs/checklists/            definition of done by aspect (production, code quality, testing, security, ...)
+docs/deployment.md          VPS deployment, embedding, backups, operations
+docs/api.md                 API reference (public chat + admin); docs/openapi.json is its schema
+docs/performance.md         load test of the chat pipeline (scripts/loadtest/): latency, ceiling, VRAM
 docs/reports/               dated reviews and experiment write-ups (point-in-time, not kept current)
 ```
 
 ## Development
 
-See [docs/DEPLOYMENT.md#local-development](docs/DEPLOYMENT.md#local-development).
+See [docs/deployment.md#local-development](docs/deployment.md#local-development).
 
 ```bash
 ruff check .                            # every Python component, from the repository root

@@ -78,5 +78,5 @@ the CI migration check or production.
 ## Status
 - Last reviewed: 2026-11-10
 - Open issues / follow-ups: migrations are not reverted by the ops `rollback`; restore the pre-deploy
-  backup instead (docs/DEPLOYMENT.md).
+  backup instead (docs/deployment.md).
 - Ceilings (`# ceiling:` markers in this folder): none.

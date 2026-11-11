@@ -77,7 +77,7 @@ Docling and PyMuPDF imports in `docling_processor.py` are also guarded and fail 
 - Heavy deps: Docling (+ torch), PyMuPDF, pypdf, python-docx, pandas, openpyxl, `paddleocr==3.7.0`
   (requirements.txt), `paddlepaddle==3.2.0` (installed by `backend/Dockerfile`, not requirements.txt),
   Datalab HTTP API (only with `OCR_PROVIDER=datalab`; a cross-border sub-processor, see
-  `docs/PRIVACY_DATA_FLOWS.md`), OCR model weights.
+  `docs/privacy-data-flows.md`), OCR model weights.
 
 ## Run / test
 From `backend/` with `venv` active:
@@ -126,7 +126,10 @@ Integration (needs `TEST_DATABASE_URL` to a pgvector database): `test/integratio
 
 ## Status
 - Last reviewed: 2026-11-10
-- Open issues / follow-ups: RES-03 (chat load measured while an OCR job runs) is still open (`docs/PERFORMANCE.md`).
+- Open issues / follow-ups:
+  - RES-03 (chat load measured while an OCR job runs) is still open (`docs/performance.md`).
+  - TST-07: `main_processor.py` and `processors.py` are at 0% coverage — every test injects a fake processor (docs/checklists/testing.md).
+  - PRIV-05: `docling_processor.py:241` logs OCR error text, which can contain document content (docs/checklists/privacy.md).
 - Ceilings (`# ceiling:` markers in this folder):
   - `docling_processor.py:135` — Docling parsing shares the process's torch thread pool — move it to a
     worker process if the cap slows chat.

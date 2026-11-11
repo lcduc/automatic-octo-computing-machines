@@ -63,7 +63,7 @@ evaluation-only and are never used for training.
 
 ### `loadtest/`
 Locust load test of `POST /api/v1/chat/stream`, run against a local API with the stub LLM. Full method and
-results: [`docs/PERFORMANCE.md`](../../docs/PERFORMANCE.md).
+results: [`docs/performance.md`](../../docs/performance.md).
 
 | File | Public names | What it does |
 |---|---|---|
@@ -108,9 +108,9 @@ python -m scripts.loadtest.report data/loadtest/<run>       # app venv
 - `golden_intents.json` was never committed while `eval/intent_router.py` pointed at it; added in a3fa726
   (#54, 2026-10-24).
 - Load test (#56, f917e7b, 2026-10-24): on an RTX 3060 with in-process models the knee was ~10 concurrent
-  turns at 4.7 turns/s; GPU reranking is the only stage that slowed with load. Details in `docs/PERFORMANCE.md`.
+  turns at 4.7 turns/s; GPU reranking is the only stage that slowed with load. Details in `docs/performance.md`.
 - `synthetic/` was produced by the synthetic-query experiment (#55, 7b055c6); write-up in
-  `docs/reports/SYNTHETIC_FINETUNE_RESULTS.md`.
+  `docs/reports/synthetic-finetune-results.md`.
 - `embed_test.py` (28576fe, 2026-10-15) defaulted `--widget` to the old VPS demo widget URL; VPS deployment is
   out of scope, so the default is now the local widget dev server `http://localhost:3000`
   (branch `refactor/structure-fixes`, 2026-11-10).

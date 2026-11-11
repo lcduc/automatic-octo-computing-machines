@@ -1,7 +1,7 @@
 """
 Run the chat load test at several concurrency levels, sampling the GPU and the API process.
 
-Start the API first (see docs/PERFORMANCE.md), then, with the load-test venv:
+Start the API first (see docs/performance.md), then, with the load-test venv:
 
     scripts/loadtest/venv/Scripts/python scripts/loadtest/run_levels.py --api-pid <pid>
 

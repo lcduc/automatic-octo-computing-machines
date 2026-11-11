@@ -67,5 +67,7 @@ backend and admin changes on `main` and merge them into client branches, so each
 
 ## Status
 - Last reviewed: 2026-11-10
-- Open issues / follow-ups: none recorded.
+- Open issues / follow-ups:
+  - SUP-04: `next@16.3.6` is inside a critical advisory batch fixed in 16.4.6; `sharp` and `source-map-js` have high advisories; CI runs no `npm audit` (docs/checklists/ci-supply-chain.md).
+  - OPT-13: bundle size not recorded (docs/checklists/optimization.md).
 - Ceilings (`# ceiling:` markers in this folder): none.

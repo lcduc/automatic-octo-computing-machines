@@ -76,9 +76,9 @@ From `backend/` with `venv` active.
 - Several worker replicas could run the same periodic job -> advisory lock per job name (`54303d9`,
   2026-09-29).
 - The shipped image installs the CPU paddle build, so the model-server runs OCR (PP-OCRv6) on the CPU;
-  only embedding and reranker use the GPU (`docs/DEPLOYMENT.md`).
+  only embedding and reranker use the GPU (`docs/deployment.md`).
 - GPU queue and VRAM numbers from `/ready` are shown on the admin overview as a live snapshot only;
-  nothing stores or alerts on them (`docs/reports/REPO_ASSESSMENT.md`).
+  nothing stores or alerts on them (`docs/reports/repo-assessment.md`).
 - Logs of the worker and model-server go to their own subfolders of `LOG_DIR`, never the API's rotating
   file (`app/worker.py`, `app/model_server.py`).
 - The model-server FastAPI app was `model_server/app.py`; it moved to `app/api/model_server_api.py`
@@ -87,5 +87,7 @@ From `backend/` with `venv` active.
 
 ## Status
 - Last reviewed: 2026-11-10
-- Open issues / follow-ups: no load test with an OCR job running during chat (RES-03).
+- Open issues / follow-ups:
+  - no load test with an OCR job running during chat (RES-03).
+  - OPT-03: batch reranking across concurrent turns in the model-server queue (`model_server/scheduler.py`) (docs/checklists/optimization.md).
 - Ceilings (`# ceiling:` markers in this folder): none.

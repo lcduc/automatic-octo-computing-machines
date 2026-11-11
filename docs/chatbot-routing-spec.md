@@ -1,4 +1,4 @@
-# CHATBOT_ROUTING_SPEC.md
+# Chatbot routing spec
 
 Spec for the chat pipeline: intent routing, RAG, tool execution, handoff, refusal, injection defense.
 Audience: AI coding agent. Task: verify repo against this spec, report gaps. Do not modify code unless asked.

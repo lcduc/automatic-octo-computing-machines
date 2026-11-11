@@ -84,6 +84,7 @@ python -m scripts.export_openapi            # rewrite docs/openapi.json after a 
 
 ## Status
 - Last reviewed: 2026-11-10
-- Open issues / follow-ups: none.
+- Open issues / follow-ups:
+  - CQ-03: `schemas/admin.py` is 500 lines; split by resource when next changed (docs/checklists/code-quality.md).
 - Ceilings (`# ceiling:` markers in this folder): see [v1/routes/](v1/routes/README.md)
   (`admin/knowledge.py:226`). None in the files directly here.

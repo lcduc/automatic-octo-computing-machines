@@ -121,5 +121,8 @@ cd .. && ruff check .             # lint from the repo root (root ruff.toml)
 
 ## Status
 - Last reviewed: 2026-11-10
-- Open issues / follow-ups: none.
+- Open issues / follow-ups:
+  - PRIV-01 / OPT-09: `.dockerignore` lets a local build copy `data/` (uploads, logs) and `test/` into the image — exclude `data/` and `test/` (docs/checklists/privacy.md).
+  - APPSEC-14: the `Dockerfile` copies the app with `--chown=app:app`, so the API process can rewrite its own code (docs/checklists/security.md).
+  - SUP-13: the `python:3.11-slim` base image is a floating tag, not a digest (docs/checklists/ci-supply-chain.md).
 - Ceilings (`# ceiling:` markers in this folder): none in the files directly here; see each package README.
