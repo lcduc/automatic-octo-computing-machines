@@ -191,7 +191,7 @@ Any code change breaking one is a blocker.
 - [~] ING-10 Idempotent, retryable jobs; states `queued → ocr → chunking → embedding → indexed | failed(reason)` visible in admin — `processing → ready | failed` with retries
 - [~] ING-11 Embedding model name+version pinned; full re-index command exists and is tested — model stored per chunk, stale chunks re-embedded at start; no explicit full re-index command
 - [x] ING-12 Deleting/replacing a document removes its old vectors
-- [ ] ING-13 Docling's PDF layout model is baked into the image — it is not (`scripts/download_models.py` bakes embedding, rerankers and PP-OCR only), so the first text-layer PDF downloads it into the container's unmounted home cache after every restart, and on a box without internet every PDF silently falls back to plain pypdf text (no headings or tables); found by TST-07
+- [x] ING-13 Docling's PDF layout model is baked into the image — `scripts/download_models.py` downloads layout + TableFormer into `model_weights/docling` at build time and the converter loads them via `artifacts_path` (`core/document_processing/docling_processor.py`); a PDF parses through Docling in a `--network none` container. Without them the first PDF downloaded the models after every restart, and a box with no internet parsed every PDF as plain text
 
 ---
 

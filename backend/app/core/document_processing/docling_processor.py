@@ -40,6 +40,15 @@ from app.utils.text_utils import TextUtils
 
 logger = logging.getLogger(__name__)
 
+#: Folder under ``MODELS_DIR`` holding Docling's PDF models (layout, TableFormer); baked into the
+#: image by ``scripts/download_models.py`` so PDF parsing never needs the network.
+DOCLING_MODELS_SUBDIR = "docling"
+
+
+def docling_models_dir() -> Path:
+    """Where Docling's PDF models are stored and loaded from."""
+    return Path(Config.Paths.MODELS_DIR()) / DOCLING_MODELS_SUBDIR
+
 
 class DoclingProcessor:
     """
@@ -131,10 +140,23 @@ class DoclingProcessor:
 
         Docling applies the cap with ``torch.set_num_threads`` on CPU, which is
         process-wide, so CPU embeddings share the same cap once a PDF is parsed.
+
+        The PDF models load from :func:`docling_models_dir` when it exists (always, in the image).
+        Without it Docling downloads them into the Hugging Face cache on first use, and with no
+        network the PDF falls back to its plain text layer in ``MainDocumentProcessor``.
         """
+        models_dir = docling_models_dir()
+        artifacts_path = models_dir if models_dir.is_dir() else None
+        if artifacts_path is None:
+            logger.warning(
+                "Docling PDF models not found in %s; they download on first use "
+                "(run `python -m scripts.download_models` to bake them in)",
+                models_dir,
+            )
         # ceiling: parsing shares the API process's torch thread pool, move it to a worker process if the cap slows chat
         pdf_options = PdfPipelineOptions(
             do_ocr=False,
+            artifacts_path=artifacts_path,
             accelerator_options=AcceleratorOptions(num_threads=Config.OCR.OCR_CPU_THREADS()),
         )
         return DocumentConverter(format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=pdf_options)})

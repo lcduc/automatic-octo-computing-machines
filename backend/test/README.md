@@ -50,7 +50,7 @@ Marked tests also run in the plain `pytest` step. Async tests need an explicit `
 | `test_ocr_resource_limits.py` | Parsing/OCR stays within its CPU budget and off the event loop (`IngestionService`). |
 | `test_openai_base_url.py` | `OpenAIClientProvider` targets an OpenAI-compatible server via `OPENAI_BASE_URL`. |
 | `test_openai_completion_kwargs.py` | Token-limit/temperature kwargs per OpenAI model family. |
-| `test_pdf_ocr_routing.py` | PDFs with a usable text layer skip OCR; empty or gibberish ones go to OCR. |
+| `test_pdf_ocr_routing.py` | PDFs with a usable text layer skip OCR; empty or gibberish ones go to OCR; the Docling converter loads baked PDF models from `MODELS_DIR/docling` when present (ING-13). |
 | `test_query_adapter.py` | `compute_query_adapter` fits fp16 embeddings and refuses an adapter worse than none. |
 | `test_query_rewriter.py` | `QueryRewriter` condenses follow-ups into standalone queries. |
 | `test_red_team.py` | `red_team`: prompt-injection set (SEC-01, OWASP LLM01), no model, no network. |
@@ -77,7 +77,7 @@ All skip when `TEST_DATABASE_URL` is unset, except `test_document_parsing.py`, w
 | `conftest.py` | Fixture `database` (fresh schema + default sources per test), `TEST_DATABASE_URL`, `DEFAULT_SOURCES`, `FakeEmbeddingService` (bag-of-words via `zlib.crc32`), `FakeReranker`, `FakeProcessor` (splits text on blank lines; `.bad` files fail). |
 | `test_api.py` | Real FastAPI app via `create_app(FakeContainer)` (an `AppContainer` with fake models/LLM); defines the `client` fixture and helpers (`_admin_headers`, `_approve`, `BFF_TOKEN`) the API tests below import. Includes `test_rate_limit_and_roles`. |
 | `test_api_keys.py` | Server-to-server API keys: scopes per endpoint, session-only routes, browser refusal, expiry, rotation, per-key limits, audit attribution. |
-| `test_document_parsing.py` | The real upload path: `MainDocumentProcessor` with real Docling (DOCX, XLSX, CSV, MD) and the local extractors (TXT, PDF fallback when Docling fails); empty and disallowed files rejected. The Docling PDF case skips unless its layout model is cached (TST-07). |
+| `test_document_parsing.py` | The real upload path: `MainDocumentProcessor` with real Docling (DOCX, XLSX, CSV, MD) and the local extractors (TXT, PDF fallback when Docling fails); empty and disallowed files rejected. The Docling PDF case skips unless its layout model is baked into `MODELS_DIR` or cached (TST-07). |
 | `test_document_lifecycle.py` | `hard_gate`: access tier, validity dates, superseding versions, citing answers, disabled documents never cited. |
 | `test_document_review.py` | New documents wait for owner/editor approval before the assistant may answer from them. |
 | `test_eval_cases_api.py` | Feedback review and the golden eval set through the admin API (ADM-12, RET-R3). |

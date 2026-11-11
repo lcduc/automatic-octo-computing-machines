@@ -15,7 +15,7 @@ Code the running API needs belongs in `app/`; one-off CLIs for the client box's 
 | File | Public names | What it does |
 |---|---|---|
 | `__init__.py` | — | Package marker, so scripts run as `python -m scripts.<name>`. |
-| `download_models.py` | `ModelDownloader` | Pre-downloads the embedding model, the reranker (and its fallback) and warms PP-OCRv6 into `MODELS_DIR`; the backend Dockerfile runs it at build time. OCR warm-up is best-effort; PaddleOCR-VL (GPU) downloads on first use. |
+| `download_models.py` | `ModelDownloader` | Pre-downloads the embedding model, the reranker (and its fallback), Docling's PDF models (layout, TableFormer, into `MODELS_DIR/docling`; a failure fails the run) and warms PP-OCRv6 into `MODELS_DIR`; the backend Dockerfile runs it at build time. OCR warm-up is best-effort; PaddleOCR-VL (GPU) downloads on first use. |
 | `embed_test.py` | `EmbedTestServer`, `main` | Serves a throw-away page on `localhost:8080` that loads a widget's `embed.js` (`--widget`, `--port`), to test embedding from this machine. Its origin must be in `WIDGET_ALLOWED_PARENTS`. |
 | `export_openapi.py` | `main` | Builds the FastAPI app without starting it and writes `app.openapi()` to the repo's `docs/openapi.json`. |
 | `manage.py` | `ManagementCli`, `main` | Operator CLI: `create-admin`, `bootstrap-admin` (installer; one-time password printed once as JSON), `create-api-key` (default scope `chat`), `test-alert`, `send-alert` (used by the ops CLI on a failed backup), `sync-sql-tools`, `check-business-db`, `export-knowledge`, `import-knowledge`. |
