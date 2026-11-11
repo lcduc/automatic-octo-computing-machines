@@ -11,13 +11,13 @@ Last assessed: 2026-11-10 at `2c55f4e`.
 - [x] SUP-02 npm dependencies locked and installed with `npm ci` — `frontends/*/package-lock.json`, `ci.yml`, both Dockerfiles
 - [x] SUP-03 Python dependencies audited on every PR with no ignored advisories — job `Dependency audit (pip-audit, npm audit)`, `--strict`, ignore list cleared 2026-11-10. Advisory only (`continue-on-error`), so a new CVE never blocks an unrelated PR
 - [x] SUP-04 npm dependencies audited — `npm audit --omit=dev` for the widget and admin web in the same advisory job (reads `package-lock.json` only). The widget's `next@16.3.6` critical batch and the `sharp`/`source-map-js` highs were fixed on 2026-11-11 (`next` 16.4.6); production dependencies of both frontends audit clean. Dev tooling still has moderate advisories (`vitest` 5.0.2, `minimatch` via `typescript-eslint`), outside this audit's scope
-- [ ] SUP-05 Dependabot covers every ecosystem — `.github/dependabot.yml` has pip (backend, streamlit) and GitHub Actions only; no `npm` (widget, admin) or `docker` (base images)
+- [x] SUP-05 Dependabot covers every ecosystem — `.github/dependabot.yml`: pip (backend, streamlit, CI tools in `.github/requirements-ci.txt`), npm (widget, admin), docker (backend, widget, admin, ops images) and GitHub Actions; majors are ignored everywhere and done by hand, and the `python` base image stays on 3.11. Dependabot's Dockerfile parser only matches `FROM` at the start of a line, so `backend/Dockerfile` was de-indented
 - [ ] SUP-06 Dependabot security alerts and updates on — "Dependabot security updates" is disabled in the repository settings
 
 ## Workflows
 
-- [~] SUP-07 CI tools pinned — `ruff`, `pytest` (ops job) and `pip-audit` are installed unpinned in `ci.yml`, so a new ruff release can fail lint on unchanged code
-- [~] SUP-08 Workflows least-privilege — only `release.yml` declares `permissions:`; `ci.yml`, `docker-build.yml` and `eval-nightly.yml` run with the repository default token scope. Actions are pinned to major tags (`actions/checkout@v7`), not commit SHAs
+- [x] SUP-07 CI tools pinned — `ruff`, `pytest` (ops job) and `pip-audit` install with `-c .github/requirements-ci.txt`, which Dependabot bumps
+- [x] SUP-08 Workflows least-privilege — every workflow declares `permissions:` (`contents: read`; `release.yml` adds `packages: write`), and every action is pinned to a commit SHA with its version in a comment (`@<sha> # v7.0.1`), which Dependabot keeps current
 - [~] SUP-09 Every CI job is a required check — the `main` ruleset requires one approving review plus `Lint (ruff)` and `Tests (pytest)`; the widget, admin web and ops CLI jobs can fail and still merge
 - [x] SUP-10 `main` protected — ruleset blocks deletion and force-push and requires a pull request with one approval
 

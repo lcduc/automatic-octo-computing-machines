@@ -117,6 +117,9 @@ cd .. && ruff check .             # lint from the repo root (root ruff.toml)
   streamlit blocked with `pillow<13` -> pypdf 6.21.4, docling 2.148 and streamlit 1.67 lift the cap; Pillow
   is pinned to 13.0.0, uvicorn to 0.54 (with `ws=none`) and the audit runs with no ignores
   (Dependabot #77–#81; Pillow pin and audit cleanup on branch `chore/pillow-13-audit`, 2026-11-10).
+- Every line of `Dockerfile` was indented two spaces; Docker accepts that, but Dependabot's parser
+  only matches `FROM` at the start of a line and would have skipped the base image -> de-indented
+  (SUP-05, 2026-11-11). Keep `FROM` lines unindented.
 - `.dockerignore` excluded `tests/` and `test_*`, which match only at the context root, so the whole
   `test/` suite shipped in the image; and it excluded only some `data/` subfolders, so a local
   `docker build backend` copied `data/logs/` (and anything else a local run wrote) into the image ->

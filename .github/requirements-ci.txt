@@ -1,0 +1,7 @@
+# Versions of the tools CI installs on its own (not the backend's dependencies).
+# Workflows use this file as pip constraints (`pip install -c .github/requirements-ci.txt ruff`),
+# so each job installs only the tool it needs, at this version. Dependabot bumps it weekly.
+ruff==0.17.4
+# Same version as backend/requirements.txt.
+pytest==9.1.1
+pip-audit==2.10.1

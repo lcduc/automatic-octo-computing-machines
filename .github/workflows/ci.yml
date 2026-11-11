@@ -5,6 +5,10 @@ on:
     branches: [main]
   pull_request:
 
+# Read-only token: no job writes to the repository, packages or pull requests.
+permissions:
+  contents: read
+
 # A newer push to the same branch supersedes an in-flight run.
 concurrency:
   group: ci-${{ github.ref }}
@@ -16,16 +20,15 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
-
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.11"
 
       # Ruff only parses source, so this job skips the multi-GB ML install
       # entirely and gives fast feedback on syntax/undefined-name errors.
       - name: Install ruff
-        run: pip install ruff
+        run: pip install -c .github/requirements-ci.txt ruff
 
       - name: Run ruff
         run: ruff check --output-format=github .
@@ -35,15 +38,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
-
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.11"
 
       # The ops CLI (deploy/ops) is stdlib-only, like the image it ships in, so only pytest is needed.
       - name: Install pytest
-        run: pip install pytest
+        run: pip install -c .github/requirements-ci.txt pytest
 
       - name: Run tests
         run: python -m pytest deploy/ops/tests
@@ -70,9 +72,8 @@ jobs:
       run:
         working-directory: backend
     steps:
-      - uses: actions/checkout@v7
-
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.11"
           cache: pip
@@ -116,7 +117,7 @@ jobs:
       # (~470 MB), cached so a PR does not re-download it. No LLM, no secrets. The retrieval eval
       # (database + the 2.2 GB reranker) runs nightly in eval-nightly.yml.
       - name: Cache embedding model
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: backend/model_weights/models--intfloat--multilingual-e5-small
           key: model-e5-small-v1
@@ -136,9 +137,8 @@ jobs:
       run:
         working-directory: frontends/widget
     steps:
-      - uses: actions/checkout@v7
-
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "24"
           cache: npm
@@ -159,9 +159,8 @@ jobs:
       run:
         working-directory: frontends/admin
     steps:
-      - uses: actions/checkout@v7
-
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "24"
           cache: npm
@@ -182,14 +181,13 @@ jobs:
     # .github/dependabot.yml) is what actually proposes the upgrades.
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v7
-
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.11"
 
       - name: Install pip-audit
-        run: pip install pip-audit
+        run: pip install -c .github/requirements-ci.txt pip-audit
 
       # Audits the pinned requirements without installing the ML stack.
       #

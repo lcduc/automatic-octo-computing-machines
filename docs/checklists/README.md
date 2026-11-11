@@ -11,7 +11,7 @@ criteria once; when an item fails inside one folder, that folder's `README.md` l
 | [testing.md](testing.md) | `TST` | What CI runs, coverage, untested critical paths, flaky tests, frontend tests | 5 / 12 |
 | [security.md](security.md) | `APPSEC` | Web/API security of the code and containers (auth, sessions, limits, headers, secrets, SSRF/SQLi) | 12 / 15 |
 | [privacy.md](privacy.md) | `PRIV` | Engineering-side handling of personal data (builds, logs, masking, deletion) | 7 / 8 |
-| [ci-supply-chain.md](ci-supply-chain.md) | `SUP` | Pinning, audits, Dependabot, required checks, workflow permissions, images, licence | 6 / 15 |
+| [ci-supply-chain.md](ci-supply-chain.md) | `SUP` | Pinning, audits, Dependabot, required checks, workflow permissions, images, licence | 9 / 15 |
 | [optimization.md](optimization.md) | `OPT` | Chat-path throughput, VRAM, image and build size, CI time, frontend bundles | 5 / 13 |
 
 ## Conventions
