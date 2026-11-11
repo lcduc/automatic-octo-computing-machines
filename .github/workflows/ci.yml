@@ -174,7 +174,7 @@ jobs:
       - run: npm run build
 
   audit:
-    name: Dependency audit (pip-audit)
+    name: Dependency audit (pip-audit, npm audit)
     runs-on: ubuntu-latest
     timeout-minutes: 15
     # Advisory only: a CVE disclosed in a transitive dependency should surface
@@ -201,3 +201,16 @@ jobs:
       - name: Audit pinned dependencies
         run: >-
           pip-audit --requirement backend/requirements.txt --requirement frontends/streamlit/requirements.txt --strict
+
+      # npm audit reads only package-lock.json, so nothing is installed. Production
+      # dependencies only: dev tooling (vitest, eslint) never reaches a browser or
+      # an image. `!cancelled()` keeps these running when the pip audit above fails.
+      - name: Audit chat widget (npm)
+        if: ${{ !cancelled() }}
+        working-directory: frontends/widget
+        run: npm audit --omit=dev
+
+      - name: Audit admin web (npm)
+        if: ${{ !cancelled() }}
+        working-directory: frontends/admin
+        run: npm audit --omit=dev
