@@ -17,7 +17,7 @@ Last assessed: 2026-11-10 at `2c55f4e`.
 ## Coverage
 
 - [~] TST-06 Coverage measured and tracked — 83% of lines in `app/` (10,257 statements, 1,697 missed), measured locally with `coverage run --source=app -m pytest` against pgvector; not in CI, so a drop goes unnoticed
-- [ ] TST-07 The real upload path is tested — `core/document_processing/main_processor.py` and `processors.py` are at 0%: every test injects a fake processor, so `MainDocumentProcessor` (used by `api/container.py` and `worker.py`) never runs. One integration test parsing a small PDF and DOCX through it would cover the entry point
+- [x] TST-07 The real upload path is tested — `test/integration/test_document_parsing.py` runs `MainDocumentProcessor` with real Docling and the real local extractors: DOCX (headings, table), XLSX, CSV, MD via Docling, TXT locally, the PDF fallback to its text layer when Docling fails, and rejection of empty and disallowed files (`main_processor.py` 0% → 87%, `processors.py` 0% → 79%). The Docling PDF case needs the layout model and is skipped when it is not cached, as in CI
 - [~] TST-08 Process entry points tested — `worker.py` and `model_server.py` are at 0% (their services are tested; the wiring is not)
 - [ ] TST-09 Non-default LLM providers tested — `anthropic_client.py` 28%, `gemini_client.py` 32%, `openai_client.py` 54%; no direct unit tests for `TurnDeadline` or `ConfidenceScorer` (73%) either
 
