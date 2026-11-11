@@ -9,8 +9,8 @@ Last assessed: 2026-11-10 at `2c55f4e`.
 
 - [x] SUP-01 Python dependencies pinned exactly — `backend/requirements.txt`, torch/torchvision in `backend/requirements-torch.txt`, paddlepaddle in `backend/Dockerfile`
 - [x] SUP-02 npm dependencies locked and installed with `npm ci` — `frontends/*/package-lock.json`, `ci.yml`, both Dockerfiles
-- [x] SUP-03 Python dependencies audited on every PR with no ignored advisories — job `Dependency audit (pip-audit)`, `--strict`, ignore list cleared 2026-11-10. Advisory only (`continue-on-error`), so a new CVE never blocks an unrelated PR
-- [ ] SUP-04 npm dependencies audited — no `npm audit` in CI. **Open today:** the widget pins `next@16.3.6`, inside a critical advisory batch fixed in 16.4.6 (two unauthenticated RCEs, Image Optimization SSRF, cache poisoning), plus high advisories for `sharp` (<0.35.5) and `source-map-js` (1.0.0–1.2.1). The widget uses no `next/image`, `use cache` or server actions, so exposure is probably low, but `/_next/image` is served by default. The admin web has none (`npm audit --omit=dev`, 2026-11-10)
+- [x] SUP-03 Python dependencies audited on every PR with no ignored advisories — job `Dependency audit (pip-audit, npm audit)`, `--strict`, ignore list cleared 2026-11-10. Advisory only (`continue-on-error`), so a new CVE never blocks an unrelated PR
+- [x] SUP-04 npm dependencies audited — `npm audit --omit=dev` for the widget and admin web in the same advisory job (reads `package-lock.json` only). The widget's `next@16.3.6` critical batch and the `sharp`/`source-map-js` highs were fixed on 2026-11-11 (`next` 16.4.6); production dependencies of both frontends audit clean. Dev tooling still has moderate advisories (`vitest` 5.0.2, `minimatch` via `typescript-eslint`), outside this audit's scope
 - [ ] SUP-05 Dependabot covers every ecosystem — `.github/dependabot.yml` has pip (backend, streamlit) and GitHub Actions only; no `npm` (widget, admin) or `docker` (base images)
 - [ ] SUP-06 Dependabot security alerts and updates on — "Dependabot security updates" is disabled in the repository settings
 

@@ -64,10 +64,13 @@ backend and admin changes on `main` and merge them into client branches, so each
 - The chat load effect looped and re-fetched the widget config on every re-render → fixed, with a regression test
   in `use-chat.test.ts` (a79201f, 2026-09-30).
 - `next dev` re-adds the Next.js block in `AGENTS.md`; commit it rather than removing it from a diff.
+- `next@16.3.6` sat inside a critical advisory batch (unauthenticated RCE in Image Optimization and `use cache`,
+  SSRF, cache poisoning) and `sharp`/`source-map-js` had high advisories, unnoticed because Dependabot and the CI
+  audit covered pip only → `next`/`eslint-config-next` 16.4.6, transitive fixes via `npm audit fix`, and the CI
+  audit job now runs `npm audit --omit=dev` for both frontends (SUP-04, 2026-11-11).
 
 ## Status
-- Last reviewed: 2026-11-10
+- Last reviewed: 2026-11-11
 - Open issues / follow-ups:
-  - SUP-04: `next@16.3.6` is inside a critical advisory batch fixed in 16.4.6; `sharp` and `source-map-js` have high advisories; CI runs no `npm audit` (docs/checklists/ci-supply-chain.md).
   - OPT-13: bundle size not recorded (docs/checklists/optimization.md).
 - Ceilings (`# ceiling:` markers in this folder): none.
