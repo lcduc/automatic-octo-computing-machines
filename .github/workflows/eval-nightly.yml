@@ -11,6 +11,10 @@ on:
     - cron: "0 19 * * *" # 02:00 in Vietnam
   workflow_dispatch:
 
+# Read-only token: the eval only reads the repository.
+permissions:
+  contents: read
+
 jobs:
   retrieval:
     name: Recall and MRR against the baseline (${{ matrix.golden-set }})
@@ -41,9 +45,8 @@ jobs:
       run:
         working-directory: backend
     steps:
-      - uses: actions/checkout@v7
-
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.11"
           cache: pip
@@ -59,7 +62,7 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Cache models
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             backend/model_weights/models--intfloat--multilingual-e5-small
