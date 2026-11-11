@@ -43,3 +43,26 @@ def test_docling_converter_has_its_own_ocr_off(monkeypatch):
     DoclingProcessor._build_converter()
 
     assert captured[docling_processor.InputFormat.PDF].pipeline_options.do_ocr is False
+
+
+def test_docling_converter_loads_baked_pdf_models(tmp_path, monkeypatch):
+    """With the models in MODELS_DIR (as in the image), PDF parsing never needs the network (ING-13)."""
+    captured = {}
+    monkeypatch.setattr(docling_processor, "DocumentConverter", lambda format_options: captured.update(format_options))
+    monkeypatch.setenv("MODELS_DIR", str(tmp_path))
+    (tmp_path / docling_processor.DOCLING_MODELS_SUBDIR).mkdir()
+
+    DoclingProcessor._build_converter()
+
+    artifacts_path = captured[docling_processor.InputFormat.PDF].pipeline_options.artifacts_path
+    assert artifacts_path == tmp_path / docling_processor.DOCLING_MODELS_SUBDIR
+
+
+def test_docling_converter_downloads_models_when_none_are_baked(tmp_path, monkeypatch):
+    captured = {}
+    monkeypatch.setattr(docling_processor, "DocumentConverter", lambda format_options: captured.update(format_options))
+    monkeypatch.setenv("MODELS_DIR", str(tmp_path))
+
+    DoclingProcessor._build_converter()
+
+    assert captured[docling_processor.InputFormat.PDF].pipeline_options.artifacts_path is None

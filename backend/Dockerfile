@@ -75,8 +75,10 @@ RUN mkdir -p data/logs logs scripts model_weights \
 
 USER app
 
-# Bake the embedding + reranker weights into the image under ./model_weights so:
-# (a) first request in production isn't a multi-hundred-MB cold download,
+# Bake the embedding, reranker and Docling PDF (layout, TableFormer) weights into the image under
+# ./model_weights so:
+# (a) first request in production isn't a multi-hundred-MB cold download, and PDFs parse on a box
+#     with no internet (without Docling's models they silently degrade to plain text),
 # (b) the weights are reviewable on disk (`docker exec ... ls model_weights/`).
 # Requires network access at build time. If you override EMBEDDING_MODEL or
 # RERANKER_MODEL at runtime to something not baked in here, that model is

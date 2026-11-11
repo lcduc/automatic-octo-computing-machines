@@ -15,7 +15,7 @@ Last assessed: 2026-11-10 at `2c55f4e`.
 
 - [x] PRIV-03 Client IPs stored only as hashes in rate-limit keys — `hashed(...)` in `middleware/ip_rate_limit_middleware.py`, `api/v1/routes/admin/auth.py`
 - [x] PRIV-04 Contact details masked in admin views; secrets redacted in the audit log — `mask_email`/`mask_phone` in `services/handoff_service.py`, `REDACTED` in `services/audit_service.py`
-- [~] PRIV-05 Logs carry no message content — no logger call in the chat path logs the question or answer text (checked by grep), but nothing enforces it; `docling_processor.py:241` logs OCR error text, which can contain document content
+- [~] PRIV-05 Logs carry no message content — no logger call in the chat path logs the question or answer text (checked by grep), but nothing enforces it; `docling_processor.py:263` logs OCR error text, which can contain document content
 - [x] PRIV-06 Data-subject export and delete, and scheduled retention purge (PRV-03, PRV-04) — `services/privacy_service.py`, `core/storage/retention_repository.py`
 
 ## Tests

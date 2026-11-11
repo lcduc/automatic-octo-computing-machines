@@ -16,7 +16,7 @@ them: the ingestion queue and worker live in `services/ingestion_service.py` /
 | File | Public names | What it does |
 |---|---|---|
 | `main_processor.py` | `MainDocumentProcessor` | Entry point: validates the extension, routes to Docling, falls back to a local processor only when Docling declines the format (`.txt`) or errors; returns chunks + metadata. |
-| `docling_processor.py` | `DoclingProcessor` | Docling conversion to markdown (run in a thread), heading chunking; PDFs with an empty or gibberish text layer are rendered with PyMuPDF and sent page by page to the OCR engine instead. Docling's own OCR is off. |
+| `docling_processor.py` | `DoclingProcessor`, `docling_models_dir`, `DOCLING_MODELS_SUBDIR` | Docling conversion to markdown (run in a thread), heading chunking; PDFs with an empty or gibberish text layer are rendered with PyMuPDF and sent page by page to the OCR engine instead. Docling's own OCR is off. The PDF models (layout, TableFormer) load from `MODELS_DIR/docling` when it exists (always in the image), otherwise they download on first use with a warning. |
 | `processors.py` | `BaseProcessor`, `TextProcessor`, `PDFProcessor`, `DocumentProcessor`, `SpreadsheetProcessor` | Local fallback processors per format; check file size and delegate to an extractor. |
 | `extractors.py` | `Extraction`, `BaseFileExtractor`, `TXTTextExtractor`, `PDFTextExtractor`, `DOCXTextExtractor`, `CSVTextExtractor`, `XLSXTextExtractor`, `extract_tables_from_docx`, `smart_chunk_rows`, `markdown_table`, `smart_chunk_text` | Parse a file once with pypdf / python-docx / pandas / openpyxl; return fallback chunks plus the full text (stored so the document can be re-chunked later). |
 | `ocr_base.py` | `OCREngine` | ABC for all OCR engines: `name` and blocking `extract_text(image_path)`; failure returns `""`, never raises. |
@@ -127,13 +127,18 @@ Integration (needs `TEST_DATABASE_URL` to a pgvector database): `test/integratio
   `processors.py` sat at 0% coverage -> `test/integration/test_document_parsing.py` runs real Docling and
   the local extractors (TST-07, 2026-11-11). Writing it showed that, without Docling's layout model
   (not baked into the image), a text-layer PDF quietly falls back to pypdf instead of failing (ING-13).
+- Docling's PDF models were never baked: the first text-layer PDF downloaded them into the
+  container's unmounted home cache after every restart, and a box without internet parsed every PDF
+  as plain text (no headings or tables) -> `scripts/download_models.py` bakes layout + TableFormer into
+  `model_weights/docling` (669 MB, including the ONNX layout variant Docling's downloader always
+  fetches) and the converter loads them via `artifacts_path`; verified by parsing a PDF in a
+  `--network none` container (ING-13, 2026-11-11).
 
 ## Status
 - Last reviewed: 2026-11-11
 - Open issues / follow-ups:
   - RES-03 (chat load measured while an OCR job runs) is still open (`docs/performance.md`).
-  - ING-13: Docling's PDF layout model is not baked into the image; without network every PDF falls back to pypdf text (docs/checklists/production.md).
-  - PRIV-05: `docling_processor.py:241` logs OCR error text, which can contain document content (docs/checklists/privacy.md).
+  - PRIV-05: `docling_processor.py:263` logs OCR error text, which can contain document content (docs/checklists/privacy.md).
 - Ceilings (`# ceiling:` markers in this folder):
-  - `docling_processor.py:135` — Docling parsing shares the process's torch thread pool — move it to a
+  - `docling_processor.py:156` — Docling parsing shares the process's torch thread pool — move it to a
     worker process if the cap slows chat.

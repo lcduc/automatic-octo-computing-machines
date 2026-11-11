@@ -3,8 +3,9 @@ The real upload path: ``MainDocumentProcessor`` with real Docling and the real l
 
 Every other test injects a fake processor, so without these nothing exercised the parsers an
 upload actually goes through (TST-07). No database and no network: DOCX, XLSX, CSV and Markdown
-convert in Docling without model weights. Only Docling's PDF layout model is a download, so the
-one test that needs it is skipped when it is not cached; the PDF fallback is tested regardless.
+convert in Docling without model weights. Only Docling's PDF layout model is a download (baked
+into the image by ``scripts/download_models.py``), so the one test that needs it is skipped when it
+is neither baked nor cached; the PDF fallback is tested regardless.
 """
 
 import io
@@ -16,7 +17,7 @@ import pymupdf
 import pytest
 from huggingface_hub import scan_cache_dir
 
-from app.core.document_processing.docling_processor import DoclingProcessor
+from app.core.document_processing.docling_processor import DoclingProcessor, docling_models_dir
 from app.core.document_processing.main_processor import MainDocumentProcessor
 from app.models.knowledge import EXTRACTION_DOCLING, EXTRACTION_LOCAL
 
@@ -26,7 +27,9 @@ DOCLING_LAYOUT_REPO = "docling-layout"
 
 
 def docling_layout_model_cached() -> bool:
-    """Whether Docling's PDF layout model is in the local Hugging Face cache."""
+    """Whether Docling's PDF layout model is baked into ``MODELS_DIR`` or in the Hugging Face cache."""
+    if docling_models_dir().is_dir():
+        return True
     try:
         return any(DOCLING_LAYOUT_REPO in repo.repo_id for repo in scan_cache_dir().repos)
     except Exception:

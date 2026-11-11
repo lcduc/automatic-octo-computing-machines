@@ -1,5 +1,5 @@
 """
-Pre-download the embedding, reranker and OCR models into the local model cache.
+Pre-download the embedding, reranker, Docling PDF and OCR models into the local model cache.
 
 Run once (locally, or as a Dockerfile build step) so the weights are baked in
 and reviewable on disk under ``MODELS_DIR`` (default: ``model_weights/``)
@@ -16,16 +16,18 @@ Usage:
 
 # Standard library imports
 import logging
+from pathlib import Path
 
 # Local imports
 from app.config.settings import Config
+from app.core.document_processing.docling_processor import docling_models_dir
 from app.core.retrieval.reranker import RERANKER_FALLBACK_MODEL
 
 logger = logging.getLogger(__name__)
 
 
 class ModelDownloader:
-    """Fetches the configured embedding and reranker models into ``MODELS_DIR``."""
+    """Fetches the configured embedding, reranker, Docling PDF and OCR models into ``MODELS_DIR``."""
 
     def __init__(self, models_dir: str = None):
         """
@@ -64,6 +66,29 @@ class ModelDownloader:
         )
         return model_name
 
+    def download_docling_models(self) -> Path:
+        """
+        Download Docling's PDF models (layout, TableFormer) into :func:`docling_models_dir`.
+
+        Not best-effort, unlike OCR: every PDF with a text layer goes through these models, and
+        without them a box with no network silently parses PDFs as plain text (ING-13).
+        Docling's own OCR, code/formula and picture models are off in this pipeline, so they are
+        skipped.
+        """
+        from docling.utils.model_downloader import download_models
+
+        target = docling_models_dir()
+        logger.info("Downloading Docling PDF models (layout, TableFormer) to %s", target)
+        download_models(
+            output_dir=target,
+            with_layout=True,
+            with_tableformer=True,
+            with_code_formula=False,
+            with_picture_classifier=False,
+            with_rapidocr=False,
+        )
+        return target
+
     def download_ocr_model(self) -> None:
         """
         Warm the PP-OCRv6 (CPU) OCR pipeline so its weights are cached.
@@ -91,12 +116,14 @@ class ModelDownloader:
         reranker_model = self.download_reranker_model(Config.RAG.RERANKER_MODEL())
         # Baked in too: the fallback is needed exactly when the network or the primary fails.
         fallback_model = self.download_reranker_model(RERANKER_FALLBACK_MODEL)
+        docling_dir = self.download_docling_models()
         self.download_ocr_model()
         logger.info(
-            "Model download complete: embedding=%s reranker=%s (fallback %s) dir=%s",
+            "Model download complete: embedding=%s reranker=%s (fallback %s) docling=%s dir=%s",
             embedding_model,
             reranker_model,
             fallback_model,
+            docling_dir,
             self._models_dir,
         )
 
