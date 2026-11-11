@@ -20,7 +20,7 @@ Last assessed: 2026-11-10 at `2c55f4e`.
 
 - [x] OPT-08 CI wall time under 5 minutes — longest job `Tests (pytest)` 2.6–3.5 min over the last three `main` runs; pip and embedding-model caches, superseded runs cancelled
 - [x] OPT-09 Backend image ships only what runs — the build context is `app/`, `migrations/`, `scripts/` and the build files (5.1 MB); `test/` and `data/` are excluded (`backend/.dockerignore`, PRIV-01 in [privacy.md](privacy.md))
-- [ ] OPT-10 Image sizes recorded and budgeted — not measured; the API image bakes torch, paddle and the embedding and reranker weights
+- [~] OPT-10 Image sizes recorded and budgeted — API image 6.71 GB with CPU torch (local build, 2026-11-11); the CUDA build that deployments run is larger and not yet measured; no budget set
 - [x] OPT-11 Expensive image layers cached — `cache-from/cache-to: type=gha` in `docker-build.yml` and `release.yml`
 
 ## Frontends
