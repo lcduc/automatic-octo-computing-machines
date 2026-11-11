@@ -34,6 +34,7 @@ Marked tests also run in the plain `pytest` step. Async tests need an explicit `
 | `test_current_time_tool.py` | `CurrentTimeTool`, the reference `BaseTool`. |
 | `test_embedding_router.py` | `EmbeddingRouter` decisions and how the pipeline acts on them. |
 | `test_embeddings.py` | In-process embedding service with a fake model. |
+| `test_dockerignore.py` | `backend/.dockerignore` keeps `data/`, `test/`, `.env`, `SSL/` and `model_weights/` out of the image and never excludes what the Dockerfile needs (PRIV-01). |
 | `test_eval_baseline.py` | `scripts.eval.baseline.EvalBaseline`: the router gate fails on real regressions, passes on noise. |
 | `test_eval_compare_configs.py` | `scripts.eval.compare_configs` retrieval config comparison. |
 | `test_eval_intent_router.py` | `scripts.eval.intent_router` intent-routing eval harness (fake router). |

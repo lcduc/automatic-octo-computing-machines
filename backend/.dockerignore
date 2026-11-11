@@ -48,15 +48,14 @@ logs/
 # Test files
 test_*
 *_test.py
-tests/
+test/
 .pytest_cache/
 .coverage
 htmlcov/
 
-# Data files (will be mounted as volume)
-data/chunks/*
-data/vectors/*
-data/temp/*
+# Runtime data (uploads, logs, anything a local run wrote). Compose mounts it as a
+# volume and the Dockerfile recreates the directories, so none of it belongs in the image.
+data/
 
 # Large model files. Weights are downloaded fresh at build time by
 # `RUN python -m scripts.download_models` (see Dockerfile) — excluding the
@@ -81,4 +80,3 @@ ops.env
 backups/
 handover/
 .deploy_history
-data/uploads/
