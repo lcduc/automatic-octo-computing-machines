@@ -54,7 +54,7 @@ paddleocr==3.7.0
 # --- Runtime / config ---
 python-dotenv==1.2.4
 psutil==6.1.1
-tzdata==2026.3
+tzdata==2026.6
 
 # --- Testing ---
 pytest==9.1.1
