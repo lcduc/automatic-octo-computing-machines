@@ -85,6 +85,10 @@ ruff check .                  # from the repo root
   `AutoModelForSequenceClassification` and `low_cpu_mem_usage=False`; a jinaai model falls back
   (code comment in `reranker.py`; verified on transformers 4.53.3 and 5.20.2 / torch 2.13.0+cu126).
 - Embedder and reranker run in fp16 on GPU, fp32 on CPU (731b04e, 2026-10-15).
+- The reranker was moved to the GPU in fp32 and halved there, which left the freed fp32 copy reserved
+  in PyTorch's CUDA cache (2,672 MB reserved for 1,083 MB of weights) -> halved on the CPU before the
+  move, 1,092 MB reserved, scores bit-identical; regression test in `test_reranker.py`
+  (OPT-04, branch `perf/reranker-fp16`, 2026-11-11).
 - Concurrent first queries loaded the embedding model once per thread (8 threads, 8 loads), and the
   dict query cache raised "dictionary changed size during iteration" and grew past its bound -> load
   under a double-checked lock, `functools.lru_cache` for the query cache; two regression tests
@@ -101,11 +105,11 @@ ruff check .                  # from the repo root
   (branch `refactor/structure-fixes`, 2026-11-10).
 
 ## Status
-- Last reviewed: 2026-11-10
+- Last reviewed: 2026-11-11
 - Open issues / follow-ups:
   - `embeddings.py` keeps module-level helpers marked for legacy compatibility (`get_embedder`,
     `get_device_info`) and lacks type hints on several public methods.
-  - OPT-02 / OPT-04: smaller rerank pool (`MIN_RERANK_POOL` in `retriever.py`) and fp16 reranker loading (`reranker.py:92`) are the cheapest throughput and VRAM levers (docs/checklists/optimization.md).
+  - OPT-02: a smaller rerank pool (`MIN_RERANK_POOL` in `retriever.py`) is the cheapest throughput lever (docs/checklists/optimization.md).
 - Ceilings (`# ceiling:` markers in this folder):
   - `knowledge_index.py:159` — whole corpus held in RAM and scanned brute-force (~1.5 KB/chunk at 384
     dims, a few ms per query for 100k chunks) — move semantic search to a pgvector HNSW index past ~500k chunks.
