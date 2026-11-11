@@ -40,7 +40,53 @@ updates:
       - dependency-name: "*"
         update-types: ["version-update:semver-major"]
 
+  # CI tools (ruff, pytest, pip-audit) used as pip constraints by the workflows.
+  - package-ecosystem: pip
+    directory: "/.github"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 2
+
+  # Chat widget and admin web. Lockfiles pin every transitive version; these PRs
+  # move them, and the npm audit step in ci.yml reports what is still exposed.
+  - package-ecosystem: npm
+    directories:
+      - "/frontends/widget"
+      - "/frontends/admin"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      patch-updates:
+        update-types:
+          - patch
+    ignore:
+      # Majors (next, react, vite, ...) change APIs; do them by hand.
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+
+  # Base images of every Dockerfile. The parser only sees FROM at the start of
+  # a line, so keep FROM lines unindented.
+  - package-ecosystem: docker
+    directories:
+      - "/backend"
+      - "/frontends/widget"
+      - "/frontends/admin"
+      - "/deploy/ops"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+      # The backend venv, the torch/paddle wheels and CI are all Python 3.11;
+      # moving to a newer Python is a deliberate change across all of them.
+      - dependency-name: "python"
+        versions: [">= 3.12"]
+
   # Keep the workflow actions themselves current (checkout, setup-python, ...).
+  # Workflows pin each action to a commit SHA with its version in a comment;
+  # Dependabot updates both.
   - package-ecosystem: github-actions
     directory: "/"
     schedule:
