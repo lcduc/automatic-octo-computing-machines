@@ -3,7 +3,7 @@
 # It carries the release's compose file and deploy assets, copied into the
 # install directory by `chatbot install` / `chatbot deploy`.
 
-FROM rclone/rclone:1.71 AS rclone
+FROM rclone/rclone:1.76 AS rclone
 
 # Docker CLI with the Compose plugin (v2.33), on Alpine.
 FROM docker:27-cli
