@@ -8,7 +8,7 @@ Last assessed: 2026-11-10 at `2c55f4e`.
 
 ## Builds and repository
 
-- [ ] PRIV-01 Images never contain local runtime data — `backend/.dockerignore` excludes only `data/chunks`, `data/vectors` and `data/temp`, so a local `docker build backend` copies `backend/data/uploads/` (uploaded documents) and `backend/data/logs/` into the image. CI and release builds start from a clean checkout and are not affected. Fix: exclude `data/` entirely (the Dockerfile recreates the directories)
+- [x] PRIV-01 Images never contain local runtime data — `backend/.dockerignore` excludes all of `data/` (it used to list only some subfolders, so a local `docker build backend` copied `data/logs/` into the image); checked by `backend/test/unit/test_dockerignore.py`. CI and release builds start from a clean checkout and were never affected
 - [x] PRIV-02 Runtime data never committed — `data/`, `logs/`, `.env` gitignored (`.gitignore`)
 
 ## Runtime

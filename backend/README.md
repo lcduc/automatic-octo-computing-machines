@@ -117,12 +117,16 @@ cd .. && ruff check .             # lint from the repo root (root ruff.toml)
   streamlit blocked with `pillow<13` -> pypdf 6.21.4, docling 2.148 and streamlit 1.67 lift the cap; Pillow
   is pinned to 13.0.0, uvicorn to 0.54 (with `ws=none`) and the audit runs with no ignores
   (Dependabot #77–#81; Pillow pin and audit cleanup on branch `chore/pillow-13-audit`, 2026-11-10).
-- `.dockerignore` excludes `*.md` and `test_*`, so READMEs and tests are not in the image.
+- `.dockerignore` excluded `tests/` and `test_*`, which match only at the context root, so the whole
+  `test/` suite shipped in the image; and it excluded only some `data/` subfolders, so a local
+  `docker build backend` copied `data/logs/` (and anything else a local run wrote) into the image ->
+  it now excludes `test/` and all of `data/` (the Dockerfile recreates the directories), checked by
+  `test/unit/test_dockerignore.py` (PRIV-01, OPT-09, 2026-11-11). CI and release builds were never
+  affected: they start from a clean checkout. `*.md` is excluded, so READMEs are not in the image.
 
 ## Status
-- Last reviewed: 2026-11-10
+- Last reviewed: 2026-11-11
 - Open issues / follow-ups:
-  - PRIV-01 / OPT-09: `.dockerignore` lets a local build copy `data/` (uploads, logs) and `test/` into the image — exclude `data/` and `test/` (docs/checklists/privacy.md).
   - APPSEC-14: the `Dockerfile` copies the app with `--chown=app:app`, so the API process can rewrite its own code (docs/checklists/security.md).
   - SUP-13: the `python:3.11-slim` base image is a floating tag, not a digest (docs/checklists/ci-supply-chain.md).
 - Ceilings (`# ceiling:` markers in this folder): none in the files directly here; see each package README.
