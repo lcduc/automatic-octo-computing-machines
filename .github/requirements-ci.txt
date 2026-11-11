@@ -3,5 +3,5 @@
 # so each job installs only the tool it needs, at this version. Dependabot bumps it weekly.
 ruff==0.17.4
 # Same version as backend/requirements.txt.
-pytest==9.1.1
+pytest==9.2.0
 pip-audit==2.10.1
