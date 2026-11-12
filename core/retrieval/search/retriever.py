@@ -282,7 +282,14 @@ class ContextRetriever:
             except Exception:
                 pass
 
-            if Config.RAG.USE_FAISS_INDEX() and getattr(self.vector_store, "faiss_index", None) is not None:
+            # The FAISS index covers the whole store and returns positions in it, so it is only
+            # valid when `documents` is that whole store, not a dataset-filtered subset.
+            faiss_index = getattr(self.vector_store, "faiss_index", None)
+            if (
+                Config.RAG.USE_FAISS_INDEX()
+                and faiss_index is not None
+                and faiss_index.ntotal == len(documents)
+            ):
                 logger.info("Using FAISS for semantic search")
                 top_similarities, top_indices = self.vector_store.fast_similarity_search(query_embedding, k)
                 # Expand to full-length semantic score vector aligned with documents
