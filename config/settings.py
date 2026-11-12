@@ -45,7 +45,7 @@ class LLMConfig:
     
     @staticmethod
     def OPENAI_MODEL():
-        return os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+        return os.getenv("OPENAI_MODEL", "gpt-5-mini")
 
     @staticmethod
     def TRANSLATION_MODEL():
@@ -85,8 +85,14 @@ class LLMConfig:
     
     @staticmethod
     def OPENAI_TEMPERATURE():
+        """Sampling temperature; only gpt-3.5/gpt-4* models use it (see chatbot.completion_kwargs)."""
         return float(os.getenv("OPENAI_TEMPERATURE", "0.1"))
-    
+
+    @staticmethod
+    def OPENAI_REASONING_EFFORT():
+        """Reasoning depth for gpt-5+ models (gpt-5-mini: minimal/low/medium/high); empty = model default."""
+        return os.getenv("OPENAI_REASONING_EFFORT", "low")
+
     @staticmethod
     def OPENAI_TIMEOUT():
         return int(os.getenv("OPENAI_TIMEOUT", "30"))

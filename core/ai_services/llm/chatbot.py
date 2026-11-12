@@ -23,6 +23,31 @@ from models.responses import ChatResponse, ErrorResponse, BaseResponse, StatusEn
 
 logger = logging.getLogger(__name__)
 
+# Model families that still take ``max_tokens`` + ``temperature``; everything newer does not.
+LEGACY_PARAMETER_MODEL_PREFIXES = ("gpt-3.5", "gpt-4")
+
+
+def completion_kwargs() -> Dict[str, Any]:
+    """
+    Model, token-limit and sampling kwargs for ``chat.completions.create``, matched to the model family.
+
+    Only ``gpt-3.5``/``gpt-4*`` take ``max_tokens`` and a custom ``temperature``. Newer families
+    (``gpt-5*``, ``gpt-6*``, ``o*``) reject ``max_tokens`` (they need ``max_completion_tokens``) and
+    accept only the default temperature, so an unknown model name gets the newer set.
+    ``reasoning_effort`` goes in ``extra_body`` because the pinned ``openai==1.57.0`` has no such keyword.
+    """
+    model = Config.LLM.OPENAI_MODEL()
+    kwargs: Dict[str, Any] = {"model": model}
+    if model.startswith(LEGACY_PARAMETER_MODEL_PREFIXES):
+        kwargs["max_tokens"] = Config.LLM.OPENAI_MAX_TOKENS()
+        kwargs["temperature"] = Config.LLM.OPENAI_TEMPERATURE()
+    else:
+        kwargs["max_completion_tokens"] = Config.LLM.OPENAI_MAX_TOKENS()
+        reasoning_effort = Config.LLM.OPENAI_REASONING_EFFORT()
+        if reasoning_effort:
+            kwargs["extra_body"] = {"reasoning_effort": reasoning_effort}
+    return kwargs
+
 
 class ChatbotService:
     """
@@ -91,11 +116,8 @@ class ChatbotService:
             return False
         try:
             client = openai.OpenAI(api_key=Config.LLM.OPENAI_API_KEY())
-            client.chat.completions.create(
-                model=Config.LLM.OPENAI_MODEL(),
-                messages=[{"role": "user", "content": "test"}],
-                max_tokens=1
-            )
+            # A model lookup checks key and model without generating (a removed model → 404).
+            client.models.retrieve(Config.LLM.OPENAI_MODEL())
             logger.info(" OpenAI API available and responding.")
             return True
         except APIStatusError as e:
@@ -249,10 +271,8 @@ class ChatbotService:
                     max_retries=2  # Add retry logic
                 )
                 response = client.chat.completions.create(
-                    model=Config.LLM.OPENAI_MODEL(),
+                    **completion_kwargs(),
                     messages=messages,  # type: ignore
-                    max_tokens=Config.LLM.OPENAI_MAX_TOKENS(),
-                    temperature=Config.LLM.OPENAI_TEMPERATURE(),
                     timeout=Config.LLM.OPENAI_TIMEOUT()
                 )
             except openai.APITimeoutError:
@@ -673,10 +693,8 @@ class ChatbotService:
             try:
                 client = openai.OpenAI(api_key=Config.LLM.OPENAI_API_KEY())
                 response = client.chat.completions.create(
-                    model=Config.LLM.OPENAI_MODEL(),
+                    **completion_kwargs(),
                     messages=messages,  # type: ignore
-                    max_tokens=Config.LLM.OPENAI_MAX_TOKENS(),
-                    temperature=Config.LLM.OPENAI_TEMPERATURE(),
                     timeout=Config.LLM.OPENAI_TIMEOUT()
                 )
             except openai.APITimeoutError:
@@ -827,10 +845,8 @@ class ChatbotService:
             logger.info(" Making API call to OpenAI...")
             client = openai.OpenAI(api_key=Config.LLM.OPENAI_API_KEY())
             response = client.chat.completions.create(
-                model=Config.LLM.OPENAI_MODEL(),
+                **completion_kwargs(),
                 messages=messages,  # type: ignore
-                max_tokens=Config.LLM.OPENAI_MAX_TOKENS(),
-                temperature=Config.LLM.OPENAI_TEMPERATURE(),
                 timeout=Config.LLM.OPENAI_TIMEOUT()
             )
 
@@ -1002,10 +1018,8 @@ class ChatbotService:
             logger.info(" Making API call to OpenAI...")
             client = openai.OpenAI(api_key=Config.LLM.OPENAI_API_KEY())
             response = client.chat.completions.create(
-                model=Config.LLM.OPENAI_MODEL(),
+                **completion_kwargs(),
                 messages=messages,  # type: ignore
-                max_tokens=Config.LLM.OPENAI_MAX_TOKENS(),
-                temperature=Config.LLM.OPENAI_TEMPERATURE(),
                 timeout=Config.LLM.OPENAI_TIMEOUT()
             )
 
@@ -1133,10 +1147,8 @@ class ChatbotService:
         try:
             # Async OpenAI call using the shared AsyncOpenAI client
             response = await self.async_openai_client.chat.completions.create(
-                model=Config.LLM.OPENAI_MODEL(),
+                **completion_kwargs(),
                 messages=messages,  # type: ignore
-                max_tokens=Config.LLM.OPENAI_MAX_TOKENS(),
-                temperature=Config.LLM.OPENAI_TEMPERATURE()
             )
             content = response.choices[0].message.content
             response_text = content.strip() if content else ""
@@ -1276,10 +1288,8 @@ class ChatbotService:
 
             # Use the shared AsyncOpenAI client for streaming
             response_stream = await self.async_openai_client.chat.completions.create(
-                model=Config.LLM.OPENAI_MODEL(),
+                **completion_kwargs(),
                 messages=openai_messages,  # type: ignore
-                max_tokens=Config.LLM.OPENAI_MAX_TOKENS(),
-                temperature=Config.LLM.OPENAI_TEMPERATURE(),
                 stream=True
             )
             try:
