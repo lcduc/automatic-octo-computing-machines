@@ -1,9 +1,12 @@
 # Standard library imports
+import logging
 from pathlib import Path
 from typing import List, Dict, Any
 
 # Local imports
 from config.settings import Config
+
+logger = logging.getLogger(__name__)
 
 
 class MetadataStore:
@@ -33,6 +36,14 @@ class MetadataStore:
                 # List chunk files for this source in sorted order to match documents order
                 chunk_files = sorted(chunk_subdir.glob("chunk_*.txt"), key=lambda p: p.name)
                 for chunk_file in chunk_files:
+                    # DocumentStore drops empty/unreadable chunks; drop them here too so
+                    # metadata stays index-aligned with the documents (dataset filtering needs it).
+                    try:
+                        if not chunk_file.read_text(encoding="utf-8").strip():
+                            continue
+                    except (OSError, UnicodeDecodeError):
+                        logger.exception("Skipping unreadable chunk %s", chunk_file)
+                        continue
                     document_metadata.append(
                         {
                             "source_id": source_name,
