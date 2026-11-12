@@ -9,7 +9,7 @@ Last assessed: 2026-11-10 at `2c55f4e`.
 ## Chat path (runtime)
 
 - [x] OPT-01 Throughput and bottleneck measured — knee at about 10 concurrent turns / 4.7 turns/s; GPU cross-encoder reranking is the only stage that slows with load; reranking off gives 11.7 turns/s ([performance.md](../performance.md), CAP-03)
-- [ ] OPT-02 Rerank less per turn — lower `MIN_RERANK_POOL` from 30 to 16 or cap the reranker at 256 tokens; about half the GPU work per turn. Needs `scripts/eval/rag.py` to confirm retrieval quality holds
+- [-] OPT-02 Rerank less per turn — pool kept at 30: `MIN_RERANK_POOL` 16 fails `scripts/eval/rag.py --check` on `golden_colloquial_dev` (MRR 1.000 → 0.970, past the 0.02 allowance; answerable questions clearing `SIMILARITY_THRESHOLD` 88% → 84%), with `golden_queries` and the holdout set unchanged (2026-11-12, demo corpus of 66 chunks). Colloquial questions need the deeper pool, as RET-04 found in September. The 256-token cap was not tried. Revisit with a client-sized corpus; OPT-03 raises throughput without touching quality
 - [ ] OPT-03 Batch reranking across concurrent turns in one forward pass — the model-server queue (`core/infrastructure/model_server/`) is the natural place
 - [x] OPT-04 Load the reranker in fp16 before moving it to the GPU — `core/retrieval/reranker.py` halves on the CPU, then moves; bge-reranker-v2-m3 on a GTX 1660 SUPER: CUDA reserved 2,672 → 1,092 MB, peak allocated 2,652 → 1,083 MB, scores on 32 pairs bit-identical (2026-11-11); `test_weights_are_halved_before_they_reach_the_gpu`
 - [-] OPT-05 Admission cap set to the knee (`MAX_CONCURRENT_CHATS` 16 → 10–12) — a product choice between earlier 503s and slower first tokens, not an engineering fix

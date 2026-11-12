@@ -25,7 +25,8 @@ logger = logging.getLogger(__name__)
 
 #: Candidates handed to the reranker per requested result.
 RERANK_POOL_MULTIPLIER = 4
-#: Smallest candidate pool reranked (RET-04: 20-50); 30 beat 16 on the golden set.
+#: Smallest candidate pool reranked (RET-04: 20-50); 30 beat 16 on the golden set, and 16 still fails
+#: the colloquial dev set's regression gate (OPT-02, 2026-11-12).
 MIN_RERANK_POOL = 30
 #: RRF damping constant: the usual 60, so the top few ranks do not dominate.
 RRF_K = 60
