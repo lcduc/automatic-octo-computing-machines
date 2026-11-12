@@ -121,7 +121,8 @@ query_adapter or synthetic or threshold or perturber"`.
 - `tool_selection.py` (EVAL-05), first run (2026-11-11, `gpt-6-luna`): every decision call failed with HTTP 400,
   because `/v1/chat/completions` refuses function tools together with `reasoning_effort` for that model, and
   `OPENAI_REASONING_EFFORT` (default `low`) is sent on every call: the tool path of a chat turn errors with this
-  config (production TOOL-12). With `OPENAI_REASONING_EFFORT=none`: selection 35/35, arguments 22/22.
+  config (production TOOL-12, fixed with `OPENAI_TOOL_REASONING_EFFORT`). With `none` for the tool call and the
+  default `low` elsewhere: selection 35/35, arguments 22/22.
 - Windows: Vietnamese output raises `UnicodeEncodeError` (cp1252) when redirected → `PYTHONIOENCODING=utf-8`.
 
 ## Status

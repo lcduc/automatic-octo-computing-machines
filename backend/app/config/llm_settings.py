@@ -135,6 +135,19 @@ class LLMConfig:
         return env_str("OPENAI_REASONING_EFFORT", "low")
 
     @staticmethod
+    def OPENAI_TOOL_REASONING_EFFORT() -> str:
+        """
+        Reasoning depth for the call that offers tools (the tool agent's decision); empty = ``OPENAI_REASONING_EFFORT``.
+
+        Separate because which values work with function tools on ``/v1/chat/completions`` is
+        model-dependent (TOOL-12, measured 2026-11-12): ``gpt-6-luna`` accepts tools only with
+        ``none`` (omitted or ``low`` → HTTP 400), while ``gpt-5-mini`` rejects ``none`` and accepts
+        ``minimal``/``low`` or no value. A wrong value fails every action turn, which
+        ``scripts/eval/tool_selection.py`` shows.
+        """
+        return env_str("OPENAI_TOOL_REASONING_EFFORT", "")
+
+    @staticmethod
     def OPENAI_TIMEOUT() -> int:
         """Per-request timeout in seconds."""
         return env_int("OPENAI_TIMEOUT", 30)

@@ -105,6 +105,12 @@ ruff check .                                # from the repo root
 `test_red_team.py` also covers tools and prompts. Intent-router eval: `python -m scripts.eval.intent_router`.
 
 ## Known problems and history
+- TOOL-12: every action turn failed with HTTP 400 on `gpt-6-luna`, which refuses function tools on
+  `/v1/chat/completions` unless `reasoning_effort` is `none`, while `OPENAI_REASONING_EFFORT` (default `low`) was
+  sent on every call. `gpt-5-mini` is the opposite (refuses `none`, accepts tools with `low`), so no fixed value
+  works → `complete_with_tools_async` uses `OPENAI_TOOL_REASONING_EFFORT` when it offers tools (empty = the answer
+  effort); `.env.example` sets `none` for `gpt-6-luna`. The follow-up answer (tool result, no `tools=`) accepts
+  `low`. Found by `scripts/eval/tool_selection.py` (EVAL-05), 2026-11-11.
 - `chatbot.py` grew too large -> split into routing only (`ChatbotService`), `KnowledgeAnswerer` and
   `TurnDeadline`; the answerer takes a `before_generation` callback so moderation still runs before
   any tokens are generated, and one deadline covers both halves of a turn
@@ -150,9 +156,6 @@ ruff check .                                # from the repo root
 ## Status
 - Last reviewed: 2026-11-10
 - Open issues / follow-ups:
-  - TOOL-12 (docs/checklists/production.md): `OpenAIClientProvider.complete_with_tools_async` sends
-    `OPENAI_REASONING_EFFORT` with function tools, which `gpt-6-luna` refuses on `/v1/chat/completions` (HTTP 400),
-    so every action turn fails; workaround `OPENAI_REASONING_EFFORT=none`. Found by `scripts/eval/tool_selection.py`.
   - TST-09 (docs/checklists/testing.md): no direct unit tests for `TurnDeadline`, `KnowledgeAnswerer` (covered through `ChatbotService`
     in `test_chat_pipeline.py`), `ConfidenceScorer`, `AnthropicClientProvider`, `GeminiClientProvider`.
   - `response_cache.py` docstring still describes caching as part of `ChatbotService` (answers are

@@ -182,13 +182,13 @@ class OpenAIClientProvider(BaseLLMProvider):
             completion_tokens=int(getattr(usage, "completion_tokens", 0) or 0),
         )
 
-    def _default_kwargs(self, model: Optional[str]) -> Dict[str, Any]:
-        """Completion kwargs for ``model`` (the configured answer model by default)."""
+    def _default_kwargs(self, model: Optional[str], reasoning_effort: Optional[str] = None) -> Dict[str, Any]:
+        """Completion kwargs for ``model`` (the configured answer model by default), at ``reasoning_effort`` if given."""
         return self._completion_kwargs(
             model or Config.LLM.OPENAI_MODEL(),
             Config.LLM.OPENAI_MAX_TOKENS(),
             Config.LLM.OPENAI_TEMPERATURE(),
-            Config.LLM.OPENAI_REASONING_EFFORT(),
+            reasoning_effort or Config.LLM.OPENAI_REASONING_EFFORT(),
         )
 
     def complete(self, messages: List[Dict[str, Any]], model: Optional[str] = None) -> LLMResult:
@@ -296,7 +296,9 @@ class OpenAIClientProvider(BaseLLMProvider):
         Returns:
             ``(assistant_message, usage)``.
         """
-        kwargs: Dict[str, Any] = dict(messages=messages, **self._default_kwargs(model))
+        # Tools get their own reasoning effort: some models refuse tools with the answer's (TOOL-12).
+        effort = Config.LLM.OPENAI_TOOL_REASONING_EFFORT() if tools else None
+        kwargs: Dict[str, Any] = dict(messages=messages, **self._default_kwargs(model, effort))
         if tools:
             kwargs["tools"] = tools
             kwargs["tool_choice"] = "auto"
