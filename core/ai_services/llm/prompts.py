@@ -17,15 +17,19 @@ class SystemPrompts:
 
     DEFAULT_BOT_NAME = "Đa lĩnh vực"
 
+    # One entry per data/chunks/<ID> folder; translation.py reuses this map.
     JOURNAL_BY_ID = {
         "CSCE": "Công nghệ thông tin - Truyền thông (JS:CSCE)",
+        "EAB": "Kinh tế và Kinh doanh (JS:EAB)",
         "EES": "Khoa học Trái đất và Môi trường (JS:EES)",
         "ER": "Nghiên cứu Giáo dục (JS:ER)",
+        "FS": "Nghiên cứu Nước ngoài (JS:FS)",
         "LS": "Luật học (JS:LS)",
         "MAP": "Toán học - Vật lý (JS:MAP)",
         "MPS": "Khoa học Y Dược (JS:MPS)",
         "NST": "Khoa học Tự nhiên và Công nghệ (JS:NST)",
         "PAM": "Nghiên cứu Chính sách và Quản lý (JS:PAM)",
+        "SSH": "Khoa học Xã hội và Nhân văn (JS:SSH)",
     }
 
     # Universal prompt template in Vietnamese

@@ -7,29 +7,12 @@ from typing import Optional
 from openai import AsyncOpenAI
 
 from config.settings import Config
+from core.ai_services.llm.prompts import SystemPrompts
 
+# Same journals as the chat prompt, so a new journal is added in one place.
+JOURNAL_NAMES = SystemPrompts.JOURNAL_BY_ID
 
-JOURNAL_NAMES = {
-    "CSCE": "Công nghệ thông tin - Truyền thông (JS:CSCE)",
-    "EES": "Khoa học Trái đất và Môi trường (JS:EES)",
-    "ER": "Nghiên cứu Giáo dục (JS:ER)",
-    "LS": "Luật học (JS:LS)",
-    "MAP": "Toán học - Vật lý (JS:MAP)",
-    "MPS": "Khoa học Y Dược (JS:MPS)",
-    "NST": "Khoa học Tự nhiên và Công nghệ (JS:NST)",
-    "PAM": "Nghiên cứu Chính sách và Quản lý (JS:PAM)",
-}
-
-JOURNAL_ABBREVIATIONS = {
-    "CSCE": "JS:CSCE",
-    "EES": "JS:EES",
-    "ER": "JS:ER",
-    "LS": "JS:LS",
-    "MAP": "JS:MAP",
-    "MPS": "JS:MPS",
-    "NST": "JS:NST",
-    "PAM": "JS:PAM",
-}
+JOURNAL_ABBREVIATIONS = {code: f"JS:{code}" for code in JOURNAL_NAMES}
 
 
 ACADEMIC_TRANSLATION_PROMPT = """
