@@ -54,7 +54,7 @@ data classes in `app/models/`.
 | File | Public names | What it does |
 |---|---|---|
 | `settings_service.py` | `SettingsService` | Runtime settings edited in the admin web (fallback mode, canned replies, widget look, chat models, retrieval tuning, limits, support hours, retention) in `app_settings`, cached in memory; owner-only and public-widget key sets. |
-| `sql_tool_catalog.py` | `SqlToolCatalog` | The deployment's SQL tools from the `sql_tools` table (TOOL-08), toggled in the admin web; a `ToolSource` for the tool registry. |
+| `sql_tool_catalog.py` | `SqlToolCatalog` | The deployment's SQL tools from the `sql_tools` table (TOOL-08), toggled in the admin web; a `ToolSource` for the tool registry. `compile_definitions()` validates a definition file without the database (used by `sync()` and `scripts/eval/tool_selection.py`). |
 | `eval_case_service.py` | `EvalCaseService` | Golden eval set from real answers (ADM-12, RET-R3), PII-masked; create/list/delete/export. |
 | `log_service.py` | `LogService` | Reads `app.jsonl` and rotated copies for the admin log viewer, newest first. |
 

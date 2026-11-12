@@ -108,6 +108,30 @@ class SqlToolCatalog:
         logger.info("SQL tool %s %s by %s", name, "enabled" if enabled else "disabled", updated_by)
         return row
 
+    def compile_definitions(self, definitions: Sequence[Dict[str, Any]]) -> List[SqlTool]:
+        """
+        Tools from the integrator's definition file, without touching the database.
+
+        Used by :meth:`sync` to validate before writing, and by ``scripts/eval/tool_selection.py``
+        (EVAL-05) to offer the demo shop's tools exactly as a deployment would.
+
+        Raises:
+            InvalidRequestError: A definition is malformed or unsafe.
+        """
+        tools: List[SqlTool] = []
+        for definition in definitions:
+            unknown = set(definition) - set(DEFINITION_KEYS) - {"enabled"}
+            missing = {"name", "description", "args_schema", "sql_template", "allowed_columns"} - set(definition)
+            if unknown or missing:
+                raise InvalidRequestError(f"{definition.get('name', '?')}: unknown {sorted(unknown)} / missing {sorted(missing)}")
+            try:
+                values = {"required_tier": TIER_ANONYMOUS, "masked_columns": [], "row_limit": 20}
+                values.update({key: definition[key] for key in DEFINITION_KEYS if key in definition})
+                tools.append(self._compile(SqlToolDefinition(**values)))
+            except SqlToolDefinitionError as exc:
+                raise InvalidRequestError(str(exc)) from exc
+        return tools
+
     async def sync(self, definitions: Sequence[Dict[str, Any]], updated_by: str) -> List[str]:
         """
         Create or update definitions from the integrator's file, keeping each tool's ``enabled`` flag.
@@ -118,17 +142,7 @@ class SqlToolCatalog:
         Raises:
             InvalidRequestError: A definition is malformed or unsafe (nothing is written then).
         """
-        for definition in definitions:
-            unknown = set(definition) - set(DEFINITION_KEYS) - {"enabled"}
-            missing = {"name", "description", "args_schema", "sql_template", "allowed_columns"} - set(definition)
-            if unknown or missing:
-                raise InvalidRequestError(f"{definition.get('name', '?')}: unknown {sorted(unknown)} / missing {sorted(missing)}")
-            try:
-                values = {"required_tier": TIER_ANONYMOUS, "masked_columns": [], "row_limit": 20}
-                values.update({key: definition[key] for key in DEFINITION_KEYS if key in definition})
-                self._compile(SqlToolDefinition(**values))
-            except SqlToolDefinitionError as exc:
-                raise InvalidRequestError(str(exc)) from exc
+        self.compile_definitions(definitions)
         async with self._database.session() as session:
             for definition in definitions:
                 row = await session.get(SqlToolDefinition, definition["name"])

@@ -244,6 +244,7 @@ Any code change breaking one is a blocker.
 - [x] TOOL-09 Tests per tool: valid, invalid args, empty result, timeout, cross-user attempt — `test/integration/test_sql_tools.py`
 - [x] TOOL-10 Ship `business-db/readonly_role.sql` template for the client DBA (role, grants, views, RLS); setup CLI asks for resulting credentials — `deploy/business_db/reader_grants.sql` → `handover/business_db_grants.sql`; installer takes the reader URL; preflight proves it cannot write
 - [x] TOOL-11 Vendor-side fake business DB (same schema, seed data) for staging tests — demo shop DB (`demo` compose profile, `deploy/business_db/`)
+- [x] TOOL-12 The tool decision call works with the configured model — `gpt-6-luna` refused function tools with the default `OPENAI_REASONING_EFFORT=low` (HTTP 400, every action turn failed; found by EVAL-05) → the call offering tools uses `OPENAI_TOOL_REASONING_EFFORT` (`none` in `.env.example`; empty = answer effort, as `gpt-5-mini` refuses `none`); EVAL-05 35/35 with it (2026-11-12)
 
 ---
 
@@ -395,7 +396,7 @@ Any code change breaking one is a blocker.
 - [~] EVAL-02 Retrieval: recall@k, MRR — separately for VI→VI, EN→EN, cross-lingual, no-diacritic — overall and per source only
 - [ ] EVAL-03 Answer: faithfulness, relevance, correctness (RAGAS/DeepEval + human spot-check)
 - [~] EVAL-04 Intent routing: labeled set, all intents, both languages; confusion matrix — `scripts/eval/intent_router.py`, rag/action only
-- [ ] EVAL-05 Tool selection + argument accuracy (against fake business DB, TOOL-11)
+- [x] EVAL-05 Tool selection + argument accuracy (against fake business DB, TOOL-11) — `scripts/eval/tool_selection.py` on `golden_tool_calls.json` (35 questions, demo shop tools, intent router + decision call): 35/35 selection, 22/22 arguments with `OPENAI_REASONING_EFFORT=none` (2026-11-11); manual, calls the LLM
 - [x] EVAL-06 Effective-date correctness — superseded/scheduled versions tested end to end
 - [ ] EVAL-07 Handoff trigger precision/recall
 - [~] EVAL-08 Out-of-scope and injection sets — injection set deterministic (SEC-01); no out-of-scope set, no live-model scoring

@@ -23,7 +23,7 @@ another module.
 | `chatbot.py` | `ChatbotService`, `PURPOSE_INTENT`, `PURPOSE_TOOL` | Routes one turn (staff takeover, guard, sensitive topic, embedding router, intent router) and maps timeouts/errors to a safe `TurnResult`. |
 | `knowledge_answerer.py` | `KnowledgeAnswerer`, `GenerationGate`, `PURPOSE_ANSWER`, `PURPOSE_REWRITE` | Knowledge path: rewrite, retrieve, fallback, answer cache, grounded streamed answer, citations, confidence. |
 | `turn_deadline.py` | `TurnDeadline` | One time budget per turn: `after()`, `remaining()`, `guard(stream)`; raises `asyncio.TimeoutError`. |
-| `tool_calling_agent.py` | `ToolCallingAgent`, `MAX_TOOL_CALLS_PER_TURN` | One tool-calling round over OpenAI: rewrite, decision call with tool schemas, run tools, stream the final answer. |
+| `tool_calling_agent.py` | `ToolCallingAgent`, `MAX_TOOL_CALLS_PER_TURN` | One tool-calling round over OpenAI: rewrite, decision call with tool schemas (`decide()`, also scored by `scripts/eval/tool_selection.py`), run tools, stream the final answer. |
 | `intent_router.py` | `IntentRouter` | LLM classifier: `rag`, `action` or `login`; skips the call when no tool is offered; defaults to RAG on failure. |
 | `query_rewriter.py` | `QueryRewriter` | Light-model rewrite of a follow-up into a standalone query; also restores missing Vietnamese accents. |
 | `answer_marker.py` | `NoAnswerFilter` | Holds back the stream start until it is known not to be `[NO_ANSWER]`; a marker turns the turn into a fallback. |
@@ -85,7 +85,7 @@ cheapest work first: canned replies never pay for moderation, rewrite or retriev
   the `ToolSource` protocol, implemented by `services/sql_tool_catalog.py`, so core does not import it.
 - Used by: `app/api/container.py` (wires `ChatbotService`, providers, tools), `services/chat_service.py`,
   `services/settings_service.py`, `services/sql_tool_catalog.py`, `services/transcription_service.py`,
-  `scripts/manage.py`, `scripts/eval/intent_router.py`, `scripts/eval/generate_synthetic_queries.py`.
+  `scripts/manage.py`, `scripts/eval/intent_router.py`, `scripts/eval/tool_selection.py`, `scripts/eval/generate_synthetic_queries.py`.
 - External: LLM APIs via `openai`, `anthropic`, `google-genai`; SQLAlchemy for the business database
   (SQL tools). The tool agent, moderation and transcription always use OpenAI (or an
   OpenAI-compatible `OPENAI_BASE_URL`), whatever `LLM_PROVIDER` is. Tool calling is off unless
@@ -105,6 +105,12 @@ ruff check .                                # from the repo root
 `test_red_team.py` also covers tools and prompts. Intent-router eval: `python -m scripts.eval.intent_router`.
 
 ## Known problems and history
+- TOOL-12: every action turn failed with HTTP 400 on `gpt-6-luna`, which refuses function tools on
+  `/v1/chat/completions` unless `reasoning_effort` is `none`, while `OPENAI_REASONING_EFFORT` (default `low`) was
+  sent on every call. `gpt-5-mini` is the opposite (refuses `none`, accepts tools with `low`), so no fixed value
+  works → `complete_with_tools_async` uses `OPENAI_TOOL_REASONING_EFFORT` when it offers tools (empty = the answer
+  effort); `.env.example` sets `none` for `gpt-6-luna`. The follow-up answer (tool result, no `tools=`) accepts
+  `low`. Found by `scripts/eval/tool_selection.py` (EVAL-05), 2026-11-11.
 - `chatbot.py` grew too large -> split into routing only (`ChatbotService`), `KnowledgeAnswerer` and
   `TurnDeadline`; the answerer takes a `before_generation` callback so moderation still runs before
   any tokens are generated, and one deadline covers both halves of a turn

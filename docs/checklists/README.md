@@ -6,7 +6,7 @@ criteria once; when an item fails inside one folder, that folder's `README.md` l
 
 | Checklist | IDs | Covers | `[x]` / items |
 |---|---|---|---|
-| [production.md](production.md) | `CAP` `RES` `ARC` … `POST` | The product's definition of done: architecture, identity, ingestion, retrieval, generation, admin, observability, retention, OWASP LLM security (§15), Vietnam privacy (§16), evaluation, operations | 133 / 205 |
+| [production.md](production.md) | `CAP` `RES` `ARC` … `POST` | The product's definition of done: architecture, identity, ingestion, retrieval, generation, admin, observability, retention, OWASP LLM security (§15), Vietnam privacy (§16), evaluation, operations | 135 / 206 |
 | [code-quality.md](code-quality.md) | `CQ` | Layering, file size, linting, typing, error handling, dead code, repository docs | 8 / 18 |
 | [testing.md](testing.md) | `TST` | What CI runs, coverage, untested critical paths, flaky tests, frontend tests | 6 / 12 |
 | [security.md](security.md) | `APPSEC` | Web/API security of the code and containers (auth, sessions, limits, headers, secrets, SSRF/SQLi) | 12 / 15 |

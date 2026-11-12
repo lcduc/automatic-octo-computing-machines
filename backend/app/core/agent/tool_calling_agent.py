@@ -6,10 +6,10 @@ Minimal tool-calling orchestrator: rewrite -> let the model pick a tool (or not)
 import json
 import time
 import logging
-from typing import Any, AsyncGenerator, Dict, List, Optional
+from typing import Any, AsyncGenerator, Dict, List, Optional, Tuple
 
 # Local imports
-from app.models.llm import StreamDelta
+from app.models.llm import LLMUsage, StreamDelta
 from app.models.turn_trace import ToolCallRecord
 from app.models.tool_context import ToolContext
 from .history import recent_history
@@ -98,6 +98,31 @@ class ToolCallingAgent:
             ],
         }
 
+    async def decide(
+        self,
+        query: str,
+        history: Optional[List[Dict[str, str]]] = None,
+        model: Optional[str] = None,
+        light_model: Optional[str] = None,
+        context: ToolContext = ToolContext(),
+    ) -> Tuple[List[Dict[str, Any]], Any, List[LLMUsage]]:
+        """
+        Rewrite the query and make the decision call: which tool (if any) the model picks, with what arguments.
+
+        Also used on its own by ``scripts/eval/tool_selection.py`` (EVAL-05), so the eval scores
+        exactly the call a chat turn makes.
+
+        Returns:
+            ``(messages, assistant_message, usages)``: the prompt sent, the model's reply (its
+            ``tool_calls`` are the decision), and the usage of each LLM call made.
+        """
+        standalone_query, rewrite_usage = await self._query_rewriter.rewrite(query, history, light_model)
+        messages = self._build_messages(standalone_query, history)
+        message, decision_usage = await self._client_provider.complete_with_tools_async(
+            messages, tools=self._tool_registry.schemas(context), model=model
+        )
+        return messages, message, [usage for usage in (rewrite_usage, decision_usage) if usage is not None]
+
     async def stream(
         self,
         query: str,
@@ -123,16 +148,9 @@ class ToolCallingAgent:
             Exception: Provider failures propagate to the caller, which maps
                 them to a user-facing error instead of streaming raw text.
         """
-        standalone_query, rewrite_usage = await self._query_rewriter.rewrite(query, history, light_model)
-        if rewrite_usage is not None:
-            yield StreamDelta(usage=rewrite_usage)
-        messages = self._build_messages(standalone_query, history)
-
-        message, decision_usage = await self._client_provider.complete_with_tools_async(
-            messages, tools=self._tool_registry.schemas(context), model=model
-        )
-        if decision_usage is not None:
-            yield StreamDelta(usage=decision_usage)
+        messages, message, usages = await self.decide(query, history, model, light_model, context)
+        for usage in usages:
+            yield StreamDelta(usage=usage)
 
         if not message.tool_calls:
             yield StreamDelta(text=message.content or "")

@@ -20,7 +20,7 @@ test lives in `../loadtest/`.
   one matrix job per golden set (`golden_colloquial_dev`, `golden_colloquial_holdout`, `golden_queries`),
   after `alembic upgrade head` and `seed_demo documents` on a fresh pgvector database. No LLM.
 - **Manual** experiments: everything else. Scripts that call the LLM cost money: `chat_outcomes.py`,
-  `intent_router.py`, `generate_synthetic_queries.py`.
+  `intent_router.py`, `tool_selection.py`, `generate_synthetic_queries.py`.
 - **Helpers** (no CLI): `baseline.py`, `synthetic_dataset.py`, `threshold_calibrator.py`, `vietnamese_perturber.py`.
 
 | File | Public names | What it does |
@@ -35,6 +35,7 @@ test lives in `../loadtest/`.
 | `robustness.py` | `RetrievalConfig`, `RetrievalRobustness`, `load_router_cases`, `load_answerable`, `router_metrics`, `as_searched`, `variants`, `score_retrieval`, `print_tables`, `main` | Router and retrieval (dense, BM25, hybrid, full) on clean input and under every perturbation of `vietnamese_perturber.py`. Needs the demo knowledge base seeded. |
 | `router_classifier.py` | `CachedEmbeddings`, `LogisticRouteClassifier`, `RouterCrossValidation`, `print_table`, `main` | Nested stratified CV: the production nearest-example router vs logistic regression on the same e5 embeddings, clean and perturbed. |
 | `intent_router.py` | `IntentRoutingEvaluator`, `load_golden_set`, `print_report`, `main` | Accuracy of the LLM `IntentRouter` (rag vs action) on `golden_intents.json`, with the live tool registry. Exits 1 if any call silently fell back to rag. Calls the LLM. |
+| `tool_selection.py` | `ToolCase`, `ToolSelectionEvaluator`, `load_cases`, `demo_registry`, `caller_context`, `sql_parameters`, `accepted_arguments`, `arguments_match`, `build_report`, `print_report`, `run`, `main` | **EVAL-05.** Tool selection and argument accuracy on `golden_tool_calls.json`: each question goes through the LLM `IntentRouter`, then `ToolCallingAgent.decide()` with the tools its caller is offered (`get_current_time` + `deploy/business_db/demo_tools.json`, compiled by `SqlToolCatalog`; nothing executed, no database). Arguments are compared as the SQL parameters the tool would bind. Exits 1 if any LLM call failed. Calls the LLM. |
 | `hardware_divergence.py` | `HardwareDivergenceEvaluator`, `print_report`, `main` | Encodes the same queries with the embedding model on GPU and on CPU and reports the per-query cosine divergence. Needs CUDA. |
 | `threshold_calibrator.py` | `ThresholdRates`, `ThresholdCalibrator` | Picks the relevance threshold that best separates answerable from unanswerable questions (used by `rag.py`). |
 | `vietnamese_perturber.py` | `VietnamesePerturber`, `telex_keys` | Seeded, order-independent perturbations: `no_diacritics`, `abbreviations`, `telex`, `typos`, `no_spaces`, `chat_mix`. |
@@ -73,6 +74,7 @@ python -m scripts.eval.retrieval_variants --label baseline --out logs/variants/b
 python -m scripts.eval.robustness --only router
 python -m scripts.eval.router_classifier
 python -m scripts.eval.intent_router
+python -m scripts.eval.tool_selection --out logs/tool_selection.json
 python -m scripts.eval.hardware_divergence --golden-set scripts/demo_data/golden_queries.json
 python -m scripts.eval.generate_synthetic_queries --dry-run
 python -m scripts.eval.filter_synthetic_queries
@@ -81,7 +83,7 @@ python -m scripts.eval.finetune_embedding_model --output model_weights/finetuned
 ```
 
 Unit tests (`backend/test/unit/`): `test_eval_baseline.py`, `test_eval_compare_configs.py`,
-`test_eval_intent_router.py`, `test_query_adapter.py`, `test_synthetic_queries.py`,
+`test_eval_intent_router.py`, `test_eval_tool_selection.py`, `test_query_adapter.py`, `test_synthetic_queries.py`,
 `test_threshold_calibrator.py`, `test_vietnamese_perturber.py`. Run with `pytest test/unit -k "eval or
 query_adapter or synthetic or threshold or perturber"`.
 
@@ -116,10 +118,17 @@ query_adapter or synthetic or threshold or perturber"`.
   [`docs/reports/eval-robustness.md`](../../../docs/reports/eval-robustness.md).
 - `hardware_divergence.py` defaulted to a golden set that does not exist; the default is now
   `scripts/demo_data/golden_queries.json` (branch `refactor/structure-fixes`, 2026-11-10).
+- `tool_selection.py` (EVAL-05), first run (2026-11-11, `gpt-6-luna`): every decision call failed with HTTP 400,
+  because `/v1/chat/completions` refuses function tools together with `reasoning_effort` for that model, and
+  `OPENAI_REASONING_EFFORT` (default `low`) is sent on every call: the tool path of a chat turn errors with this
+  config (production TOOL-12, fixed with `OPENAI_TOOL_REASONING_EFFORT`). With `none` for the tool call and the
+  default `low` elsewhere: selection 35/35, arguments 22/22.
 - Windows: Vietnamese output raises `UnicodeEncodeError` (cp1252) when redirected → `PYTHONIOENCODING=utf-8`.
 
 ## Status
 - Last reviewed: 2026-11-10
-- Open issues / follow-ups: none.
+- Open issues / follow-ups: `golden_tool_calls.json` is saturated (35/35 with three tools); it only starts to
+  discriminate as a deployment adds tools, so extend it with each client's SQL tools at go-live. Not a CI gate
+  (calls the LLM).
 - Ceilings (`# ceiling:` markers in this folder): `finetune_embedding_model.py:60` — quadratic greedy batch
   fill, fine for a few thousand pairs — use a per-chunk queue beyond that.
