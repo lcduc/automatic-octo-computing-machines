@@ -103,13 +103,15 @@ ruff check .                  # from the repo root
   (lcduc/automatic-octo-computing-machines#76, 06f0477, 2026-11-10).
 - `context_builder.py` renamed to `context_assembler.py` to match its class `ContextAssembler`
   (branch `refactor/structure-fixes`, 2026-11-10).
+- Rerank pool 16 instead of 30 (OPT-02) re-tested on all three golden sets: it fails
+  `scripts/eval/rag.py --check` on `golden_colloquial_dev` (MRR 1.000 -> 0.970, one more answerable
+  question below `SIMILARITY_THRESHOLD`), so the pool stays at 30 (branch `docs/opt-02-pool-result`, 2026-11-12).
 
 ## Status
-- Last reviewed: 2026-11-11
+- Last reviewed: 2026-11-12
 - Open issues / follow-ups:
   - `embeddings.py` keeps module-level helpers marked for legacy compatibility (`get_embedder`,
     `get_device_info`) and lacks type hints on several public methods.
-  - OPT-02: a smaller rerank pool (`MIN_RERANK_POOL` in `retriever.py`) is the cheapest throughput lever (docs/checklists/optimization.md).
 - Ceilings (`# ceiling:` markers in this folder):
   - `knowledge_index.py:159` — whole corpus held in RAM and scanned brute-force (~1.5 KB/chunk at 384
     dims, a few ms per query for 100k chunks) — move semantic search to a pgvector HNSW index past ~500k chunks.

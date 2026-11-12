@@ -124,7 +124,7 @@ The 5-user row being faster than the 1-user row (retrieval 367 vs 449 ms) is mos
 
 These are not done here, and each needs `scripts/eval/rag.py` to confirm retrieval quality holds. Cheapest first:
 
-1. **A smaller rerank pool.** Lower `MIN_RERANK_POOL` from 30 to 16, or cap the reranker at 256 tokens instead of 512 (the demo chunks are FAQ-sized). Either roughly halves the GPU work per turn.
+1. **A smaller rerank pool.** Lower `MIN_RERANK_POOL` from 30 to 16, or cap the reranker at 256 tokens instead of 512 (the demo chunks are FAQ-sized). Either roughly halves the GPU work per turn. Pool 16 was tried and rejected (OPT-02, 2026-11-12): it fails the retrieval regression gate on the colloquial dev set (MRR 1.000 → 0.970). The 256-token cap is untried.
 2. **Batch reranking across concurrent turns** in one forward pass. The model-server's queue is the natural place for it.
 3. **A smaller cross-encoder** for the tiers that tolerate it. `cross-encoder/mmarco-mMiniLMv2-L12-H384-v1` is already in `model_weights/`.
 4. **Admission set to the knee.** With `MAX_CONCURRENT_CHATS=16`, the API admits about 6 more turns than the GPU can rerank promptly. At 10–12, overload becomes an earlier 503 with `Retry-After` instead of 2.4 s TTFTs. That is a product choice.
