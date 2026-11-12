@@ -133,12 +133,12 @@ frontends/widget/                   chat widget (Next.js); client deployments cu
 frontends/admin/                    admin web shared by every deployment (Vite + React)
 frontends/streamlit/                internal Streamlit demo of the chat API
 deploy/                             installer, ops CLI (deploy/ops) and its compose assets
-docs/README.md              index of the docs folder
-docs/checklists/            definition of done by aspect (production, code quality, testing, security, ...)
-docs/deployment.md          VPS deployment, embedding, backups, operations
-docs/api.md                 API reference (public chat + admin); docs/openapi.json is its schema
-docs/performance.md         load test of the chat pipeline (scripts/loadtest/): latency, ceiling, VRAM
-docs/reports/               dated reviews and experiment write-ups (point-in-time, not kept current)
+docs/README.md                      index of the docs folder
+docs/checklists/                    definition of done by aspect (production, code quality, testing, security, ...)
+docs/deployment.md                  VPS deployment, embedding, backups, operations
+docs/api.md                         API reference (public chat + admin); docs/openapi.json is its schema
+docs/performance.md                 load test of the chat pipeline (scripts/loadtest/): latency, ceiling, VRAM
+docs/reports/                       dated reviews and experiment write-ups (point-in-time, not kept current)
 ```
 
 ## Development
