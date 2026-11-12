@@ -86,10 +86,12 @@ class Reranker:
                 import torch
 
                 self.device = "cuda" if torch.cuda.is_available() else "cpu"
-                self.model = model.to(self.device)
                 if self.device == "cuda":
-                    # fp16 halves the weights on GPU; CPU keeps fp32.
-                    self.model = self.model.half()
+                    # fp16 halves the weights on GPU; CPU keeps fp32. Halved on the CPU
+                    # first: halving after the move leaves the freed fp32 copy (~1.6 GB)
+                    # reserved in PyTorch's CUDA cache, out of reach of OCR (OPT-04).
+                    model = model.half()
+                self.model = model.to(self.device)
                 self.tokenizer = tokenizer
                 self.model.eval()
 

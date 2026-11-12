@@ -73,6 +73,26 @@ def test_scoring_runs_in_batches_of_the_configured_size(monkeypatch):
     assert sizes == [RERANK_BATCH_SIZE, RERANK_BATCH_SIZE, 3] and len(scores) == RERANK_BATCH_SIZE * 2 + 3
 
 
+def test_weights_are_halved_before_they_reach_the_gpu(monkeypatch):
+    """Halving after the move leaves the fp32 copy (~1.6 GB) in PyTorch's CUDA cache (OPT-04)."""
+    import torch
+
+    calls = []
+
+    class RecordingModel(FakeModel):
+        def to(self, device):
+            calls.append(f"to({device})")
+            return self
+
+        def half(self):
+            calls.append("half")
+            return self
+
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+    Reranker(PRIMARY)._create_cross_encoder_wrapper(RecordingModel(), tokenizer=None)
+    assert calls == ["half", "to(cuda)"]
+
+
 def test_no_reranker_when_neither_loads(monkeypatch):
     _fake_transformers(monkeypatch, unavailable={PRIMARY, RERANKER_FALLBACK_MODEL})
     assert not Reranker(PRIMARY).available()

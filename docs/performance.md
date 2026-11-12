@@ -17,7 +17,8 @@ Measured 2026-10-24 on a development machine, not staging. See [Limits](#limits)
   With reranking switched off, retrieval falls to about 1 ms and throughput rises 2.4× to 11.7 turns/s, where the admission cap becomes the limit.
 - **Headroom.** The checklist's design peak is 0.17 msg/s. The measured ceiling is about 28× that on an RTX 3060.
 - **VRAM.** The API holds about 3.4 GB of the 12 GB card, flat from idle to 50 users.
-  About 1.6 GB of that is PyTorch cache left over from loading the reranker in fp32 before halving it.
+  About 1.6 GB of that is PyTorch cache left over from loading the reranker in fp32 before halving it
+  (since fixed by OPT-04: the reranker is halved before the move, so that cache is gone).
   Weights are 1.3 GB, and reranking activations peak at about 0.17 GB. RAM (API RSS) peaks at 1.74 GB.
 
 ## Setup
@@ -127,7 +128,7 @@ These are not done here, and each needs `scripts/eval/rag.py` to confirm retriev
 2. **Batch reranking across concurrent turns** in one forward pass. The model-server's queue is the natural place for it.
 3. **A smaller cross-encoder** for the tiers that tolerate it. `cross-encoder/mmarco-mMiniLMv2-L12-H384-v1` is already in `model_weights/`.
 4. **Admission set to the knee.** With `MAX_CONCURRENT_CHATS=16`, the API admits about 6 more turns than the GPU can rerank promptly. At 10–12, overload becomes an earlier 503 with `Retry-After` instead of 2.4 s TTFTs. That is a product choice.
-5. **Load the reranker in fp16 before moving it to the GPU.** This doesn't change speed, but it returns about 1.6 GB of VRAM, for example to the OCR models.
+5. **Load the reranker in fp16 before moving it to the GPU.** This doesn't change speed, but it returns about 1.6 GB of VRAM, for example to the OCR models. Done (OPT-04, 2026-11-11): CUDA reserved memory for the reranker fell from 2,672 to 1,092 MB.
 
 ## Limits
 
