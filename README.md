@@ -15,6 +15,13 @@ Everything runs on one GPU box. It is installed with `deploy/install.sh` and run
 `chatbot` ops CLI (see [docs/deployment.md](docs/deployment.md)); a plain
 `docker compose up -d` refuses to start without the secrets the installer generates.
 
+## Video introduction
+
+[![RAG Chatbot in 21 seconds: the widget answering with citations](docs/assets/intro-poster.jpg)](docs/assets/intro.mp4)
+
+A 21-second tour (click the image to play): the widget answering with citations, how each
+question is answered, the admin knowledge base and the installer. All data shown is fictional.
+
 ## How a question is answered
 
 1. **Guardrails** (free, rule-based plus OpenAI's free moderation):

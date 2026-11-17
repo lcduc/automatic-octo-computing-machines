@@ -14,4 +14,5 @@ File names are lowercase kebab-case.
 | [dashboard-monitoring-plan.md](dashboard-monitoring-plan.md) | Tiered plan for client-facing admin dashboards (business, quality, support, system) | Yes, until all slices land |
 | [privacy-data-flows.md](privacy-data-flows.md) | Map of personal data flows (PRV-01) | Yes |
 | [diagrams/](diagrams/) | Architecture, chat-answer and ingestion diagrams (SVG + HTML) | Yes |
+| [assets/](assets/) | Media for the root README: the 21-second intro video (`intro.mp4`) and its poster | Re-record when the product's look changes |
 | [reports/](reports/) | Dated reviews and experiment write-ups | No, point-in-time |
