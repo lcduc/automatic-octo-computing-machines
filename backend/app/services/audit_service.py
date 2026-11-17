@@ -1,13 +1,14 @@
 """
-Admin audit trail: records every admin write (and sign-in attempt) with its outcome.
+Admin audit trail: records every admin write (and sign-in attempt) with its outcome,
+lists it and summarises it for the security card.
 """
 
 # Standard library imports
 import logging
 import uuid
 from dataclasses import dataclass
-from datetime import datetime
-from typing import Any, List, Optional, Tuple
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, List, Optional, Tuple
 
 # Local imports
 from app.core.storage.audit_repository import AuditRepository
@@ -19,6 +20,8 @@ logger = logging.getLogger(__name__)
 #: Body keys whose values never reach the audit log.
 SECRET_KEYS = frozenset({"password", "current_password", "new_password", "key", "access_token"})
 REDACTED = "***"
+#: Client IPs listed in the summary, those with the most failed sign-ins first.
+TOP_FAILED_LOGIN_IPS = 5
 
 
 def redact_secrets(value: Any) -> Any:
@@ -87,3 +90,22 @@ class AuditService:
         """A page of entries, newest first, and the total matching the filters."""
         async with self._database.session() as session:
             return await AuditRepository(session).list(actor, method, path_contains, since, limit, offset)
+
+    async def summary(self, days: int) -> Dict[str, Any]:
+        """
+        Security counts over the last ``days`` days (a rolling window ending now).
+
+        Args:
+            days: Length of the window in days.
+
+        Returns:
+            ``since``, one count per category (see ``AuditRepository.summary``) and
+            ``failed_login_ips``, the IPs with the most failed sign-ins.
+        """
+        since = datetime.now(timezone.utc) - timedelta(days=days)
+        async with self._database.session() as session:
+            repository = AuditRepository(session)
+            counts = await repository.summary(since)
+            failed_login_ips = await repository.failed_login_ips(since, TOP_FAILED_LOGIN_IPS)
+        logger.debug("Audit summary over %d days: %s", days, counts)
+        return {"since": since, **counts, "failed_login_ips": failed_login_ips}

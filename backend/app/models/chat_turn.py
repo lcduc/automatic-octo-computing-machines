@@ -41,6 +41,10 @@ class TurnOutcome(str, Enum):
     ERROR = "error"
 
 
+#: Answers below this confidence count as unhelpful for the repeated-no-answer trigger.
+LOW_CONFIDENCE = 0.35
+
+
 class HandoffReason(str, Enum):
     """Why a conversation was handed to a human (stored as the ticket's reason code)."""
 

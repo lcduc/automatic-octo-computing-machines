@@ -19,8 +19,9 @@ and commit. Schema changes go through Alembic (`backend/migrations/`), never by 
 | `knowledge_repository.py` | `KnowledgeRepository`, `ClaimedUpload`, `IngestionQueueStats`, `IndexRow` | Sources, documents, chunks: listing, hash lookup, chunk replace/shift, review counts, stale-embedding scan, rows for the in-memory index, and the ingestion queue (claim with `SKIP LOCKED`, renew, release). |
 | `conversation_repository.py` | `ConversationRepository` | Conversations, messages, feedback, handoff tickets, token usage, traces; admin listings and usage / latency / cost aggregates. |
 | `access_repository.py` | `AccessRepository` | API keys (lookup by hash) and admin users (by email, active owners count). |
-| `audit_repository.py` | `AuditRepository` | Insert and filtered listing of the admin audit log; nothing else. |
-| `metrics_repository.py` | `MetricsRepository` | Aggregates one local day from the raw tables and upserts it into `metrics_daily` (OBS-03); history for dashboards. |
+| `audit_repository.py` | `AuditRepository` | Insert, filtered listing and the security summary of the admin audit log (one `count().filter` query per category, top failed-login IPs). |
+| `knowledge_health_repository.py` | `KnowledgeHealthRepository` | Read-only aggregates for the document-health report: active/disabled/failed counts, documents ranked by citing answers (all or thumbs-down only, via `jsonb_array_elements(messages.citations)`, one count per answer), never-cited active documents, expiring and scheduled documents. |
+| `metrics_repository.py` | `MetricsRepository`, `UNKNOWN`, `INTEGER_TEXT`, `STEP_LATENCY_DECIMALS`, `WEEKDAYS`, `HOURS_PER_DAY` | Aggregates one local day from the raw tables and upserts it into `metrics_daily` (OBS-03); history for dashboards. `breakdown` holds outcomes, cost by model/tier, tokens by purpose, handoff reasons, conversations handed off, cited / low-confidence / cached answers, guard reasons, per-step latency p50/p95 (from `message_traces.steps_ms`), routes, intents, feedback, ingestion failures, visitors, returning visitors, visitors by tier, single-turn conversations. `visitor_stats()` also serves `/usage/summary`; `traffic()` gives user messages per local weekday × hour (7×24). |
 | `monitoring_repository.py` | `MonitoringRepository` | Queries behind alert rules (turn errors, failed uploads, overdue tickets) and the alert de-dup state (OBS-04). |
 | `privacy_repository.py` | `PrivacyRepository` | Data-subject export/delete queries and legal-hold lookups (PRV-03, RET-R2). |
 | `retention_repository.py` | `RetentionRepository` | One bulk `DELETE` per data type for the retention purge (PRV-04); legal-held conversations and kept tickets survive. |
@@ -86,6 +87,18 @@ From `backend/` with `venv` active.
   than a year (migration `87894e201f49`, `e029fc9`, 2026-09-29). The trigger DDL lives both in
   `audit_tables.py` (for `create_all` in tests) and in the migrations; change both together.
 - Handoff tickets: one open ticket per conversation (`1b98334`, 2026-10-01).
+- Rollup keys added later (`conversations_handed_off`, `cited_answers`, `low_confidence_answers`,
+  `cached_answers`, `guard_reasons`, `step_latency_ms`; dashboard plan slice 2, 2026-11-17) are missing
+  from days rolled up before; `python -m scripts.backfill_metrics` recomputes the days whose raw rows still
+  exist. `step_latency_ms` expands `steps_ms` with a lateral `jsonb_each_text` and only casts values
+  matching `INTEGER_TEXT`, so a non-integer (or overlong) step value is skipped instead of failing the
+  rollup.
+- Visitor rollup keys (`visitors`, `returning_visitors`, `visitors_by_tier`, `single_turn_conversations`) and
+  the traffic grid (dashboard plan slice 4, 2026-11-17): `visitor_stats()` serves both the daily rollup and
+  `/usage/summary`. A conversation counts as single-turn in its creation day until it gets a second answer;
+  the rollup recomputes yesterday, so only a follow-up more than a day later leaves an older day too high.
+  `traffic()` groups on `extract(isodow|hour FROM timezone(:tz, created_at))`; the GROUP BY reuses the select's
+  expression so both share one bind parameter (separate parameters fail PostgreSQL's GROUP BY check).
 
 ## Status
 - Last reviewed: 2026-11-10

@@ -26,6 +26,7 @@ Marked tests also run in the plain `pytest` step. Async tests need an explicit `
 |---|---|
 | `test_alert_notifier.py` | `AlertNotifier` delivery to Telegram, Slack or e-mail (mocked transport and mailer). |
 | `test_audit_redaction.py` | `redact_secrets`: audit entries never store secrets, at any nesting depth. |
+| `test_backfill_metrics.py` | `scripts.backfill_metrics`: days run oldest first and never past the shortest raw-row retention. |
 | `test_business_calendar.py` | `BusinessCalendar` support hours, holidays and ticket due times (HND-07, HND-14). |
 | `test_chat_pipeline.py` | `ChatbotService` routing, fallbacks, caching and token accounting; defines the fakes other unit tests reuse. |
 | `test_chat_turn_recovery.py` | Regressions from the widget: bad query rewrite, replayed error, human request. |
@@ -65,7 +66,7 @@ Marked tests also run in the plain `pytest` step. Async tests need an explicit `
 | `test_tool_calling_agent.py` | `ToolCallingAgent` and `ToolRegistry`. |
 | `test_transcription.py` | Voice transcription: `OpenAIClientProvider` and `TranscriptionService`. |
 | `test_upload_store.py` | `UploadStore` keeps queued upload files on disk. |
-| `test_usage_limits.py` | `TimeBuckets` and the usage policy (pure logic). |
+| `test_usage_limits.py` | `TimeBuckets`, the usage policy and the month-end spend projection (pure logic). |
 | `test_vietnamese_parsing.py` | Vietnamese/English periods and money amounts for SQL tool arguments (TOOL-07). |
 | `test_vietnamese_perturber.py` | `scripts.eval.vietnamese_perturber`: telex typos, missing diacritics, abbreviations. |
 
@@ -82,9 +83,11 @@ All skip when `TEST_DATABASE_URL` is unset, except `test_document_parsing.py`, w
 | `test_document_review.py` | New documents wait for owner/editor approval before the assistant may answer from them. |
 | `test_eval_cases_api.py` | Feedback review and the golden eval set through the admin API (ADM-12, RET-R3). |
 | `test_host_identity_api.py` | Logged-in host users: conversation ownership, anonymous -> logged-in upgrade, logout, cross-device access, token replay. |
+| `test_audit_summary.py` | `GET /admin/audit/summary`: every category's path/method/status rule, top failed-login IPs, the window, owner-only access. |
+| `test_knowledge_health.py` | `GET /admin/knowledge/health`: citation counts (once per answer), never-cited, thumbs-down, expiring/scheduled/disabled/failed documents, `limit` and `days`. |
 | `test_knowledge_service.py` | `KnowledgeService`, `ChunkEditingService`, `IndexSyncService`, `IngestionWorker`: CRUD keeps the index in sync, uploads go through the queue. |
 | `test_knowledge_transfer.py` | `KnowledgeTransferService`: a knowledge base round-trips without embeddings. |
-| `test_observability.py` | Daily rollup, alert rules and the job scheduler. |
+| `test_observability.py` | Daily rollup (every `breakdown` key, incl. answer quality, guard reasons and per-step latency), alert rules and the job scheduler. |
 | `test_privacy_api.py` | Legal hold and data-subject requests through the admin API (PRV-03, RET-R2, RET-R5). |
 | `test_retention.py` | Retention purge (PRV-04, RET-R1/R2/R4). |
 | `test_sql_tools.py` | `hard_gate`: SQL tools on the demo shop in a separate `chatbot_business_test` database via a read-only `chatbot_reader` role with RLS; anonymous never reaches a private tool, user A never gets user B's rows. Loads `deploy/business_db/demo_tools.json`. |

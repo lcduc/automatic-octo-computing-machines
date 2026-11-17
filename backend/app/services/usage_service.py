@@ -9,7 +9,7 @@ month. Anonymous visitors are paused first as the spend cap nears.
 
 # Standard library imports
 import logging
-from datetime import date, datetime, time as dt_time, timedelta
+from datetime import date, datetime, time as dt_time, timedelta, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional
 from zoneinfo import ZoneInfo
@@ -18,15 +18,18 @@ from zoneinfo import ZoneInfo
 from app.config.settings import Config
 from app.core.storage.conversation_repository import ConversationRepository
 from app.core.storage.database import Database
+from app.core.storage.metrics_repository import MetricsRepository
 from app.core.storage.tables.usage_tables import WINDOW_DAY, WINDOW_HOUR, WINDOW_MINUTE, WINDOW_MONTH
 from app.models.caller import ChatCaller
-from app.models.usage_policy import UsagePolicy
+from app.models.usage_policy import MICRO_USD_PER_USD, UsagePolicy
 from .rate_limit_service import Limit, RateLimitService, hashed
 
 logger = logging.getLogger(__name__)
 
 #: Counter holding everyone's LLM spend.
 SPEND_SCOPE = "spend:all"
+#: Month elapsed before spend is projected; earlier, a few hours of traffic extrapolate wildly.
+MIN_PROJECTION_ELAPSED = timedelta(days=1)
 
 
 class BudgetVerdict(str, Enum):
@@ -47,6 +50,29 @@ def identity_scope(caller: ChatCaller) -> str:
 def ip_scope(caller: ChatCaller) -> str:
     """Counter identity of the caller's IP (hashed: IPs are personal data)."""
     return f"ip:{hashed(caller.client_ip)}"
+
+
+def project_month_spend(
+    spent_micro_usd: int, now: datetime, month_start: datetime, month_end: datetime
+) -> Optional[int]:
+    """
+    Month-end spend if the month continues at its average pace so far.
+
+    Args:
+        spent_micro_usd: Spend from ``month_start`` until ``now``.
+        now: The current moment (aware).
+        month_start: Start of the current local month (aware).
+        month_end: Start of the next local month (aware).
+
+    Returns:
+        Projected spend in micro-USD, or ``None`` during the month's first day.
+    """
+    # ceiling: linear projection, ignores weekday/seasonal patterns; fit on daily rollups if clients plan budgets from it
+    elapsed = now.astimezone(timezone.utc) - month_start.astimezone(timezone.utc)
+    if elapsed < MIN_PROJECTION_ELAPSED:
+        return None
+    month = month_end.astimezone(timezone.utc) - month_start.astimezone(timezone.utc)
+    return round(spent_micro_usd * (month / elapsed))
 
 
 class UsageService:
@@ -133,14 +159,32 @@ class UsageService:
         """Local midnight of ``day`` as an aware datetime."""
         return datetime.combine(day, dt_time.min, tzinfo=self._timezone)
 
-    async def summary(self, days: int) -> Dict[str, Any]:
+    def _month(self, spend: Dict[str, int], spend_cap_usd: float) -> Dict[str, Any]:
+        """This month's spend with its month-end projection and the cap (``0`` = no cap)."""
+        buckets = self._counters.buckets
+        now = buckets.now()
+        start = buckets.start(WINDOW_MONTH, now)
+        projected = project_month_spend(spend["cost_micro_usd"], now, start, buckets.end(WINDOW_MONTH, start))
+        return {
+            **spend,
+            "projected_cost_micro_usd": projected,
+            "spend_cap_micro_usd": round(max(0.0, spend_cap_usd) * MICRO_USD_PER_USD),
+        }
+
+    async def summary(self, days: int, spend_cap_usd: float) -> Dict[str, Any]:
         """
         Dashboard statistics for the last ``days`` local days.
 
+        Args:
+            days: Local days to cover, today included.
+            spend_cap_usd: The monthly spend cap (``0`` = no cap), reported with this month's spend.
+
         Returns:
             Daily tokens and cost per model, tokens per purpose, cost per tier,
-            outcome and feedback counts, latency percentiles, totals and this
-            month's spend.
+            outcome and feedback counts, latency percentiles, visitors, single-turn
+            conversations, user messages per local weekday and hour (``traffic``,
+            7x24, Monday first), totals and this month's spend with its projection
+            and the cap.
         """
         today = self._today()
         since = self._start_of(today - timedelta(days=max(1, days) - 1))
@@ -152,6 +196,10 @@ class UsageService:
             outcomes = await repository.outcome_counts(since)
             feedback = await repository.feedback_counts(since)
             latency = await repository.latency_percentiles(since)
+            metrics = MetricsRepository(session)
+            now = self._counters.buckets.now()
+            visitors = await metrics.visitor_stats(since, now)
+            traffic = await metrics.traffic(since, now, self._timezone.key)
         return {
             "since": since.isoformat(),
             "daily": [{**row, "day": row["day"].isoformat()} for row in daily],
@@ -160,8 +208,15 @@ class UsageService:
             "outcomes": outcomes,
             "feedback": feedback,
             "latency": latency,
+            "visitors": {
+                "total": visitors["visitors"],
+                "returning": visitors["returning_visitors"],
+                "by_tier": visitors["visitors_by_tier"],
+            },
+            "single_turn_conversations": visitors["single_turn_conversations"],
+            "traffic": traffic,
             "totals": self._totals(daily),
-            "month": await self.month_spend(),
+            "month": self._month(await self.month_spend(), spend_cap_usd),
         }
 
     @staticmethod

@@ -203,6 +203,64 @@ class CitingAnswer(BaseModel):
     created_at: datetime
 
 
+class DocumentRef(BaseModel):
+    """A document named in the health report."""
+
+    document_id: uuid.UUID
+    title: str
+
+
+class CitedDocument(DocumentRef):
+    """A document and how many answers in the window cited it."""
+
+    citations: int
+
+
+class UncitedDocument(DocumentRef):
+    """An active document no answer in the window cited."""
+
+    created_at: datetime
+
+
+class NeverCited(BaseModel):
+    """How many active documents went uncited, with the oldest of them."""
+
+    count: int
+    items: List[UncitedDocument]
+
+
+class NotHelpfulDocument(DocumentRef):
+    """A document and how many thumbs-down answers cited it."""
+
+    count: int
+
+
+class ExpiringDocument(DocumentRef):
+    """An enabled document whose validity ends soon."""
+
+    effective_to: date
+
+
+class ScheduledDocument(DocumentRef):
+    """A document that comes into force later."""
+
+    effective_from: date
+
+
+class KnowledgeHealthOut(BaseModel):
+    """Document health: usage by answers since ``since``, and validity dates."""
+
+    since: datetime
+    documents: int
+    disabled: int
+    failed: int
+    most_cited: List[CitedDocument]
+    never_cited: NeverCited
+    not_helpful: List[NotHelpfulDocument]
+    expiring: List[ExpiringDocument]
+    scheduled: List[ScheduledDocument]
+
+
 class ChunkCreate(_MetadataModel):
     """A new chunk inserted into a document."""
 

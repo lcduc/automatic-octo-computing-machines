@@ -3,13 +3,15 @@ Daily rollup, alert rules and the job scheduler against a real PostgreSQL.
 """
 
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, time as dt_time, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 import httpx
 import pytest
 from sqlalchemy import text
 
 from app.core.infrastructure.job_scheduler import JobScheduler, ScheduledJob, lock_key
+from app.core.storage.metrics_repository import MetricsRepository
 from app.core.storage.tables.base import utc_now
 from app.core.storage.tables.conversation_tables import Conversation, HandoffRequest, Message, TokenUsage
 from app.core.storage.tables.knowledge_tables import KnowledgeDocument
@@ -90,8 +92,115 @@ async def test_rollup_aggregates_the_day_and_is_idempotent(database):
     assert today["breakdown"]["cost_by_model"] == {"gpt-test": 150}
     assert today["breakdown"]["handoff_reasons"] == {"user_request": 1}
     assert today["breakdown"]["routes"] == {"rag": 3}
+    assert today["breakdown"]["step_latency_ms"] == {"first_token": {"p50": 300.0, "p95": 300.0},
+                                                     "total": {"p50": 800.0, "p95": 800.0}}
     async with database.session() as session:
         assert await session.scalar(text("SELECT count(*) FROM metrics_daily")) == 2
+
+
+@pytest.mark.asyncio
+async def test_rollup_counts_answer_quality_guard_reasons_and_step_latency(database):
+    answers = [  # (outcome, citations, confidence, cached, guard_reason, steps_ms)
+        ("answered", [{"source": "faq"}], 0.9, True, None, {"retrieval": 100, "llm": 1000, "note": "n/a"}),
+        ("answered", [], 0.2, False, None, {"retrieval": 300, "llm": 2000, "ratio": 0.5}),
+        ("answered", [{"source": "faq"}], None, False, None, {"retrieval": 200, "nested": {"ms": 5}}),
+        ("blocked", [{"source": "faq"}], 0.1, True, "off_topic", {}),  # not answered: no answer counts
+        ("error", [], None, False, "llm_timeout", {"retrieval": 99999999999}),  # too large to cast: skipped
+        ("error", [], None, False, "llm_timeout", {}),
+    ]
+    async with database.session() as session:
+        conversation = Conversation(end_user_id="visitor-quality")
+        session.add(conversation)
+        await session.flush()
+        for outcome, citations, confidence, cached, guard_reason, steps_ms in answers:
+            answer = Message(conversation_id=conversation.id, role="assistant", content="đáp", outcome=outcome,
+                             citations=citations, confidence=confidence, cached=cached, guard_reason=guard_reason)
+            session.add(answer)
+            await session.flush()
+            session.add(MessageTrace(message_id=answer.id, conversation_id=conversation.id, steps_ms=steps_ms))
+        session.add(Message(conversation_id=conversation.id, role="user", content="hỏi", guard_reason="user_side"))
+        session.add(HandoffRequest(conversation_id=conversation.id, reason="no_knowledge"))
+        session.add(HandoffRequest(conversation_id=conversation.id, reason="user_request"))
+
+    rollup = MetricsRollupService(database, TIMEZONE)
+    await rollup.run()
+    [today] = [row for row in await rollup.history(2) if row["turns"]]
+    breakdown = today["breakdown"]
+    assert today["handoffs"] == 2 and breakdown["conversations_handed_off"] == 1
+    assert breakdown["outcomes"]["answered"] == 3
+    assert breakdown["cited_answers"] == 2
+    assert breakdown["low_confidence_answers"] == 1
+    assert breakdown["cached_answers"] == 1
+    assert breakdown["guard_reasons"] == {"off_topic": 1, "llm_timeout": 2}
+    assert breakdown["step_latency_ms"] == {
+        "retrieval": {"p50": 200.0, "p95": 290.0},
+        "llm": {"p50": 1500.0, "p95": 1950.0},
+    }
+
+
+async def _chat(session, visitor, answers, at=None, handoff=False):
+    """A conversation of ``visitor`` with one user message per answer time (``None`` = now)."""
+    conversation = Conversation(end_user_id=visitor, **({"created_at": at} if at else {}))
+    session.add(conversation)
+    await session.flush()
+    for answered_at in answers:
+        stamp = {"created_at": answered_at} if answered_at else {}
+        session.add(Message(conversation_id=conversation.id, role="user", content="hỏi", **stamp))
+        session.add(Message(conversation_id=conversation.id, role="assistant", content="đáp", outcome="answered", **stamp))
+    if handoff:
+        session.add(HandoffRequest(conversation_id=conversation.id, reason="user_request"))
+
+
+@pytest.mark.asyncio
+async def test_rollup_counts_visitors_tiers_and_single_turn_conversations(database):
+    zone = ZoneInfo(TIMEZONE)
+    today = datetime.now(zone).date()
+    midnight = datetime.combine(today, dt_time.min, tzinfo=zone)
+    yesterday = midnight - timedelta(hours=1)
+    async with database.session() as session:
+        await _chat(session, "visitor-a", [midnight - timedelta(days=3)], at=midnight - timedelta(days=3))
+        await _chat(session, "visitor-a", [None])  # single turn
+        await _chat(session, "visitor-a", [yesterday, None], at=yesterday)  # created yesterday: not today's
+        await _chat(session, "visitor-b", [None], handoff=True)  # handed off: not single turn
+        await _chat(session, "visitor-b", [None, None])  # two answers
+        for end_user_id, tier in [("visitor-a", "anonymous"), ("visitor-a", "anonymous"), ("visitor-b", "member"),
+                                  ("visitor-b", None), (None, "staff")]:
+            session.add(TokenUsage(end_user_id=end_user_id, tier=tier, purpose="answer", provider="openai", model="m"))
+
+    rollup = MetricsRollupService(database, TIMEZONE)
+    breakdown = (await rollup.rollup_day(today))["breakdown"]
+    assert breakdown["visitors"] == 2
+    assert breakdown["returning_visitors"] == 1  # visitor-a had a conversation before today
+    assert breakdown["visitors_by_tier"] == {"anonymous": 1, "member": 1, "unknown": 1}  # no visitor id: skipped
+    assert breakdown["single_turn_conversations"] == 1
+    before = (await rollup.rollup_day(today - timedelta(days=1)))["breakdown"]
+    assert before["visitors"] == 1 and before["returning_visitors"] == 1
+    assert before["single_turn_conversations"] == 0  # its conversation got a second answer today
+
+
+@pytest.mark.asyncio
+async def test_traffic_counts_user_messages_per_local_weekday_and_hour(database):
+    # 2026-11-16 is a Monday; Asia/Ho_Chi_Minh is UTC+7.
+    instants = [
+        datetime(2026, 11, 16, 2, 30, tzinfo=timezone.utc),  # Monday 09:30 local
+        datetime(2026, 11, 16, 2, 59, tzinfo=timezone.utc),  # Monday 09:59 local
+        datetime(2026, 11, 22, 17, 15, tzinfo=timezone.utc),  # Sunday 17:15 UTC = Monday 00:15 local
+        datetime(2026, 11, 22, 16, 45, tzinfo=timezone.utc),  # Sunday 23:45 local
+    ]
+    async with database.session() as session:
+        conversation = Conversation(end_user_id="visitor-traffic")
+        session.add(conversation)
+        await session.flush()
+        for instant in instants:
+            session.add(Message(conversation_id=conversation.id, role="user", content="hỏi", created_at=instant))
+            session.add(Message(conversation_id=conversation.id, role="assistant", content="đáp", created_at=instant))
+
+    start, end = datetime(2026, 11, 16, tzinfo=timezone.utc), datetime(2026, 11, 23, tzinfo=timezone.utc)
+    async with database.session() as session:
+        grid = await MetricsRepository(session).traffic(start, end, TIMEZONE)
+    assert len(grid) == 7 and all(len(row) == 24 for row in grid)
+    assert grid[0][9] == 2 and grid[0][0] == 1 and grid[6][23] == 1
+    assert sum(map(sum, grid)) == 4  # assistant messages are not traffic
 
 
 def _monitor(database, notifier, clock, settings=None, usage=None, ready=None, disk_path="."):

@@ -498,3 +498,26 @@ class AuditEntryOut(ApiModel):
     client_ip: Optional[str] = None
     request_body: Optional[Any] = None
     response_body: Optional[Any] = None
+
+
+class FailedLoginIp(BaseModel):
+    """A client IP and how many sign-ins from it failed."""
+
+    client_ip: str
+    count: int
+
+
+class AuditSummaryOut(BaseModel):
+    """Security counts from the audit log since ``since`` (owner security card)."""
+
+    since: datetime
+    logins_failed: int
+    logins_succeeded: int
+    contact_reveals: int
+    api_key_changes: int
+    account_changes: int
+    deletions: int
+    data_subject_requests: int
+    legal_hold_changes: int
+    denied: int
+    failed_login_ips: List[FailedLoginIp]
