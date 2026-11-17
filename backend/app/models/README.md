@@ -14,7 +14,7 @@ tables live in `core/storage/tables/`.
 | File | Public names | What it does |
 |---|---|---|
 | `caller.py` | `ChatCaller`, `TIER_ANONYMOUS`, `ANONYMOUS_LEVEL` | Resolved caller of a public chat request: API key id (`None` for the widget server), opaque visitor id, client IP, and `user_id`/`tier` only from a verified host token. |
-| `chat_turn.py` | `TurnRequest`, `TurnDelta`, `TurnUsage`, `TurnResult`, `TurnEvent`, `TurnOutcome`, `HandoffReason`, `ChatPolicy`, `or_default`, `FALLBACK_MODE_DENY`, `FALLBACK_MODE_HANDOFF`, `FALLBACK_MODES` | Contract between `ChatService` and the chat pipeline: the request, the streamed events (`TurnEvent = Union[TurnDelta, TurnUsage, TurnResult]`), how a turn ended, why it was handed off, the runtime chat policy; `or_default` returns an admin-set value or the env default. |
+| `chat_turn.py` | `TurnRequest`, `TurnDelta`, `TurnUsage`, `TurnResult`, `TurnEvent`, `TurnOutcome`, `HandoffReason`, `ChatPolicy`, `or_default`, `FALLBACK_MODE_DENY`, `FALLBACK_MODE_HANDOFF`, `FALLBACK_MODES`, `LOW_CONFIDENCE` | Contract between `ChatService` and the chat pipeline: the request, the streamed events (`TurnEvent = Union[TurnDelta, TurnUsage, TurnResult]`), how a turn ended, why it was handed off, the runtime chat policy; `or_default` returns an admin-set value or the env default; `LOW_CONFIDENCE` is the answer confidence below which a turn counts as unhelpful (handoff trigger) and as a low-confidence answer (daily rollup). |
 | `data_subject.py` | `DataSubject` | The person behind a data-subject request (PRV-03): any of their identifiers, at least one set. |
 | `intent.py` | `IntentType` | Which engine a turn goes to: `RAG`, `ACTION` (tool call) or `LOGIN_REQUIRED` (ID-11); produced by `core/agent/intent_router.py`. |
 | `knowledge.py` | `ChunkingSpec`, `ChunkDraft`, `ChunkingResult`, `ExtractedDocument`, `IndexedChunk`, `RetrievalResults`, `RetrievedChunk`, `AUTO_STRATEGY`, `EXTRACTION_*` | Chunking strategy + parameters, chunks before embedding, a parsed upload, chunks held by the in-memory index, and retrieval results with scores. |
@@ -50,6 +50,8 @@ pytest test/unit/test_knowledge_bundle.py test/unit/test_chat_turn_recovery.py t
   (139f439, 2026-08-04).
 - Knowledge bundle models added with export/import (54b76a5, #32, 2026-10-07).
 - Backend moved under `backend/app` (#76, 2026-11-10).
+- `LOW_CONFIDENCE` moved here from `services/chat_service.py` so the metrics rollup in `core/storage` can
+  use it without importing upward (dashboard plan slice 2, 2026-11-17).
 - Unused `normalize_legacy_metadata` deleted; `SOURCE_NAME_PATTERN`, duplicated in
   `api/schemas/knowledge.py`, now defined only here (branch `refactor/structure-fixes`, 2026-11-10).
 

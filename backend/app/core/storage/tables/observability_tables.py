@@ -61,7 +61,9 @@ class DailyMetrics(Base):
     completion_tokens: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     cost_micro_usd: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     #: ``{"outcomes": {...}, "cost_by_model": {...}, "cost_by_tier": {...}, "handoff_reasons": {...},
-    #: "routes": {...}, "intents": {...}, "feedback": {...}, "ingestion_failures": n}``.
+    #: "conversations_handed_off": n, "cited_answers": n, "low_confidence_answers": n, "cached_answers": n,
+    #: "guard_reasons": {...}, "step_latency_ms": {step: {"p50", "p95"}}, "routes": {...}, "intents": {...},
+    #: "feedback": {...}, "ingestion_failures": n}``; days rolled up before a key existed lack it.
     breakdown: Mapped[Dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
     updated_at: Mapped[datetime] = updated_at_column()
 

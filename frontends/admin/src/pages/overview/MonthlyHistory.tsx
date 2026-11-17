@@ -2,6 +2,7 @@ import { ErrorState, LoadingState } from "../../components/ui/primitives";
 import { useI18n } from "../../i18n/I18nProvider";
 import type { DailyMetrics } from "../../lib/types";
 import { useApi } from "../../lib/use-api";
+import { averagePerDay } from "./rollup";
 
 /** A year of daily rollups; they outlive the purged raw data (OBS-03). */
 const HISTORY_DAYS = 365;
@@ -15,14 +16,17 @@ interface MonthRow {
   errors: number;
   handoffs: number;
   cost: number;
+  visitorsPerDay: number | null;
   worstP95: number | null;
 }
 
 function byMonth(days: DailyMetrics[]): MonthRow[] {
   const months = new Map<string, MonthRow>();
+  const monthDays = new Map<string, DailyMetrics[]>();
   for (const day of days) {
     const key = day.day.slice(0, MONTH_KEY_LENGTH);
-    const row = months.get(key) ?? { month: key, turns: 0, conversations: 0, errors: 0, handoffs: 0, cost: 0, worstP95: null };
+    monthDays.set(key, [...(monthDays.get(key) ?? []), day]);
+    const row = months.get(key) ?? { month: key, turns: 0, conversations: 0, errors: 0, handoffs: 0, cost: 0, visitorsPerDay: null, worstP95: null };
     row.turns += day.turns;
     row.conversations += day.conversations;
     row.errors += day.errors;
@@ -31,6 +35,7 @@ function byMonth(days: DailyMetrics[]): MonthRow[] {
     if (day.p95_latency_ms !== null) row.worstP95 = Math.max(row.worstP95 ?? 0, day.p95_latency_ms);
     months.set(key, row);
   }
+  for (const [key, row] of months) row.visitorsPerDay = averagePerDay(monthDays.get(key) ?? [], "visitors");
   return [...months.values()].reverse();
 }
 
@@ -52,6 +57,7 @@ export function MonthlyHistory() {
             <th scope="col">{t("history.month")}</th>
             <th scope="col">{t("history.turns")}</th>
             <th scope="col">{t("history.conversations")}</th>
+            <th scope="col">{t("history.visitorsPerDay")}</th>
             <th scope="col">{t("history.handoffRate")}</th>
             <th scope="col">{t("history.errorRate")}</th>
             <th scope="col">{t("history.worstP95")}</th>
@@ -64,6 +70,7 @@ export function MonthlyHistory() {
               <td className="mono">{row.month}</td>
               <td>{formatNumber(row.turns)}</td>
               <td>{formatNumber(row.conversations)}</td>
+              <td>{row.visitorsPerDay === null ? "—" : formatNumber(row.visitorsPerDay, 1)}</td>
               <td>{rate(row.handoffs, row.turns)}</td>
               <td>{rate(row.errors, row.turns)}</td>
               <td>{row.worstP95 === null ? "—" : `${formatNumber(row.worstP95)} ms`}</td>

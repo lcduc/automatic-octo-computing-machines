@@ -34,8 +34,8 @@ MAX_HISTORY_DAYS = 730
 async def usage_summary(
     days: int = Query(7, ge=1, le=MAX_SUMMARY_DAYS), container: AppContainer = Depends(get_container)
 ) -> Dict[str, Any]:
-    """Tokens per day and model, per purpose, answer outcomes, feedback and latency."""
-    return await container.usage.summary(days)
+    """Tokens per day and model, per purpose, answer outcomes, feedback, latency and this month's spend."""
+    return await container.usage.summary(days, container.settings.usage_policy().spend_cap_usd)
 
 
 @router.get("/usage/history", dependencies=[read_access])

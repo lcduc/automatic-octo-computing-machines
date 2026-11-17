@@ -1577,6 +1577,84 @@
         }
       }
     },
+    "/api/v1/admin/knowledge/health": {
+      "get": {
+        "tags": [
+          "Admin: knowledge"
+        ],
+        "summary": "Knowledge Health",
+        "description": "Document health over the last ``days`` local days: most cited, never cited and\nrated-down documents, plus the ones expiring within 30 days or not yet in force.\nCitations are read from stored answers, so the window is bounded by chat retention.",
+        "operationId": "knowledge_health_api_v1_admin_knowledge_health_get",
+        "parameters": [
+          {
+            "name": "days",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 90,
+              "minimum": 1,
+              "default": 30,
+              "title": "Days"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 50,
+              "minimum": 1,
+              "default": 10,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Authorization"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeHealthOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/admin/knowledge/review/counts": {
       "get": {
         "tags": [
@@ -3274,7 +3352,7 @@
           "Admin: monitoring"
         ],
         "summary": "Usage Summary",
-        "description": "Tokens per day and model, per purpose, answer outcomes, feedback and latency.",
+        "description": "Tokens per day and model, per purpose, answer outcomes, feedback, latency and this month's spend.",
         "operationId": "usage_summary_api_v1_admin_usage_summary_get",
         "parameters": [
           {
@@ -4561,6 +4639,72 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/SqlToolOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/audit/summary": {
+      "get": {
+        "tags": [
+          "Admin: audit"
+        ],
+        "summary": "Audit Summary",
+        "description": "Sign-ins, sensitive changes and denied requests over the last ``days`` days, plus the IPs failing most sign-ins.",
+        "operationId": "audit_summary_api_v1_admin_audit_summary_get",
+        "parameters": [
+          {
+            "name": "days",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 90,
+              "minimum": 1,
+              "default": 30,
+              "title": "Days"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Authorization"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditSummaryOut"
                 }
               }
             }
@@ -5900,6 +6044,74 @@
         "title": "AuditEntryOut",
         "description": "One audited admin write or sign-in attempt."
       },
+      "AuditSummaryOut": {
+        "properties": {
+          "since": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Since"
+          },
+          "logins_failed": {
+            "type": "integer",
+            "title": "Logins Failed"
+          },
+          "logins_succeeded": {
+            "type": "integer",
+            "title": "Logins Succeeded"
+          },
+          "contact_reveals": {
+            "type": "integer",
+            "title": "Contact Reveals"
+          },
+          "api_key_changes": {
+            "type": "integer",
+            "title": "Api Key Changes"
+          },
+          "account_changes": {
+            "type": "integer",
+            "title": "Account Changes"
+          },
+          "deletions": {
+            "type": "integer",
+            "title": "Deletions"
+          },
+          "data_subject_requests": {
+            "type": "integer",
+            "title": "Data Subject Requests"
+          },
+          "legal_hold_changes": {
+            "type": "integer",
+            "title": "Legal Hold Changes"
+          },
+          "denied": {
+            "type": "integer",
+            "title": "Denied"
+          },
+          "failed_login_ips": {
+            "items": {
+              "$ref": "#/components/schemas/FailedLoginIp"
+            },
+            "type": "array",
+            "title": "Failed Login Ips"
+          }
+        },
+        "type": "object",
+        "required": [
+          "since",
+          "logins_failed",
+          "logins_succeeded",
+          "contact_reveals",
+          "api_key_changes",
+          "account_changes",
+          "deletions",
+          "data_subject_requests",
+          "legal_hold_changes",
+          "denied",
+          "failed_login_ips"
+        ],
+        "title": "AuditSummaryOut",
+        "description": "Security counts from the audit log since ``since`` (owner security card)."
+      },
       "AutoChunking": {
         "properties": {
           "strategy": {
@@ -6590,6 +6802,31 @@
         ],
         "title": "Citation",
         "description": "A knowledge document the answer is based on."
+      },
+      "CitedDocument": {
+        "properties": {
+          "document_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Document Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "citations": {
+            "type": "integer",
+            "title": "Citations"
+          }
+        },
+        "type": "object",
+        "required": [
+          "document_id",
+          "title",
+          "citations"
+        ],
+        "title": "CitedDocument",
+        "description": "A document and how many answers in the window cited it."
       },
       "CitingAnswer": {
         "properties": {
@@ -7585,6 +7822,51 @@
         "title": "EvalCaseOut",
         "description": "One golden question (personal data already masked)."
       },
+      "ExpiringDocument": {
+        "properties": {
+          "document_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Document Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "effective_to": {
+            "type": "string",
+            "format": "date",
+            "title": "Effective To"
+          }
+        },
+        "type": "object",
+        "required": [
+          "document_id",
+          "title",
+          "effective_to"
+        ],
+        "title": "ExpiringDocument",
+        "description": "An enabled document whose validity ends soon."
+      },
+      "FailedLoginIp": {
+        "properties": {
+          "client_ip": {
+            "type": "string",
+            "title": "Client Ip"
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "client_ip",
+          "count"
+        ],
+        "title": "FailedLoginIp",
+        "description": "A client IP and how many sign-ins from it failed."
+      },
       "FeedbackItem": {
         "properties": {
           "id": {
@@ -8283,6 +8565,72 @@
         "title": "KnowledgeBundle",
         "description": "Everything ``export-knowledge`` writes and ``import-knowledge`` reads."
       },
+      "KnowledgeHealthOut": {
+        "properties": {
+          "since": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Since"
+          },
+          "documents": {
+            "type": "integer",
+            "title": "Documents"
+          },
+          "disabled": {
+            "type": "integer",
+            "title": "Disabled"
+          },
+          "failed": {
+            "type": "integer",
+            "title": "Failed"
+          },
+          "most_cited": {
+            "items": {
+              "$ref": "#/components/schemas/CitedDocument"
+            },
+            "type": "array",
+            "title": "Most Cited"
+          },
+          "never_cited": {
+            "$ref": "#/components/schemas/NeverCited"
+          },
+          "not_helpful": {
+            "items": {
+              "$ref": "#/components/schemas/NotHelpfulDocument"
+            },
+            "type": "array",
+            "title": "Not Helpful"
+          },
+          "expiring": {
+            "items": {
+              "$ref": "#/components/schemas/ExpiringDocument"
+            },
+            "type": "array",
+            "title": "Expiring"
+          },
+          "scheduled": {
+            "items": {
+              "$ref": "#/components/schemas/ScheduledDocument"
+            },
+            "type": "array",
+            "title": "Scheduled"
+          }
+        },
+        "type": "object",
+        "required": [
+          "since",
+          "documents",
+          "disabled",
+          "failed",
+          "most_cited",
+          "never_cited",
+          "not_helpful",
+          "expiring",
+          "scheduled"
+        ],
+        "title": "KnowledgeHealthOut",
+        "description": "Document health: usage by answers since ``since``, and validity dates."
+      },
       "LegalArticleChunking": {
         "properties": {
           "strategy": {
@@ -8687,6 +9035,53 @@
         "title": "ModelServerLoad",
         "description": "The model-server's GPU memory and scheduler queues at this moment."
       },
+      "NeverCited": {
+        "properties": {
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/UncitedDocument"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "count",
+          "items"
+        ],
+        "title": "NeverCited",
+        "description": "How many active documents went uncited, with the oldest of them."
+      },
+      "NotHelpfulDocument": {
+        "properties": {
+          "document_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Document Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "document_id",
+          "title",
+          "count"
+        ],
+        "title": "NotHelpfulDocument",
+        "description": "A document and how many thumbs-down answers cited it."
+      },
       "Page_AuditEntryOut_": {
         "properties": {
           "items": {
@@ -9044,6 +9439,32 @@
         ],
         "title": "ReviewDecision",
         "description": "A reviewer's verdict on a pending document."
+      },
+      "ScheduledDocument": {
+        "properties": {
+          "document_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Document Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "effective_from": {
+            "type": "string",
+            "format": "date",
+            "title": "Effective From"
+          }
+        },
+        "type": "object",
+        "required": [
+          "document_id",
+          "title",
+          "effective_from"
+        ],
+        "title": "ScheduledDocument",
+        "description": "A document that comes into force later."
       },
       "SettingsUpdate": {
         "properties": {
@@ -10011,6 +10432,32 @@
         ],
         "title": "TranscriptionResponse",
         "description": "Text transcribed from a voice message."
+      },
+      "UncitedDocument": {
+        "properties": {
+          "document_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Document Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "document_id",
+          "title",
+          "created_at"
+        ],
+        "title": "UncitedDocument",
+        "description": "An active document no answer in the window cited."
       },
       "ValidationError": {
         "properties": {

@@ -30,6 +30,7 @@ data classes in `app/models/`.
 | File | Public names | What it does |
 |---|---|---|
 | `knowledge_service.py` | `KnowledgeService` | Sources and documents: CRUD, upload (queues the file), typed-text documents, review/approval, access tiers, answers citing a document; refreshes the search index after every change. |
+| `knowledge_health_service.py` | `KnowledgeHealthService` | Document-health report for `/knowledge/health`: window and "today" in the app time zone, documents expiring within 30 days; one session, a fixed handful of queries. |
 | `chunk_editing_service.py` | `ChunkEditingService`, `chunk_off_loop` | Chunk-level edits: update/add/delete a chunk, `preview_chunking`, `rechunk`; re-embeds what it touches. `chunk_off_loop` runs chunking in a worker thread. |
 | `index_sync_service.py` | `IndexSyncService` | Background upkeep of the in-memory index: `ingestion_queue` stats, `refresh_index_if_ingested`, `watch_ingestions` loop, `reembed_stale_chunks` (batches of `REEMBED_BATCH_SIZE`) when the embedding model changed. Owns the last-processed / ingestion-mark state. |
 | `ingestion_service.py` | `IngestionService` | Parse (`extract`), `chunk` and `embed` uploaded files or typed text; caps concurrent OCR files. |
@@ -41,13 +42,13 @@ data classes in `app/models/`.
 |---|---|---|
 | `auth_service.py` | `AuthService`, `VerifiedApiKey`, `AdminPrincipal`, `hash_password`, `verify_password` | Client API keys (`cb_live_` prefix, legacy `cbk_`; scopes, expiry, rotation with grace days, per-key rate limit), admin accounts with scrypt passwords and JWT session tokens, the BFF service token. |
 | `host_identity_service.py` | `HostIdentityService`, `HostIdentity`, `HostTokenError` | Verifies host-site JWTs (ID-05/06): who the logged-in user is and their tier; JWKS cached; a `jti` first presented by another visitor is refused. |
-| `audit_service.py` | `AuditService`, `AuditRecord`, `redact_secrets` | Writes and lists admin audit entries (every admin write and sign-in attempt); `redact_secrets` masks secret-looking keys at any depth. Called by `app/middleware/admin_audit_middleware.py`. |
+| `audit_service.py` | `AuditService`, `AuditRecord`, `redact_secrets` | Writes, lists and summarises admin audit entries (every admin write and sign-in attempt); `redact_secrets` masks secret-looking keys at any depth. Called by `app/middleware/admin_audit_middleware.py`. |
 
 ### Limits, usage and cost
 | File | Public names | What it does |
 |---|---|---|
 | `rate_limit_service.py` | `RateLimitService`, `Limit`, `TimeBuckets`, `hashed` | Request limits and token/cost totals in the `usage_counters` table, bucketed in the app time zone. |
-| `usage_service.py` | `UsageService`, `BudgetVerdict`, `identity_scope`, `ip_scope` | Per-tier token budgets, per-IP budgets, monthly spend cap, dashboard usage statistics. |
+| `usage_service.py` | `UsageService`, `BudgetVerdict`, `identity_scope`, `ip_scope`, `project_month_spend` | Per-tier token budgets, per-IP budgets, monthly spend cap, dashboard usage statistics; the summary's `month` carries the linear month-end projection and the cap; the summary also carries visitors (total, returning, by tier), single-turn conversations and the 7×24 traffic grid in the app time zone (via `MetricsRepository`). |
 | `pricing_service.py` | `PricingService` | LLM price table (ADM-08) cached in memory; cost of every recorded call. |
 
 ### Admin settings, tools and evaluation
@@ -84,6 +85,7 @@ Services are built in two places, never by routes:
 - **API process** — `app/api/container.py` `AppContainer`. `__init__` builds the database-only services
   (`rate_limiter`, `settings`, `usage`, `metrics`, `pricing`, `live_feed`, `handoffs`, `conversations`,
   `privacy`, `eval_cases`, `auth`, `host_identity`, `logs`, `audit`, `readiness`, `knowledge_transfer`,
+  `knowledge_health`,
   optional `sql_tools`). `start()` loads models, then builds `chat`, `transcription`, `knowledge`,
   `chunks` (`ChunkEditingService`), `index_sync` (`IndexSyncService`) and, in embedded mode, the
   `IngestionWorker`; it re-embeds stale chunks, refreshes the index and starts the
@@ -148,6 +150,9 @@ chunk editing, index sync, ingestion worker), `test_knowledge_transfer.py`, `tes
 - Handoff changed to one open ticket per conversation, with the bot silent after a staff reply -> `lcduc/automatic-octo-computing-machines#25` (1b98334, 2026-10-01).
 - Before `lcduc/automatic-octo-computing-machines#76` (06f0477, 2026-11-10) this folder lived at the repo
   root as `services/`; imports were rewritten to `app.services.*`.
+- `/usage/summary` gained `visitors`, `single_turn_conversations` and `traffic` (dashboard plan slice 4,
+  2026-11-17), computed over the period up to now with the same `MetricsRepository.visitor_stats()` the daily
+  rollup uses.
 
 ## Status
 - Last reviewed: 2026-11-10
@@ -155,9 +160,9 @@ chunk editing, index sync, ingestion worker), `test_knowledge_transfer.py`, `tes
   - ARC-11 is partial — `LISTEN/NOTIFY` carries only the admin live feed, not
     config reloads (docs/checklists/production.md); `ingestion_worker.py` and `business_calendar.py` /
     `sql_tool_catalog.py` do not follow the `<name>_service.py` naming.
-  - CQ-03: `knowledge_service.py` (445), `auth_service.py` (435) and `chat_service.py` (407) are over ~400 lines (docs/checklists/code-quality.md).
+  - CQ-03: `knowledge_service.py` (445), `auth_service.py` (435) and `chat_service.py` (403) are over ~400 lines (docs/checklists/code-quality.md).
 - Ceilings (`# ceiling:` markers in this folder):
-  - `chat_service.py:276` — "unhelpful" turn is an outcome + confidence heuristic — replace with a router
+  - `chat_service.py:272` — "unhelpful" turn is an outcome + confidence heuristic — replace with a router
     "unclear/declined" signal once ORC-03 clarifications exist.
   - `chunk_editing_service.py:186` — re-chunk chunks and embeds inside the request — move to the ingestion
     queue if re-chunk requests time out.
@@ -169,3 +174,5 @@ chunk editing, index sync, ingestion worker), `test_knowledge_transfer.py`, `tes
   - `rate_limit_service.py:9` — fixed windows allow up to 2x a limit across a bucket boundary — two-bucket
     sliding estimate if boundary bursts matter.
   - `sql_tool_catalog.py:4` — tools cached per process — reload on a timer if several API processes run.
+  - `usage_service.py:69` — linear month-end spend projection, ignores weekday/seasonal patterns — fit on
+    daily rollups if clients plan budgets from it.

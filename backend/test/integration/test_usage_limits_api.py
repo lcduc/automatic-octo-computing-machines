@@ -50,6 +50,10 @@ def test_prices_set_the_cost_of_each_call_and_the_ip_budget_spans_visitors(clien
     assert summary["month"]["cost_micro_usd"] == 240
     assert summary["totals"]["cost_micro_usd"] == 240
     assert {row["tier"] for row in summary["by_tier"]} == {"anonymous"}
+    assert summary["visitors"] == {"total": 1, "returning": 0, "by_tier": {"anonymous": 1}}
+    assert summary["single_turn_conversations"] == 1
+    traffic = summary["traffic"]
+    assert len(traffic) == 7 and all(len(row) == 24 for row in traffic) and sum(map(sum, traffic)) == 1
 
     # Visitors behind one IP share its daily budget, so a new visitor id (cleared cookies) does not reset it.
     patch = {"tokens_ip_per_day": 100}
@@ -68,6 +72,8 @@ def test_spend_cap_pauses_anonymous_visitors_before_signed_in_users(client):  # 
     paused = _ask(client, "visitor-eeee05")
     assert paused.status_code == 429 and "chưa đăng nhập" in paused.json()["detail"]
     assert int(paused.headers["retry-after"]) > 0
+    month = client.get("/api/v1/admin/usage/summary", headers=admin).json()["month"]
+    assert month["spend_cap_micro_usd"] == 160_000 and "projected_cost_micro_usd" in month
 
 
 def test_live_events_reach_listeners_in_other_processes(client):  # noqa: F811

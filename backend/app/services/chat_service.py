@@ -29,7 +29,7 @@ from app.core.storage.tables.conversation_tables import (
 )
 from app.core.storage.tables.observability_tables import MessageTrace
 from app.models.caller import ChatCaller
-from app.models.chat_turn import FALLBACK_MODE_HANDOFF, HandoffReason, TurnDelta, TurnOutcome, TurnRequest, TurnResult, TurnUsage
+from app.models.chat_turn import FALLBACK_MODE_HANDOFF, LOW_CONFIDENCE, HandoffReason, TurnDelta, TurnOutcome, TurnRequest, TurnResult, TurnUsage
 from app.models.tool_context import ToolContext
 from app.utils.text_utils import TextUtils
 from .errors import NotFoundError, RateLimitedError, ServiceUnavailableError
@@ -57,10 +57,6 @@ class PreparedTurn:
     usages: List[TurnUsage] = field(default_factory=list)
     #: The conversation's previous answer (outcome, confidence), for the repeated-no-answer trigger.
     previous_answer: Optional[Tuple[Optional[str], Optional[float]]] = None
-
-
-#: Answers below this confidence count as unhelpful for the repeated-no-answer trigger.
-LOW_CONFIDENCE = 0.35
 
 
 def _unhelpful(outcome: Optional[str], confidence: Optional[float]) -> bool:

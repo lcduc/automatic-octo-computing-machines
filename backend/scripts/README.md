@@ -15,6 +15,7 @@ Code the running API needs belongs in `app/`; one-off CLIs for the client box's 
 | File | Public names | What it does |
 |---|---|---|
 | `__init__.py` | — | Package marker, so scripts run as `python -m scripts.<name>`. |
+| `backfill_metrics.py` | `MetricsBackfill`, `backfill_days`, `complete_days`, `main` | Re-runs the daily metrics rollup for the last `--days` local days (default 90), oldest first, so days rolled up before a new `breakdown` key existed get it. Capped at the shortest chat / anonymous-chat / trace retention, so a day whose raw rows are already purged is never overwritten with lower counts. |
 | `download_models.py` | `ModelDownloader` | Pre-downloads the embedding model, the reranker (and its fallback), Docling's PDF models (layout, TableFormer, into `MODELS_DIR/docling`; a failure fails the run) and warms PP-OCRv6 into `MODELS_DIR`; the backend Dockerfile runs it at build time. OCR warm-up is best-effort; PaddleOCR-VL (GPU) downloads on first use. |
 | `embed_test.py` | `EmbedTestServer`, `main` | Serves a throw-away page on `localhost:8080` that loads a widget's `embed.js` (`--widget`, `--port`), to test embedding from this machine. Its origin must be in `WIDGET_ALLOWED_PARENTS`. |
 | `export_openapi.py` | `main` | Builds the FastAPI app without starting it and writes `app.openapi()` to the repo's `docs/openapi.json`. |
@@ -32,6 +33,7 @@ python -m scripts.download_models
 python -m scripts.manage create-admin --email you@example.com --role owner   # prompts for the password
 python -m scripts.manage create-api-key --name "streamlit demo"
 python -m scripts.export_openapi
+python -m scripts.backfill_metrics --days 90   # after a release adds rollup keys
 python -m scripts.seed_demo documents        # then restart the API so its index picks them up
 python -m scripts.seed_demo chats            # needs the API running and BFF_SERVICE_TOKEN
 python -m scripts.embed_test --widget http://localhost:3000 --port 9000
@@ -89,13 +91,14 @@ python -m scripts.loadtest.report data/loadtest/<run>       # app venv
   `manage send-alert`), CI and `.github/workflows/eval-nightly.yml` (`seed_demo documents`, the golden
   sets), `backend/test/unit/test_eval_*.py` and related unit tests (import `scripts.eval.*`),
   `backend/test/integration/test_sql_tools.py` (reads `deploy/business_db/`, not this folder).
-- External: PostgreSQL (`manage`, `seed_demo`, `loadtest/report.py`), Hugging Face model weights
+- External: PostgreSQL (`manage`, `backfill_metrics`, `seed_demo`, `loadtest/report.py`), Hugging Face model weights
   (`download_models`), the configured LLM (`seed_demo chats`), `nvidia-smi` (`run_levels.py`),
   pandas/openpyxl (`qa_to_*`), locust (load-test venv only).
 
 ## Run / test
 - Run every script from `backend/` as `python -m scripts.<name>`; loadtest commands as shown above.
-- Tests: `backend/test/unit/test_folder_readmes.py` checks every `.py` here is named in this README (or
+- Tests: `backend/test/unit/test_backfill_metrics.py` covers the backfill's day range and retention cap.
+  `backend/test/unit/test_folder_readmes.py` checks every `.py` here is named in this README (or
   `eval/README.md`). The eval modules have their own unit tests (see [`eval/README.md`](eval/README.md)).
 - Lint: `ruff check .` from the repo root.
 

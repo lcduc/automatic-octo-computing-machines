@@ -300,7 +300,7 @@ Any code change breaking one is a blocker.
 | Admin users, roles, API keys, audit log viewer        | ✅ | ❌ | ❌ | ❌ |
 
 ### Dashboard
-- [~] ADM-03 Messages/day, active users by tier, resolution rate, handoff rate by reason, p50/p95 latency, TTFT, error rate — read from rollups (RET-R4) so history survives purges — outcomes, tokens, latency, feedback, monthly history from the rollup; no tiers/TTFT
+- [x] ADM-03 Messages/day, active users by tier, resolution rate, handoff rate by reason, p50/p95 latency, TTFT, error rate — read from rollups (RET-R4) so history survives purges — outcomes, tokens, latency, TTFT, per-step latency, routes, handoff reasons, containment (resolution rate), grounded/low-confidence/cache rates, refusal and error reasons, feedback, monthly history from the rollup, visitors (new/returning, by tier), traffic by weekday × hour — overview tabs (docs/dashboard-monitoring-plan.md)
 
 ### Conversation explorer / trace view
 - [~] ADM-04 Filters: date, user/visitor, tier, intent, language, feedback, handoff status, cost — date, outcome, status
@@ -316,6 +316,7 @@ Any code change breaking one is a blocker.
 - [x] ADM-10 Thumbs-down queue with comment + trace link — thumbs-down inbox with comment, reviewed state, link to the conversation (answers open their trace)
 - [ ] ADM-11 Unanswered-question queue clustered by embedding similarity, with counts
 - [x] ADM-12 Mark reviewed; "add to golden eval set" (copies PII-stripped data, see RET-R3) — mark reviewed + "add to eval set"; export as `golden_queries.json`
+- [x] ADM-22 Document health: most / never cited, cited by thumbs-down answers, expiring and scheduled, disabled/failed counts — `GET /knowledge/health`, Quality tab
 
 ### Documents
 - [~] ADM-13 Upload with OCR preview/correction before indexing — hold for review + text editing; no OCR side-by-side
@@ -336,7 +337,7 @@ Any code change breaking one is a blocker.
 
 - [x] OBS-01 Trace table per message covering ADM-05 fields — `message_traces`
 - [x] OBS-02 Structured JSON logs with request ID; PII redacted
-- [~] OBS-03 Metrics: latency p50/p95, TTFT, error rate, tokens/day, cost/day, ingestion failures, GPU VRAM, disk — `metrics_daily` rollup + monthly history; VRAM only on model-server `/ready`, not charted; no TTFT
+- [~] OBS-03 Metrics: latency p50/p95, TTFT, error rate, tokens/day, cost/day, ingestion failures, GPU VRAM, disk — `metrics_daily` rollup + monthly history; TTFT p95 charted per day on the overview System tab; VRAM only on model-server `/ready`, not charted
 - [x] OBS-04 Alerts via `ALERT_CHANNEL` (Telegram/Slack/SMTP): service down, error spike, spend threshold, disk > 80%, ingestion failure, handoff queue waiting > N min, purge/backup failure — worker `alert_checks` every 5 min, de-duplicated; failed jobs (incl. the purge) and backups alert
 - [~] OBS-05 External uptime check (vendor-side monitor pinging each client's `/health`) — Uptime Kuma setup documented in `docs/deployment.md`; vendor monitor not set up
 

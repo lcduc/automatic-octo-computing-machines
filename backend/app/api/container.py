@@ -43,6 +43,7 @@ from app.services.ingestion_service import IngestionService
 from app.services.ingestion_worker import IngestionWorker
 from app.services.chunk_editing_service import ChunkEditingService
 from app.services.index_sync_service import IndexSyncService
+from app.services.knowledge_health_service import KnowledgeHealthService
 from app.services.knowledge_service import KnowledgeService
 from app.services.knowledge_transfer_service import KnowledgeTransferService
 from app.services.log_service import LogService
@@ -83,6 +84,7 @@ class AppContainer:
         self.rate_limiter = RateLimitService(self.database, TimeBuckets(Config.Server.APP_TIMEZONE()))
         self.index = KnowledgeIndex(self.database, self._document_tier_level)
         self.knowledge_transfer = KnowledgeTransferService(self.database)
+        self.knowledge_health = KnowledgeHealthService(self.database, Config.Server.APP_TIMEZONE())
         self.settings = SettingsService(self.database)
         self.usage = UsageService(self.database, self.rate_limiter)
         self.metrics = MetricsRollupService(self.database, Config.Server.APP_TIMEZONE())

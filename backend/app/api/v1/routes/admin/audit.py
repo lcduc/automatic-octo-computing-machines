@@ -12,10 +12,22 @@ from fastapi import APIRouter, Depends, Query
 # Local imports
 from app.api.container import AppContainer
 from app.api.dependencies import OWNER_ROLES, get_container, require_admin
-from app.api.schemas.admin import AuditEntryOut
+from app.api.schemas.admin import AuditEntryOut, AuditSummaryOut
 from app.api.schemas.common import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, Page
 
 router = APIRouter(tags=["Admin: audit"])
+
+#: Window of the security summary, in days.
+DEFAULT_SUMMARY_DAYS = 30
+MAX_SUMMARY_DAYS = 90
+
+
+@router.get("/audit/summary", response_model=AuditSummaryOut, dependencies=[Depends(require_admin(OWNER_ROLES))])
+async def audit_summary(
+    days: int = Query(DEFAULT_SUMMARY_DAYS, ge=1, le=MAX_SUMMARY_DAYS), container: AppContainer = Depends(get_container)
+) -> AuditSummaryOut:
+    """Sign-ins, sensitive changes and denied requests over the last ``days`` days, plus the IPs failing most sign-ins."""
+    return AuditSummaryOut(**await container.audit.summary(days))
 
 
 @router.get("/audit", response_model=Page[AuditEntryOut], dependencies=[Depends(require_admin(OWNER_ROLES))])

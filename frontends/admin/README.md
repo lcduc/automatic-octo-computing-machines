@@ -53,7 +53,7 @@ with a strict CSP (`frame-ancestors 'none'`) and proxies only `/api/v1/admin/*` 
 | Path | What it holds |
 |---|---|
 | `index.html`, `src/main.tsx`, `src/router.tsx` | Entry point and client-side routes. `src/app.smoke.test.tsx` renders the app once. |
-| `src/pages/` | One screen per file or folder: `LoginPage`, `AccessPage` + `access/` (users, role matrix), `AuditPage`, `FeedbackPage` + `feedback/EvalCasesCard.tsx` (golden eval set export for `backend/scripts/eval/rag.py`), `HandoffsPage`, `LogsPage`, `chat/` (demo chat over the widget server), `conversations/`, `knowledge/` (sources, documents, chunks), `overview/` (live feed, token chart, monthly history), `settings/` (chat behaviour, limits, privacy, support, widget look), `widget/` (widget preview). |
+| `src/pages/` | One screen per file or folder: `LoginPage`, `AccessPage` + `access/` (users, role matrix), `AuditPage`, `FeedbackPage` + `feedback/EvalCasesCard.tsx` (golden eval set export for `backend/scripts/eval/rag.py`), `HandoffsPage`, `LogsPage`, `chat/` (demo chat over the widget server), `conversations/`, `knowledge/` (sources, documents, chunks), `overview/` (three tabs — `BusinessTab`, `QualityTab`, `SystemTab` — over the usage summary and daily rollup; `rollup.ts` helpers, `BreakdownBars`, `StepLatencyTable`, latency and token charts, live feed, monthly history, `TrafficHeatmap` weekday x hour grid, `DocumentHealth` (own fetch of `knowledge/health`, Quality tab), `SecuritySummary` (owner only, own fetch of `audit/summary`, System tab)), `settings/` (chat behaviour, limits, privacy, support, widget look), `widget/` (widget preview). |
 | `src/components/` | Shared UI: `layout/` (console shell, sidebar, top bar, theme toggle, password change), `ui/` (modal, toast, primitives, dialog focus), `knowledge/`, `conversations/` (transcript, trace details), `privacy/` (legal hold). |
 | `src/lib/` | `api.ts` (admin API client), `sse.ts`, `session.tsx`, `permissions.ts`, `theme.tsx`, `use-api.ts`, `types.ts`, `labels.ts`, `markdown.tsx`, `metadata.ts`, `download.ts`, `use-desktop-notifications.ts`, with `*.test.ts(x)` next to them. |
 | `src/i18n/` | `vi.ts`, `en.ts`, `I18nProvider.tsx`. |
@@ -67,11 +67,18 @@ with a strict CSP (`frame-ancestors 'none'`) and proxies only `/api/v1/admin/*` 
 - Created 2026-09-28 (b5ea5cd); demo chat, widget preview and redesigned console on 2026-09-30 (ad02d4e);
   review queue and knowledge transfer on 2026-10-07 (5a92df9); model-server queue and free VRAM on the overview
   on 2026-10-22 (1e2508e).
+- Overview split into Overview / Quality / Support / System tabs, surfacing rollup data that was stored but
+  never shown (first-token latency, routes, handoff reasons); slice 1 of `docs/dashboard-monitoring-plan.md`
+  (2026-11-17). Intents are only `rag`/`action`/`login`, so routes stand in as "request types".
 - Warning badges and callouts used the accent colours instead of the warning tokens and lost their colour →
   switched to `--status-warning-*` in `components.css` (e2fe6c9, `lcduc/automatic-octo-computing-machines#38`,
   2026-10-08).
 - The relevance threshold is hidden from admins (920d1f7, 2026-10-01).
 - `EvalCasesCard.tsx`'s comment was updated for the eval scripts' move to `backend/scripts/eval/` (30cfa1c, #76).
+
+- The traffic heatmap widened the whole page at phone width: `.sr-only` is `position: absolute`, so the
+  per-cell labels escaped `.table-wrap`'s scroll container → `.heatmap` got `position: relative` (2026-11-17).
+  Any table with `.sr-only` content inside `.table-wrap` needs the same.
 
 ## Status
 - Last reviewed: 2026-11-10

@@ -35,6 +35,7 @@ from app.api.schemas.knowledge import (
     DocumentOut,
     DocumentUpdate,
     ImportResultOut,
+    KnowledgeHealthOut,
     ReviewCounts,
     ReviewDecision,
     SourceCreate,
@@ -53,6 +54,11 @@ write_access = require_admin(WRITE_ROLES, key_scope=SCOPE_DOCUMENTS_WRITE)
 #: Reviewing is a person's decision: owner or editor sessions only, never an API key, so an
 #: integration that uploads cannot also approve what it uploaded.
 review_access = require_admin(WRITE_ROLES)
+#: Window of the document-health report, in days, and the length of its lists.
+DEFAULT_HEALTH_DAYS = 30
+MAX_HEALTH_DAYS = 90
+DEFAULT_HEALTH_LIMIT = 10
+MAX_HEALTH_LIMIT = 50
 
 
 # ---------------------------------------------------------------- sources
@@ -156,6 +162,20 @@ async def create_text_document(
 async def list_access_tiers(container: AppContainer = Depends(get_container)) -> List[str]:
     """Tiers a document may require, lowest first: ``anonymous`` (everyone), then the host's tiers."""
     return container.knowledge.access_tiers()
+
+
+@router.get("/health", response_model=KnowledgeHealthOut, dependencies=[read_access])
+async def knowledge_health(
+    days: int = Query(DEFAULT_HEALTH_DAYS, ge=1, le=MAX_HEALTH_DAYS),
+    limit: int = Query(DEFAULT_HEALTH_LIMIT, ge=1, le=MAX_HEALTH_LIMIT),
+    container: AppContainer = Depends(get_container),
+) -> KnowledgeHealthOut:
+    """
+    Document health over the last ``days`` local days: most cited, never cited and
+    rated-down documents, plus the ones expiring within 30 days or not yet in force.
+    Citations are read from stored answers, so the window is bounded by chat retention.
+    """
+    return KnowledgeHealthOut(**await container.knowledge_health.health(days, limit))
 
 
 @router.get("/review/counts", response_model=ReviewCounts, dependencies=[read_access])

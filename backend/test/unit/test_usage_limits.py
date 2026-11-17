@@ -1,4 +1,4 @@
-"""Time buckets and the usage policy (pure logic; no database)."""
+"""Time buckets, the usage policy and the month-end spend projection (pure logic; no database)."""
 
 from datetime import datetime, timezone
 
@@ -6,6 +6,7 @@ import pytest
 
 from app.models.usage_policy import UsagePolicy
 from app.services.rate_limit_service import TimeBuckets, hashed
+from app.services.usage_service import project_month_spend
 
 # 2026-09-30 23:30 in Ho Chi Minh City (UTC+7).
 NOW = datetime(2026, 9, 30, 16, 30, 45, tzinfo=timezone.utc)
@@ -43,3 +44,23 @@ def test_policy_picks_the_tier_and_pauses_anonymous_visitors_first():
 def test_personal_data_in_counter_keys_is_hashed():
     assert hashed("203.0.113.7") == hashed("203.0.113.7")
     assert "203.0.113.7" not in hashed("203.0.113.7") and len(hashed("x")) == 24
+
+
+def _september(now_utc):
+    """``(now, month start, month end)`` of September 2026 in Ho Chi Minh City."""
+    buckets = TimeBuckets("Asia/Ho_Chi_Minh", clock=lambda: now_utc)
+    start = buckets.start("month")
+    return buckets.now(), start, buckets.end("month", start)
+
+
+@pytest.mark.parametrize(
+    "now_utc, spent, projected",
+    [
+        (datetime(2026, 9, 15, 17, tzinfo=timezone.utc), 1_500_000, 3_000_000),  # half of a 30-day month
+        (datetime(2026, 9, 1, 17, tzinfo=timezone.utc), 100_000, 3_000_000),  # exactly one day in
+        (datetime(2026, 9, 15, 17, tzinfo=timezone.utc), 0, 0),
+        (datetime(2026, 9, 1, 16, 59, tzinfo=timezone.utc), 100_000, None),  # still the first local day
+    ],
+)
+def test_month_spend_is_projected_linearly_after_the_first_day(now_utc, spent, projected):
+    assert project_month_spend(spent, *_september(now_utc)) == projected

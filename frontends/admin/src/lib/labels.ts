@@ -1,6 +1,7 @@
 /** Badge tones for backend enums (labels live in the i18n dictionaries). */
 import type { Tone } from "../components/ui/primitives";
-import type { DocumentStatus, HandoffStatus, Outcome, ReviewStatus } from "./types";
+import type { MessageKey } from "../i18n/vi";
+import { HANDOFF_REASONS, ROUTES, type DocumentStatus, type HandoffStatus, type Outcome, type ReviewStatus } from "./types";
 
 export const OUTCOME_TONES: Record<Outcome, Tone> = {
   answered: "success",
@@ -45,4 +46,31 @@ export function statusTone(status: number): Tone {
   if (status < 300) return "success";
   if (status < 500) return "warning";
   return "danger";
+}
+
+/** i18n key for a handoff reason; unknown reasons read as "Other". */
+export function handoffReasonLabel(reason: string): MessageKey {
+  return (HANDOFF_REASONS as readonly string[]).includes(reason) ? (`handoffReason.${reason}` as MessageKey) : "handoffReason.other";
+}
+
+/** i18n key for a trace route; unknown routes read as "Other". */
+export function routeLabel(route: string): MessageKey {
+  return (ROUTES as readonly string[]).includes(route) ? (`route.${route}` as MessageKey) : "route.other";
+}
+
+const GUARD_REASONS = ["prompt_injection", "moderation_flagged", "timeout", "error", "no_result", "client_disconnected"] as const;
+
+/** i18n key for a guard/error reason on a turn; unknown reasons read as "Other". */
+export function guardReasonLabel(reason: string): MessageKey {
+  return (GUARD_REASONS as readonly string[]).includes(reason) ? (`guardReason.${reason}` as MessageKey) : "guardReason.other";
+}
+
+const PIPELINE_STEPS = ["guard", "router", "intent", "moderation", "rewrite", "retrieval", "generation", "first_token", "total"] as const;
+
+/** Pipeline steps in the order a turn runs them. */
+export const STEP_ORDER: readonly string[] = PIPELINE_STEPS;
+
+/** i18n key for a pipeline step, or null for a step this admin does not know (show the raw name). */
+export function stepLabel(step: string): MessageKey | null {
+  return STEP_ORDER.includes(step) ? (`step.${step}` as MessageKey) : null;
 }

@@ -7,11 +7,10 @@ import { Drawer } from "../components/ui/Modal";
 import { Badge, Callout, EmptyState, ErrorState, Field, KpiCard, LoadingState, PageHeader, Pagination } from "../components/ui/primitives";
 import { useToast } from "../components/ui/Toast";
 import { useI18n } from "../i18n/I18nProvider";
-import type { MessageKey } from "../i18n/vi";
 import { adminApi, query } from "../lib/api";
-import { HANDOFF_STATUS_TONES } from "../lib/labels";
+import { HANDOFF_STATUS_TONES, handoffReasonLabel } from "../lib/labels";
 import { useSession } from "../lib/session";
-import { HANDOFF_REASONS, type ConversationDetail, type Handoff, type HandoffContact, type HandoffStatus, type Page } from "../lib/types";
+import { type ConversationDetail, type Handoff, type HandoffContact, type HandoffStatus, type Page } from "../lib/types";
 import { useApi } from "../lib/use-api";
 
 const PAGE_SIZE = 50;
@@ -22,10 +21,6 @@ const QUEUE_REFRESH_MS = 20_000;
 /** An open or assigned ticket past its due time (the SLA timer, HND-16). */
 function overdue(handoff: Handoff): boolean {
   return (handoff.status === "open" || handoff.status === "assigned") && !!handoff.due_at && new Date(handoff.due_at) < new Date();
-}
-
-function reasonLabel(reason: string): MessageKey {
-  return (HANDOFF_REASONS as readonly string[]).includes(reason) ? (`handoffReason.${reason}` as MessageKey) : "handoffReason.other";
 }
 
 function HandoffDrawer({ handoff, onClose, onUpdated }: { handoff: Handoff; onClose: () => void; onUpdated: (handoff: Handoff) => void }) {
@@ -92,7 +87,7 @@ function HandoffDrawer({ handoff, onClose, onUpdated }: { handoff: Handoff; onCl
     <Drawer title={t("handoffs.detail")} onClose={onClose} footer={canHandoff && handoff.status !== "closed" ? replyBox : undefined}>
       <dl className="dl">
         <dt>{t("handoffs.reason")}</dt>
-        <dd>{t(reasonLabel(handoff.reason))}</dd>
+        <dd>{t(handoffReasonLabel(handoff.reason))}</dd>
         <dt>{t("handoffs.status")}</dt>
         <dd><Badge tone={HANDOFF_STATUS_TONES[handoff.status]}>{t(`handoffStatus.${handoff.status}`)}</Badge></dd>
         <dt>{t("handoffs.due")}</dt>
@@ -200,7 +195,7 @@ export function HandoffsPage() {
                 {list.data.items.map((handoff) => (
                   <tr key={handoff.id}>
                     <td className="small">{formatDateTime(handoff.created_at)}</td>
-                    <td>{t(reasonLabel(handoff.reason))}</td>
+                    <td>{t(handoffReasonLabel(handoff.reason))}</td>
                     <td>
                       <Badge tone={HANDOFF_STATUS_TONES[handoff.status]}>{t(`handoffStatus.${handoff.status}`)}</Badge>
                     </td>
