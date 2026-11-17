@@ -17,7 +17,7 @@ Everything runs on one GPU box. It is installed with `deploy/install.sh` and run
 
 ## Video introduction
 
-https://github.com/user-attachments/assets/9a732160-2316-4c41-9162-e3ff21e70710
+https://github.com/user-attachments/assets/bcd086f3-399f-4f8a-99b4-bfb6acdc7f79
 
 A 60-second tour: a cited answer in the widget, how every message is
 routed and retrieved, the answer trace, handoff to staff, ingestion, dashboards and live tuning,
