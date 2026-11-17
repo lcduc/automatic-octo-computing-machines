@@ -11,6 +11,7 @@ File names are lowercase kebab-case.
 | [chatbot-routing-spec.md](chatbot-routing-spec.md) | Spec of the chat pipeline: intent routing, RAG, tool execution, handoff, refusal, injection defense | Yes |
 | [deployment.md](deployment.md) | Deployment, embedding, backups and operations for a client box | Describes the handed-over VPS setup; not maintained here |
 | [performance.md](performance.md) | Load test of the chat pipeline: latency, ceiling, VRAM | Point-in-time (2026-10-24) |
+| [dashboard-monitoring-plan.md](dashboard-monitoring-plan.md) | Tiered plan for client-facing admin dashboards (business, quality, support, system) | Yes, until all slices land |
 | [privacy-data-flows.md](privacy-data-flows.md) | Map of personal data flows (PRV-01) | Yes |
 | [diagrams/](diagrams/) | Architecture, chat-answer and ingestion diagrams (SVG + HTML) | Yes |
 | [reports/](reports/) | Dated reviews and experiment write-ups | No, point-in-time |

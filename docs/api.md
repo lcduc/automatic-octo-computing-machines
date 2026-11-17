@@ -252,6 +252,7 @@ weighted in retrieval.
 | POST | `/knowledge/documents/{document_id}/review` | editor | `{"approve": bool, "note"?}` → `DocumentDetail`. 409 when already reviewed, or when approving a document that has not finished processing. Signed-in owner or editor only: an API key is refused. |
 | GET | `/knowledge/access-tiers` | viewer | → `["anonymous", "user", ...]`: the values a document's `access_tier` may take, lowest first (`anonymous` + `HOST_TIERS`) |
 | GET | `/knowledge/review/counts` | viewer | → `{"pending", "approved", "rejected"}` |
+| GET | `/knowledge/health?days=1..90&limit=1..50` | viewer | → `{"since", "documents", "disabled", "failed", "most_cited": [{"document_id", "title", "citations"}], "never_cited": {"count", "items": [{"document_id", "title", "created_at"}]}, "not_helpful": [{"document_id", "title", "count"}], "expiring": [{"document_id", "title", "effective_to"}], "scheduled": [{"document_id", "title", "effective_from"}]}`. Defaults: 30 local days (today included), 10 per list. `documents` = enabled, ready and approved; `never_cited` = those created before `since` that no answer in the window cited (oldest first); `citations`/`count` = answers citing the document, each answer once; `not_helpful` counts thumbs-down answers only; `expiring` = enabled, `effective_to` from today to today + 30 days; `scheduled` = enabled, `effective_from` after today (soonest first). Citations come from stored answers, so the window is bounded by chat retention. |
 
 **Review.** Every new document (upload, typed text, import) starts `pending` and the assistant answers
 only from `approved` ones, whoever created it. Only an owner or editor session can approve or reject, so a
@@ -331,7 +332,7 @@ a fallback (e.g. no Điều markers found), very short or very long chunks, and 
 
 | Method | Path | Role | Details |
 |---|---|---|---|
-| GET | `/usage/summary?days=1..90` | viewer | `{"since", "daily": [{"day", "model", "prompt_tokens", "completion_tokens", "calls"}], "by_purpose": [{"purpose", "tokens", "calls"}], "outcomes": {outcome: count}, "feedback": {"positive", "negative"}, "latency": {"p50_ms", "p95_ms", "conversations"}, "totals": {...}}` |
+| GET | `/usage/summary?days=1..90` | viewer | `{"since", "daily": [{"day", "model", "prompt_tokens", "completion_tokens", "calls"}], "by_purpose": [{"purpose", "tokens", "calls"}], "outcomes": {outcome: count}, "feedback": {"positive", "negative"}, "latency": {"p50_ms", "p95_ms", "conversations"}, "visitors": {"total", "returning", "by_tier": {tier: count}}, "single_turn_conversations", "traffic": [[int × 24] × 7], "totals": {...}, "month": {"tokens", "cost_micro_usd", "projected_cost_micro_usd", "spend_cap_micro_usd"}}`. `projected_cost_micro_usd` is this month's spend extrapolated linearly to month end (`null` during the first day of the month); `spend_cap_micro_usd` is `0` when there is no cap. `visitors.total` is the distinct visitor ids with a message in the period; `returning` is those with a conversation created before it; `by_tier` is distinct visitor ids per tier in token usage (`unknown` = no tier). `single_turn_conversations` counts conversations created in the period with exactly one assistant message and no handoff request. `traffic` is user messages per weekday (row 0 = Monday) × hour in the app time zone. |
 | GET | `/usage/live` | viewer | Server-Sent Events: `hello`, then `turn` (`conversation_id`, `message_id`, `outcome`, `prompt_tokens`, `completion_tokens`, `latency_ms`, `model`) and `handoff` (`handoff_id`, `conversation_id`, `reason`); `: ping` every 15 s. Read it with `fetch`, since `EventSource` cannot send the session headers. |
 | GET | `/logs` | viewer | Query: `level`, `request_id`, `contains`, `since`, `limit` ≤500 → `[{"ts", "level", "logger", "message", "request_id", "exception"}]`, newest first, PII already masked |
 | GET | `/system` | viewer | `{"version", "uptime_seconds", "database", "knowledge_index_version", "indexed_chunks", "indexed_sources", "llm_provider", "llm_model", "embedding_model", "reranker_loaded", "cache", "fallback_mode", "ingestion_queue": {"pending", "in_progress", "oldest_pending_seconds"}}` |
@@ -372,3 +373,11 @@ It records every admin write and sign-in attempt, successful or not. Passwords, 
 replaced by `***`. Bodies over 16 KB, and uploads, are summarised as `{"omitted": content_type, "bytes": n}`.
 There is no endpoint to change or delete entries, and the database itself rejects `UPDATE` and `DELETE`
 on the table.
+
+`GET /audit/summary?days=1..90` (default 30, a rolling window ending now) → `{"since", "logins_failed",
+"logins_succeeded", "contact_reveals", "api_key_changes", "account_changes", "deletions",
+"data_subject_requests", "legal_hold_changes", "denied", "failed_login_ips": [{"client_ip", "count"}]}`.
+A failed login is `POST …/auth/login` answered 401; `denied` is any audited request answered 403; every other
+category counts 2xx only: reveals `POST …/handoffs/{id}/reveal-contact`, API keys `…/api-keys…`, accounts
+`…/users…` and `POST …/auth/password`, deletions any `DELETE`, data-subject requests `POST …/data-subjects/…`,
+legal holds `PUT …/legal-hold`. `failed_login_ips` lists the 5 IPs with the most failed logins.
