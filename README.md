@@ -17,9 +17,9 @@ Everything runs on one GPU box. It is installed with `deploy/install.sh` and run
 
 ## Video introduction
 
-[![RAG Chatbot: a 60-second tour](docs/assets/intro-poster.jpg)](docs/assets/intro.mp4)
+https://github.com/user-attachments/assets/9a732160-2316-4c41-9162-e3ff21e70710
 
-A 60-second tour (click the image to play): a cited answer in the widget, how every message is
+A 60-second tour: a cited answer in the widget, how every message is
 routed and retrieved, the answer trace, handoff to staff, ingestion, dashboards and live tuning,
 security, and the one-box install. All data shown is fictional.
 
