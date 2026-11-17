@@ -13,4 +13,5 @@ File names are lowercase kebab-case.
 | [performance.md](performance.md) | Load test of the chat pipeline: latency, ceiling, VRAM | Point-in-time (2026-10-24) |
 | [privacy-data-flows.md](privacy-data-flows.md) | Map of personal data flows (PRV-01) | Yes |
 | [diagrams/](diagrams/) | Architecture, chat-answer and ingestion diagrams (SVG + HTML) | Yes |
+| [assets/](assets/) | Media for the root README: the 21-second intro video (`intro.mp4`) and its poster | Re-record when the product's look changes |
 | [reports/](reports/) | Dated reviews and experiment write-ups | No, point-in-time |
