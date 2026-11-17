@@ -186,6 +186,8 @@ export interface DataSubjectDeleted {
 
 export type HandoffStatus = "open" | "assigned" | "answered" | "closed";
 export const HANDOFF_REASONS = ["no_knowledge", "user_request", "sensitive_topic", "repeated_no_answer", "negative_feedback", "tool_error", "ambiguous_repeated"] as const;
+/** Trace routes, mirroring `backend/app/models/turn_trace.py` (the "request types" on the overview). */
+export const ROUTES = ["rag", "tool", "smalltalk", "clarify", "off_topic", "human_request", "sensitive_topic", "login_required", "staff_active", "guard", "cache", "fallback"] as const;
 
 export interface Handoff {
   id: string;
@@ -259,7 +261,40 @@ export interface UsageSummary {
   feedback: { positive: number; negative: number };
   latency: { p50_ms: number | null; p95_ms: number | null; conversations: number };
   totals: { prompt_tokens: number; completion_tokens: number; calls: number; cost_micro_usd: number };
-  month: { tokens: number; cost_micro_usd: number };
+  month: { tokens: number; cost_micro_usd: number; projected_cost_micro_usd?: number | null; spend_cap_micro_usd?: number };
+  /** Distinct end users in the period; absent on a backend older than slice 4. */
+  visitors?: { total: number; returning: number; by_tier: Record<string, number> };
+  single_turn_conversations?: number;
+  /** User messages per weekday (Monday first) x hour of day. */
+  traffic?: number[][];
+}
+
+/** `GET audit/summary` (owner only): counts of sensitive actions in the window. */
+export interface AuditSummary {
+  since: string;
+  logins_failed: number;
+  logins_succeeded: number;
+  contact_reveals: number;
+  api_key_changes: number;
+  account_changes: number;
+  deletions: number;
+  data_subject_requests: number;
+  legal_hold_changes: number;
+  denied: number;
+  failed_login_ips: Array<{ client_ip: string; count: number }>;
+}
+
+/** `GET knowledge/health`: which documents earn their place in the knowledge base. */
+export interface KnowledgeHealth {
+  since: string;
+  documents: number;
+  disabled: number;
+  failed: number;
+  most_cited: Array<{ document_id: string; title: string; citations: number }>;
+  never_cited: { count: number; items: Array<{ document_id: string; title: string; created_at: string }> };
+  not_helpful: Array<{ document_id: string; title: string; count: number }>;
+  expiring: Array<{ document_id: string; title: string; effective_to: string }>;
+  scheduled: Array<{ document_id: string; title: string; effective_from: string }>;
 }
 
 export interface LiveEvent {

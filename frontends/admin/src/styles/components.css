@@ -868,6 +868,74 @@ fieldset.field {
 .legend--completion {
   background: var(--accent-gold);
 }
+.chart__first-token {
+  fill: var(--accent-teal);
+}
+.legend--first-token {
+  background: var(--accent-teal);
+}
+.breakdown {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.breakdown__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-1) var(--space-3);
+  font-size: 13px;
+}
+.breakdown__label {
+  overflow-wrap: anywhere;
+}
+.breakdown__value {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.breakdown__track {
+  grid-column: 1 / -1;
+  height: 6px;
+  border-radius: var(--radius-full);
+  background: var(--bg-subtle);
+  overflow: hidden;
+}
+.breakdown__bar {
+  display: block;
+  height: 100%;
+  border-radius: var(--radius-full);
+  background: var(--primary-light);
+}
+/* Traffic heatmap: --level (0..1) is set per cell from data; the colour comes from the token. */
+.heatmap {
+  /* Containing block for the absolutely positioned .sr-only cell labels, so they stay inside .table-wrap's scroll. */
+  position: relative;
+  border-collapse: separate;
+  border-spacing: 2px;
+  font-size: 11px;
+}
+.heatmap__hour,
+.heatmap__day {
+  font-weight: 500;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.heatmap__hour {
+  text-align: left;
+}
+.heatmap__day {
+  text-align: left;
+  padding-right: var(--space-2);
+}
+.heatmap__cell {
+  min-width: 14px;
+  height: 18px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--primary-light) calc(var(--level) * 100%), var(--bg-main));
+}
 .dl {
   display: grid;
   grid-template-columns: max-content 1fr;

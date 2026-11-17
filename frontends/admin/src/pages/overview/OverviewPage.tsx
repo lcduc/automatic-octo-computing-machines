@@ -1,49 +1,32 @@
-import { Activity, BookOpen, Coins, Headset, MessagesSquare, ThumbsDown } from "lucide-react";
-import { Fragment, useState } from "react";
-import { ConfirmDialog } from "../../components/ui/Modal";
-import { Card, ErrorState, Field, KpiCard, LoadingState, PageHeader } from "../../components/ui/primitives";
-import { useToast } from "../../components/ui/Toast";
+import { useState } from "react";
+import { useSearchParams } from "react-router";
+import { ErrorState, Field, LoadingState, PageHeader, Tabs } from "../../components/ui/primitives";
 import { useI18n } from "../../i18n/I18nProvider";
-import { adminApi } from "../../lib/api";
-import { useSession } from "../../lib/session";
-import { OUTCOMES, type MessageResponse, type SystemStatus, type UsageSummary } from "../../lib/types";
+import type { DailyMetrics, UsageSummary } from "../../lib/types";
 import { useApi } from "../../lib/use-api";
-import { LiveFeed } from "./LiveFeed";
-import { MonthlyHistory } from "./MonthlyHistory";
-import { TokenChart } from "./TokenChart";
+import { BusinessTab } from "./BusinessTab";
+import { QualityTab } from "./QualityTab";
+import { SystemTab } from "./SystemTab";
 
 const PERIODS = [1, 7, 30] as const;
-type Maintenance = "cache/clear" | "reindex";
+const TABS = ["overview", "quality", "system"] as const;
+type Tab = (typeof TABS)[number];
 
-/** Micro-dollars as dollars, for the cost hint. */
-function usd(microUsd: number): string {
-  return `$${(microUsd / 1_000_000).toFixed(2)}`;
+/** The tab named in `?tab=`, or the business overview. */
+function selectedTab(value: string | null): Tab {
+  return (TABS as readonly string[]).includes(value ?? "") ? (value as Tab) : "overview";
 }
 
+/** Dashboards for one period, split by reader: business, quality and system. */
 export function OverviewPage() {
-  const { t, formatNumber } = useI18n();
-  const { canWrite } = useSession();
-  const toast = useToast();
+  const { t } = useI18n();
+  const [params, setParams] = useSearchParams();
+  const tab = selectedTab(params.get("tab"));
   const [days, setDays] = useState<(typeof PERIODS)[number]>(7);
-  const [confirming, setConfirming] = useState<Maintenance | null>(null);
   const summary = useApi<UsageSummary>(`usage/summary?days=${days}`);
-  const system = useApi<SystemStatus>("system");
-
-  const runMaintenance = async (action: Maintenance) => {
-    setConfirming(null);
-    try {
-      const result = await adminApi<MessageResponse>(`system/${action}`, { method: "POST" });
-      toast.success(result.message);
-      system.reload();
-    } catch (reason) {
-      toast.error((reason as Error).message);
-    }
-  };
-
-  const data = summary.data;
-  const turns = data ? Object.values(data.outcomes).reduce((sum, count) => sum + (count ?? 0), 0) : 0;
-  const unanswered = data ? (data.outcomes.denied ?? 0) + (data.outcomes.handoff ?? 0) : 0;
-  const queue = system.data?.ingestion_queue;
+  const history = useApi<DailyMetrics[]>(`usage/history?days=${days}`);
+  const error = summary.error ?? history.error;
+  const data = summary.data && history.data ? { summary: summary.data, history: history.data } : null;
 
   return (
     <>
@@ -62,139 +45,26 @@ export function OverviewPage() {
           </Field>
         }
       />
+      <Tabs<Tab>
+        label={t("overview.tabs")}
+        tabs={TABS.map((key) => ({ key, label: t(`overview.tab.${key}`) }))}
+        selected={tab}
+        onSelect={(key) => setParams(key === "overview" ? {} : { tab: key })}
+      />
 
-      {summary.error && <ErrorState message={summary.error} onRetry={summary.reload} />}
-      {!data && !summary.error && <LoadingState />}
-      {data && (
-        <div className="kpi-grid">
-          <KpiCard icon={<MessagesSquare size={20} />} label={t("overview.conversations")} value={formatNumber(data.latency.conversations)} hint={t("overview.turns", { count: formatNumber(turns) })} />
-          <KpiCard icon={<Coins size={20} />} tone="gold" label={t("overview.tokens")} value={formatNumber(data.totals.prompt_tokens + data.totals.completion_tokens)} hint={t("overview.cost", { period: usd(data.totals.cost_micro_usd), month: usd(data.month.cost_micro_usd) })} />
-          <KpiCard
-            icon={<Headset size={20} />}
-            tone="rose"
-            label={t("overview.unanswered")}
-            value={formatNumber(unanswered)}
-            hint={turns ? t("overview.unansweredShare", { percent: Math.round((unanswered / turns) * 100) }) : undefined}
-          />
-          <KpiCard
-            icon={<ThumbsDown size={20} />}
-            label={t("overview.feedback")}
-            value={`${formatNumber(data.feedback.positive)} / ${formatNumber(data.feedback.negative)}`}
-            hint={t("overview.feedbackHint")}
-          />
-          <KpiCard
-            icon={<Activity size={20} />}
-            tone="teal"
-            label={t("overview.latency")}
-            value={data.latency.p95_ms ? `${formatNumber(Math.round(data.latency.p95_ms))} ms` : "—"}
-            hint={data.latency.p50_ms ? t("overview.latencyHint", { p50: formatNumber(Math.round(data.latency.p50_ms)) }) : undefined}
-          />
-          <KpiCard
-            icon={<BookOpen size={20} />}
-            label={t("overview.indexed")}
-            value={formatNumber(system.data?.indexed_chunks)}
-            hint={queue ? t("overview.queue", { pending: queue.pending, running: queue.in_progress }) : undefined}
-          />
-        </div>
-      )}
-
-      {data && (
-        <div className="grid-2">
-          <Card title={t("overview.tokensChart")}>
-            <TokenChart daily={data.daily} />
-          </Card>
-          <Card title={t("overview.outcomes")}>
-            <dl className="dl">
-              {OUTCOMES.filter((outcome) => data.outcomes[outcome]).map((outcome) => (
-                <Fragment key={outcome}>
-                  <dt>{t(`outcome.${outcome}`)}</dt>
-                  <dd>{formatNumber(data.outcomes[outcome])}</dd>
-                </Fragment>
-              ))}
-            </dl>
-            {data.by_purpose.length > 0 && (
-              <p className="small muted mt-3">
-                {data.by_purpose.map((row) => t("overview.purpose", { purpose: row.purpose, tokens: formatNumber(row.tokens) })).join(" · ")}
-              </p>
-            )}
-          </Card>
-        </div>
-      )}
-
-      <div className="grid-2">
-        <Card title={t("overview.live")} flush>
-          <LiveFeed />
-        </Card>
-        <Card
-          title={t("overview.system")}
-          actions={
-            canWrite && (
-              <>
-                <button type="button" className="btn btn--sm" onClick={() => setConfirming("cache/clear")}>
-                  {t("overview.clearCache")}
-                </button>
-                <button type="button" className="btn btn--sm" onClick={() => setConfirming("reindex")}>
-                  {t("overview.reindex")}
-                </button>
-              </>
-            )
-          }
-        >
-          {system.error && <ErrorState message={system.error} onRetry={system.reload} />}
-          {system.data && (
-            <dl className="dl">
-              <dt>{t("overview.database")}</dt>
-              <dd>{system.data.database ? t("common.ok") : t("overview.databaseDown")}</dd>
-              <dt>{t("overview.model")}</dt>
-              <dd className="mono">
-                {system.data.llm_provider} / {system.data.llm_model}
-              </dd>
-              <dt>{t("overview.embedding")}</dt>
-              <dd className="mono">{system.data.embedding_model}</dd>
-              <dt>{t("overview.reranker")}</dt>
-              <dd>{system.data.reranker_loaded ? t("common.on") : t("common.off")}</dd>
-              {system.data.model_server && (
-                <>
-                  <dt>{t("overview.gpu")}</dt>
-                  <dd>
-                    {system.data.model_server.gpu_free_mb !== null && system.data.model_server.gpu_total_mb !== null
-                      ? t("overview.gpuMemory", {
-                          free: formatNumber(system.data.model_server.gpu_free_mb),
-                          total: formatNumber(system.data.model_server.gpu_total_mb),
-                        })
-                      : t("overview.gpuNone")}
-                    {" · "}
-                    {t("overview.gpuQueue", {
-                      chat: system.data.model_server.chat_waiting,
-                      ingestion: system.data.model_server.ingestion_waiting,
-                    })}
-                  </dd>
-                </>
-              )}
-              <dt>{t("overview.fallback")}</dt>
-              <dd>{t(`settings.fallback.${system.data.fallback_mode}`)}</dd>
-              <dt>{t("overview.cache")}</dt>
-              <dd>{t("overview.cacheValue", { size: String(system.data.cache.size ?? 0), rate: String(system.data.cache.hit_rate ?? "—") })}</dd>
-              <dt>{t("overview.version")}</dt>
-              <dd className="mono">{system.data.version}</dd>
-            </dl>
-          )}
-        </Card>
-      </div>
-
-      <Card title={t("history.title")} flush>
-        <MonthlyHistory />
-      </Card>
-
-      {confirming && (
-        <ConfirmDialog
-          title={confirming === "reindex" ? t("overview.reindex") : t("overview.clearCache")}
-          message={confirming === "reindex" ? t("overview.reindexConfirm") : t("overview.clearCacheConfirm")}
-          confirmLabel={t("common.confirm")}
-          onConfirm={() => void runMaintenance(confirming)}
-          onCancel={() => setConfirming(null)}
+      {error && (
+        <ErrorState
+          message={error}
+          onRetry={() => {
+            summary.reload();
+            history.reload();
+          }}
         />
       )}
+      {!data && !error && <LoadingState />}
+      {data && tab === "overview" && <BusinessTab {...data} />}
+      {data && tab === "quality" && <QualityTab {...data} />}
+      {data && tab === "system" && <SystemTab {...data} />}
     </>
   );
 }

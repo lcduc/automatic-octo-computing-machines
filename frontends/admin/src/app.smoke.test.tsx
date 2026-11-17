@@ -70,8 +70,62 @@ function fixtures(role: Role): Record<string, unknown> {
       latency: { p50_ms: 900, p95_ms: 2100, conversations: 4 },
       totals: { prompt_tokens: 100, completion_tokens: 20, calls: 1, cost_micro_usd: 180 },
       by_tier: [{ tier: "anonymous", tokens: 120, cost_micro_usd: 180 }],
-      month: { tokens: 120, cost_micro_usd: 180 },
+      month: { tokens: 120, cost_micro_usd: 180, projected_cost_micro_usd: 900, spend_cap_micro_usd: 5_000_000 },
+      visitors: { total: 5, returning: 2, by_tier: { anonymous: 4, member: 1 } },
+      single_turn_conversations: 1,
+      traffic: Array.from({ length: 7 }, (_day, weekday) => Array.from({ length: 24 }, (_hour, hour) => (weekday === 0 && hour === 9 ? 12 : 0))),
     },
+    "knowledge/health": {
+      since: NOW,
+      documents: 3,
+      disabled: 1,
+      failed: 0,
+      most_cited: [{ document_id: "doc-1", title: "Quy chế nghỉ phép", citations: 7 }],
+      never_cited: { count: 1, items: [{ document_id: "doc-2", title: "Tài liệu cũ", created_at: NOW }] },
+      not_helpful: [],
+      expiring: [{ document_id: "doc-1", title: "Quy chế nghỉ phép", effective_to: "2026-10-15" }],
+      scheduled: [],
+    },
+    "audit/summary": {
+      since: NOW,
+      logins_failed: 3,
+      logins_succeeded: 10,
+      contact_reveals: 1,
+      api_key_changes: 0,
+      account_changes: 2,
+      deletions: 0,
+      data_subject_requests: 0,
+      legal_hold_changes: 0,
+      denied: 1,
+      failed_login_ips: [{ client_ip: "10.0.0.9", count: 3 }],
+    },
+    "usage/history": [
+      {
+        day: "2026-09-29",
+        turns: 4,
+        conversations: 4,
+        errors: 0,
+        handoffs: 1,
+        p50_latency_ms: 900,
+        p95_latency_ms: 2100,
+        p95_first_token_ms: 700,
+        prompt_tokens: 100,
+        completion_tokens: 20,
+        cost_micro_usd: 180,
+        breakdown: {
+          routes: { rag: 3, smalltalk: 1 },
+          handoff_reasons: { user_request: 1 },
+          outcomes: { answered: 3, denied: 1 },
+          visitors: 5,
+          conversations_handed_off: 1,
+          cited_answers: 2,
+          low_confidence_answers: 1,
+          cached_answers: 1,
+          guard_reasons: { prompt_injection: 1 },
+          step_latency_ms: { retrieval: { p50: 120, p95: 340 } },
+        },
+      },
+    ],
     system: {
       version: "1.0.0",
       uptime_seconds: 10,
@@ -172,6 +226,8 @@ afterEach(() => {
 describe("every page renders", () => {
   it.each([
     ["/", "Tổng quan"],
+    ["/?tab=quality", "Tổng quan"],
+    ["/?tab=system", "Tổng quan"],
     ["/knowledge", "Kho tri thức"],
     ["/knowledge?tab=sources", "Kho tri thức"],
     ["/knowledge/doc-1", "Luật người lao động"],
@@ -197,6 +253,39 @@ describe("every page renders", () => {
     expect(await screen.findByText(/chưa dùng nó để trả lời/)).toBeTruthy();
     expect(screen.getByText("Đã sửa tay")).toBeTruthy();
     expect(screen.getByText("article: Điều 1")).toBeTruthy();
+  });
+});
+
+describe("overview tabs", () => {
+  it.each([
+    ["/", "Trả lời từ tri thức"],
+    ["/?tab=quality", "Tỉ lệ đánh giá chưa tốt"],
+    ["/?tab=quality", "Câu trả lời có nguồn"],
+    ["/?tab=system", "Thời gian phản hồi theo ngày (p95)"],
+    ["/?tab=system", "Truy xuất tri thức"],
+    ["/", "Người truy cập"],
+    ["/", "Người truy cập theo nhóm người dùng"],
+    ["/?tab=quality", "Rời đi sau một câu trả lời"],
+    ["/?tab=quality", "Tài liệu cũ"],
+    ["/?tab=system", "Đăng nhập thất bại"],
+  ])("%s shows its own panel", async (path, text) => {
+    renderAt(path);
+    expect(await screen.findByText(text)).toBeTruthy();
+  });
+});
+
+describe("overview extras", () => {
+  it("labels each heatmap cell with its day, hour and message count", async () => {
+    renderAt("/");
+    expect(await screen.findByText("T2 9:00: 12 tin nhắn")).toBeTruthy();
+  });
+
+  it("hides the security card from admins who are not owners", async () => {
+    installFetch("viewer");
+    renderAt("/?tab=system");
+    await screen.findByText("Truy xuất tri thức");
+    expect(screen.queryByText("Đăng nhập thất bại")).toBeNull();
+    expect(vi.mocked(fetch).mock.calls.some(([url]) => String(url).includes("audit/summary"))).toBe(false);
   });
 });
 
