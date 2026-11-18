@@ -110,6 +110,24 @@ class ChatService:
         """Mask personal data when redaction is enabled."""
         return self._redactor.redact(text).text if self._redactor is not None else text
 
+    async def _wait_for_free_slot(self) -> None:
+        """
+        Wait up to ``CHAT_ADMISSION_WAIT_SECONDS`` for a generation slot to free up.
+
+        The slot is released again at once: ``stream`` takes the real one, so
+        nothing is held if the client disconnects before streaming starts.
+
+        Raises:
+            ServiceUnavailableError: No slot freed up within the wait.
+        """
+        # ceiling: a slot can be taken between this check and ``stream`` (as before), hold the slot in PreparedTurn if that shows in production
+        try:
+            await asyncio.wait_for(self._slots.acquire(), Config.Security.CHAT_ADMISSION_WAIT_SECONDS())
+        except asyncio.TimeoutError:
+            logger.warning("No chat slot freed up within the admission wait")
+            raise ServiceUnavailableError("Hệ thống đang bận, vui lòng thử lại sau giây lát.") from None
+        self._slots.release()
+
     async def prepare(
         self,
         caller: ChatCaller,
@@ -136,8 +154,7 @@ class ChatService:
         if verdict == BudgetVerdict.SPEND_PAUSED:
             message = AutoReplies.SPEND_PAUSED if caller.logged_in else AutoReplies.SPEND_PAUSED_ANONYMOUS
             raise RateLimitedError(message, self._usage.seconds_until(verdict))
-        if self._slots.locked():
-            raise ServiceUnavailableError("Hệ thống đang bận, vui lòng thử lại sau giây lát.")
+        await self._wait_for_free_slot()
 
         redacted = self._redact(TextUtils.normalize_chat_text(message))
         history_limit = Config.Chat.MAX_HISTORY_TURNS() * 2
