@@ -237,7 +237,8 @@ default). Results of private data tools still reach the model, because they are 
   scaled down to `OCR_MAX_IMAGE_SIDE` (2048 px) on the longest side. Size the caps
   against the other GPU residents (e.g. a router SLM) and check `/ready` `gpu.free_mb`.
 - **One API worker.** The in-memory knowledge index lives in that process.
-  - `MAX_CONCURRENT_CHATS` (default 16) caps turns generated at once.
+  - `MAX_CONCURRENT_CHATS` (default 12) caps turns generated at once.
+  - `CHAT_ADMISSION_WAIT_SECONDS` (default 2) is how long a request waits for a free slot before it gets 503; 0 refuses at once.
   - `RETRIEVAL_MAX_CONCURRENCY` (default 4) caps retrieval at once.
 - **Memory limits** (compose, overridable in `.env`): model-server 5 GB, postgres 3 GB,
   worker 3 GB (and 3 CPUs), api 2 GB, web 384 MB, caddy 256 MB, admin 128 MB.
