@@ -16,7 +16,7 @@ data classes in `app/models/`.
 ### Chat
 | File | Public names | What it does |
 |---|---|---|
-| `chat_service.py` | `ChatService`, `PreparedTurn` | One chat turn end to end: quotas, PII redaction, conversation state, runs the pipeline (`core/agent/chatbot.py` `ChatbotService`), stores messages, trace and token usage; `prepare` / `stream` / `answer` / `wait_for_pending_writes`. |
+| `chat_service.py` | `ChatService`, `PreparedTurn` | One chat turn end to end: quotas, PII redaction, conversation state, runs the pipeline (`core/agent/chatbot.py` `ChatbotService`), stores messages, trace and token usage; `prepare` / `stream` / `answer` / `release_slot` / `wait_for_pending_writes`. `prepare` takes a generation slot (cap `MAX_CONCURRENT_CHATS`), waiting up to `CHAT_ADMISSION_WAIT_SECONDS` for one before it raises `ServiceUnavailableError` (503); the turn holds the slot until `stream`/`answer` ends, or until `release_slot` if it never runs. |
 | `conversation_service.py` | `ConversationService` | Visitor and admin views of conversations, message traces, feedback (two thumbs-down in a row open a handoff ticket when handoff is on). |
 | `transcription_service.py` | `TranscriptionService` | Speech-to-text for voice questions through the OpenAI transcription API; unavailable without an OpenAI key. |
 
@@ -160,9 +160,9 @@ chunk editing, index sync, ingestion worker), `test_knowledge_transfer.py`, `tes
   - ARC-11 is partial — `LISTEN/NOTIFY` carries only the admin live feed, not
     config reloads (docs/checklists/production.md); `ingestion_worker.py` and `business_calendar.py` /
     `sql_tool_catalog.py` do not follow the `<name>_service.py` naming.
-  - CQ-03: `knowledge_service.py` (445), `auth_service.py` (435) and `chat_service.py` (403) are over ~400 lines (docs/checklists/code-quality.md).
+  - CQ-03: `knowledge_service.py` (445), `auth_service.py` (435) and `chat_service.py` (450) are over ~400 lines (docs/checklists/code-quality.md).
 - Ceilings (`# ceiling:` markers in this folder):
-  - `chat_service.py:272` — "unhelpful" turn is an outcome + confidence heuristic — replace with a router
+  - `chat_service.py:319` — "unhelpful" turn is an outcome + confidence heuristic — replace with a router
     "unclear/declined" signal once ORC-03 clarifications exist.
   - `chunk_editing_service.py:186` — re-chunk chunks and embeds inside the request — move to the ingestion
     queue if re-chunk requests time out.

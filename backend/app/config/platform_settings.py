@@ -208,8 +208,13 @@ class SecurityConfig:
 
     @staticmethod
     def MAX_CONCURRENT_CHATS() -> int:
-        """Chat turns generated at the same time; extra requests get HTTP 503."""
-        return env_int("MAX_CONCURRENT_CHATS", 16)
+        """Chat turns generated at the same time; extra requests wait briefly, then get HTTP 503."""
+        return env_int("MAX_CONCURRENT_CHATS", 12)
+
+    @staticmethod
+    def CHAT_ADMISSION_WAIT_SECONDS() -> float:
+        """Seconds a request waits for a free chat slot before it gets HTTP 503 (0 refuses at once)."""
+        return env_float("CHAT_ADMISSION_WAIT_SECONDS", 2.0)
 
     @staticmethod
     def PII_REDACTION_ENABLED() -> bool:

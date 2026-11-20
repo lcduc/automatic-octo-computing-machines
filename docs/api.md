@@ -47,7 +47,7 @@ endpoints.
 | Requests per client IP (every route except `/health`) | 120 / minute | `RATE_LIMIT_IP_PER_MINUTE` |
 | Chat messages per visitor | 20 / minute | `RATE_LIMIT_USER_PER_MINUTE` |
 | Tokens per visitor per day (0 = unlimited) | 60 000 | `DAILY_TOKEN_BUDGET_PER_USER` |
-| Answers generated at the same time | 16 (503 beyond) | `MAX_CONCURRENT_CHATS` |
+| Answers generated at the same time | 12 (a request waits up to 2 s for a free slot, then 503) | `MAX_CONCURRENT_CHATS`, `CHAT_ADMISSION_WAIT_SECONDS` |
 | Admin sign-in attempts per IP and per e-mail | 5 / minute | fixed |
 
 ---
