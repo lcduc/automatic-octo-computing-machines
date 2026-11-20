@@ -14,6 +14,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 
 # Local imports
+from app.api.closing_streaming_response import ClosingStreamingResponse
 from app.api.dependencies import get_container, require_chat_caller, require_client_key
 from app.api.schemas.chat import (
     ChatAnswer,
@@ -51,8 +52,11 @@ async def chat_stream(
     the stream starts.
     """
     turn = await container.chat.prepare(caller, body.message, body.conversation_id, body.sources)
-    return StreamingResponse(
-        sse_stream(container.chat.stream(turn)), media_type="text/event-stream", headers=STREAM_HEADERS
+    return ClosingStreamingResponse(
+        sse_stream(container.chat.stream(turn)),
+        on_close=lambda: container.chat.release_slot(turn),
+        media_type="text/event-stream",
+        headers=STREAM_HEADERS,
     )
 
 

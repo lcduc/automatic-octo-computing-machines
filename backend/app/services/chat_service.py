@@ -57,6 +57,8 @@ class PreparedTurn:
     usages: List[TurnUsage] = field(default_factory=list)
     #: The conversation's previous answer (outcome, confidence), for the repeated-no-answer trigger.
     previous_answer: Optional[Tuple[Optional[str], Optional[float]]] = None
+    #: True while the turn holds a generation slot (``ChatService.release_slot`` frees it).
+    holds_slot: bool = False
 
 
 def _unhelpful(outcome: Optional[str], confidence: Optional[float]) -> bool:
@@ -110,23 +112,29 @@ class ChatService:
         """Mask personal data when redaction is enabled."""
         return self._redactor.redact(text).text if self._redactor is not None else text
 
-    async def _wait_for_free_slot(self) -> None:
+    async def _take_slot(self) -> None:
         """
-        Wait up to ``CHAT_ADMISSION_WAIT_SECONDS`` for a generation slot to free up.
+        Take a generation slot, waiting up to ``CHAT_ADMISSION_WAIT_SECONDS`` for one to free up.
 
-        The slot is released again at once: ``stream`` takes the real one, so
-        nothing is held if the client disconnects before streaming starts.
+        The slot stays taken until ``release_slot``: a slot only checked here and
+        given back would let every waiting request in as soon as one turn ended.
 
         Raises:
             ServiceUnavailableError: No slot freed up within the wait.
         """
-        # ceiling: a slot can be taken between this check and ``stream`` (as before), hold the slot in PreparedTurn if that shows in production
         try:
-            await asyncio.wait_for(self._slots.acquire(), Config.Security.CHAT_ADMISSION_WAIT_SECONDS())
-        except asyncio.TimeoutError:
+            # Not wait_for: on Python 3.11, wait_for(..., 0) times out even when a slot is free.
+            async with asyncio.timeout(Config.Security.CHAT_ADMISSION_WAIT_SECONDS()):
+                await self._slots.acquire()
+        except TimeoutError:
             logger.warning("No chat slot freed up within the admission wait")
             raise ServiceUnavailableError("Hệ thống đang bận, vui lòng thử lại sau giây lát.") from None
-        self._slots.release()
+
+    def release_slot(self, turn: PreparedTurn) -> None:
+        """Free the generation slot ``turn`` took in ``prepare``; later calls do nothing."""
+        if turn.holds_slot:
+            turn.holds_slot = False
+            self._slots.release()
 
     async def prepare(
         self,
@@ -136,12 +144,15 @@ class ChatService:
         sources: Optional[Sequence[str]],
     ) -> PreparedTurn:
         """
-        Check quotas, resolve the conversation and store the user's message.
+        Check quotas, take a generation slot, resolve the conversation and store the user's message.
+
+        The returned turn holds its slot until ``stream`` or ``answer`` ends; a
+        caller that never runs it must call ``release_slot``.
 
         Raises:
             RateLimitedError: Too many messages, a used-up daily token budget
                 (the caller's or their IP's), or the monthly spend cap.
-            ServiceUnavailableError: Every generation slot is busy.
+            ServiceUnavailableError: No generation slot freed up within the admission wait.
             NotFoundError: ``conversation_id`` does not belong to this visitor.
         """
         policy = self._settings.usage_policy()
@@ -154,8 +165,21 @@ class ChatService:
         if verdict == BudgetVerdict.SPEND_PAUSED:
             message = AutoReplies.SPEND_PAUSED if caller.logged_in else AutoReplies.SPEND_PAUSED_ANONYMOUS
             raise RateLimitedError(message, self._usage.seconds_until(verdict))
-        await self._wait_for_free_slot()
+        await self._take_slot()
+        try:
+            return await self._open_turn(caller, message, conversation_id, sources)
+        except BaseException:
+            self._slots.release()
+            raise
 
+    async def _open_turn(
+        self,
+        caller: ChatCaller,
+        message: str,
+        conversation_id: Optional[uuid.UUID],
+        sources: Optional[Sequence[str]],
+    ) -> PreparedTurn:
+        """Resolve the conversation, store the user's message and build the turn (which holds the slot)."""
         redacted = self._redact(TextUtils.normalize_chat_text(message))
         history_limit = Config.Chat.MAX_HISTORY_TURNS() * 2
         async with self._database.session() as session:
@@ -182,7 +206,7 @@ class ChatService:
             staff_active=staff_active,
         )
         return PreparedTurn(caller, conversation.id, uuid.uuid4(), request, time.perf_counter(),
-                            previous_answer=previous_answer)
+                            previous_answer=previous_answer, holds_slot=True)
 
     @staticmethod
     async def _resolve_conversation(
@@ -222,8 +246,9 @@ class ChatService:
             ``meta`` (ids) first, then ``delta`` events, then one ``done``
             event with outcome and citations. The assistant message, token
             usage and any handoff are persisted even if the client disconnects.
+            The turn's generation slot is freed when the stream ends.
         """
-        async with self._slots:
+        try:
             yield {
                 "type": "meta",
                 "conversation_id": str(turn.conversation_id),
@@ -264,16 +289,21 @@ class ChatService:
                 "handoff_id": handoff_id,
                 "reply_expected_by": handoff.due_at.isoformat() if handoff is not None and handoff.due_at else None,
             }
+        finally:
+            self.release_slot(turn)
 
     async def answer(self, turn: PreparedTurn) -> Dict[str, Any]:
         """Non-streaming variant: run the turn and return the ``done`` payload with ids."""
         done: Dict[str, Any] = {}
         meta: Dict[str, Any] = {}
-        async for event in self.stream(turn):
-            if event["type"] == "meta":
-                meta = event
-            elif event["type"] == "done":
-                done = event
+        try:
+            async for event in self.stream(turn):
+                if event["type"] == "meta":
+                    meta = event
+                elif event["type"] == "done":
+                    done = event
+        finally:
+            self.release_slot(turn)
         return {**meta, **done}
 
     # ------------------------------------------------------------------
