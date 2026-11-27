@@ -26,7 +26,7 @@ google-genai==2.34.0
 
 # --- Retrieval / embeddings ---
 sentence-transformers==5.7.0
-transformers==5.23.0
+transformers==5.24.0
 accelerate==1.16.0
 huggingface_hub[hf_xet]==1.33.0
 einops==0.8.2
